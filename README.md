@@ -1,139 +1,84 @@
-# 💌 Mini Mercado Digital · XX EJC Simonésia
+# 💌 Cartinhas do XX EJC · Simonésia
 
-> ejcsimonesia2026@
+**Feito com amor por Rod Costa** · EJC Simonésia · novembro de 2026
 
-MVP independente, pensado para mobile e publicado em **um único Cloudflare Worker** com D1 e R2 privado. **Não depende de GitHub Actions nem de um provedor Pix com webhook.**
+Aplicação de homenagens digitais: **React 19 + React Router 7 + Vite 7** no frontend; **Cloudflare Worker com API HTTP nativa**, banco **D1** e mídia privada **R2**. O objetivo é vender **uma cartinha, nunca produtos**, com um único encontrista por pedido. Não depende de ações GitHub para publicar.
 
-> **Status:** código pronto para configuração e testes. Não foi publicado nem testado em conta Cloudflare real neste ambiente. Não use em um evento real sem executar o checklist abaixo.
+> **Estado:** frontend e API implementados em código e os testes automatizados do Worker passaram. Não foi possível executar o build completo Vite neste ambiente offline (dependências npm não estão instaladas). Publicar e validar no Safari real e fazer um Pix de teste **antes** de distribuir os QR Codes.
 
-## O que está implementado
+## Jornada
 
-- Plaquinha com QR Code de divulgação gerado no painel, levando à loja pública.
-- Pesquisa por encontrista e **um destinatário por pedido** (um encontrista pode receber vários pedidos).
-- Carrinho com vários produtos, preços calculados exclusivamente no servidor.
-- Cobrança **Pix BR Code estática** com valor específico, `txid`, QR Code e Copia e Cola.
-- Pedido com identificador único `EJC-XXXXXXXXXXXX` e QR Code próprio que abre o pedido na área administrativa.
-- Botão "Já paguei" apenas notifica a coordenação, **não confirma pagamento**.
-- Admin confere extrato bancário, valor e **identificador bancário único** (E2E/ID da transação) para liberar a homenagem. Um mesmo identificador não pode aprovar dois pedidos.
-- Após confirmação: mensagem editável, fotos sem limite predefinido de quantidade e gravações de áudio sem tempo máximo estabelecido pela loja. Upload multipart de 8 MiB no R2.
-- Link privado do comprador com token aleatório, sessão de administrador por cookie HttpOnly assinada por HMAC.
-- Prazo de encerramento configurável pelo administrador; padrão **domingo, 08/11/2026, às 16h em Brasília**. Bloqueio de escrita realizado no Worker.
-- Painel de pedidos, importação de encontristas (um por linha), cadastro/edição de produtos, conferência de Pix, preparo e entrega.
-- Proteção contra força bruta na autenticação e limitação simples de pedidos por IP; arquivos privados e URLs temporárias assinadas para reprodução.
+1. A pessoa escaneia a plaquinha de divulgação, encontra o nome em `/` ou abre `/enviar/:slug`.
+2. Prepara a mensagem no editor rico (títulos, negrito, itálico, listas, citações e sublinhado), seleciona **quantas fotos quiser** e grava/regrava um ou mais áudios, com player de ondas e velocidade. Pode pagar sem ter terminado de escrever.
+3. Antes de pagar, o rascunho (inclusive arquivos) vive no **IndexedDB** daquele navegador. Não limpe os dados do celular nem troque de dispositivo antes de transferir o rascunho para o servidor.
+4. É gerado um **Pix BR Code estático** com valor configurável por mensagem e `txid` específico. O administrador compara valor e identificador da transferência no **extrato real do banco**. Apenas uma confirmação manual válida libera o upload e o envio para moderação.
+5. A pessoa continua pelo link privado `/pedido/:token`, salva o conteúdo no R2 e submete à moderação. Qualquer edição após uma aprovação invalida a aprovação, exigindo nova revisão.
+6. Apenas cartinhas aprovadas aparecem no mural privado `/mural/:slug#token=...` depois do horário configurado. O administrador pode antecipar individualmente a liberação. O link de **envio** com slug jamais dá acesso ao mural.
+7. O remetente pode marcar uma mensagem como pública, **desativado por padrão**. Só mensagens aprovadas e liberadas aparecem em `/publicas`.
+8. No mural, o encontrista baixa cartinha PNG caligráfica, áudios, fotos ou ZIP único com todas as cartinhas e anexos. No celular, o compartilhamento Instagram/WhatsApp usa **Web Share API**; não existe publicação direta por API Meta sem OAuth e permissões correspondentes.
 
-## Requisitos
+## React Router
 
-- Node.js 22+ e npm (os testes integrados usam `node:sqlite`).
-- Conta Cloudflare com Workers, D1 e R2 disponíveis (R2 pode exigir ativação de cobrança na conta).
-- Chave Pix de banco comum **e nome correto do recebedor**.
-- Lista de encontristas cuja divulgação tenha sido autorizada pela organização.
-- Produtos/preços e responsável por verificar pagamentos no extrato.
+| URL | Página | Acesso |
+| --- | --- | --- |
+| `/` | Lista pesquisável de encontristas | Público |
+| `/enviar/:slug` | Editor, gravação, fotos e checkout inicial | Público |
+| `/pedido/:token` | Pix, status, rascunho e envio para moderação | Link privado |
+| `/mural/:slug` | Mural secreto | Convite `#token` ou admin |
+| `/publicas` | Cartinhas explicitamente públicas | Público |
+| `/admin` | Pedidos e moderação | Administrador |
+| `/admin/pedidos/:id` | Conferência do Pix e aprovação | Administrador |
+| `/admin/encontristas` | Importação, links individuais e mural secreto | Administrador |
+| `/admin/configuracoes` | Pix, valor, horários, GA4 | Administrador |
+| `/admin/qrcodes` | Cartazes QR coloridos e impressão A4 | Administrador |
+| `/admin/demo` | Criar/apagar exemplos fictícios | Administrador |
 
-## Publicar (Codespaces, computador ou terminal)
+## Segurança e limites práticos
 
-Extraia o ZIP, abra a pasta `ejc-mini-mercado` e execute:
+- O QR Pix é um meio de pagamento, **não um comprovante**. A confirmação exige o identificador bancário único e verificação do valor no extrato.
+- Tokens individuais são aleatórios, os hashes são salvos no D1, arquivos no R2 são privados e URLs de mídia são assinadas e temporárias. Links privados devem ser entregues somente aos destinatários.
+- **Data de fechamento e horário de liberação são diferentes e configuráveis.** A API valida o prazo em Brasília independentemente da UI.
+- Não impomos um limite arbitrário ao número de fotos ou à duração dos áudios. Gravações longas, memória do Safari, R2 e rede impõem limites reais; mantenha o aparelho ativo durante a gravação.
+- A versão de ZIP no navegador exige memória; arquivos agregados acima de **200 MB** são recusados nessa versão para evitar travamento do iPhone. Baixe cartinhas individualmente nesse caso.
+- A autorização para usar nomes de menores, o acesso da coordenação e o prazo de retenção dos conteúdos devem ser acertados antes de abrir a campanha.
+- GA4 é opcional, exige consentimento positivo e registra somente eventos de navegação/ações, nunca nomes, textos, arquivos, Pix ou links privados.
+- O editor sanitiza HTML para texto formatado. Fotos são anexadas como uma composição visual à cartinha.
+- Dados de demonstração têm mensagens fictícias, imagens gráficas ilustrativas geradas e áudios sintéticos de tom, não fotografias/vozes de pessoas reais. O botão **Apagar exemplos** remove todos os pedidos demonstrativos, inclusive seus anexos.
 
-```bash
-bash scripts/deploy.sh
-```
+## Requisitos e deploy
 
-O script instala dependências, autentica no Cloudflare, cria/identifica um D1 e um bucket privado R2, aplica migrations, publica o Worker e solicita uma senha administrativa forte. Ele **não grava sua chave Pix no código**: configure-a pelo painel.
-
-Se o terminal não puder abrir o navegador para autenticação, autentique o Wrangler antes de rodar com `CLOUDFLARE_API_TOKEN` configurado em ambiente seguro, com permissões específicas de Workers/D1/R2. Evite imprimir tokens nos logs.
-
-O Wrangler mostra uma URL `*.workers.dev` após o deploy. Acesse `https://SEU-WORKER.workers.dev/admin` e preencha:
-
-1. **Configurações:** chave Pix, nome exibido pelo banco, cidade, prazo configurável e permissão de novos pedidos.
-2. **Encontristas:** cole um nome por linha.
-3. **Produtos:** cadastre os presentes e os preços.
-4. **QR da rua:** imprima a plaquinha. Se quiser, associe o domínio `ejc.migos.club` ao Worker **antes de imprimir**; caso mude o domínio, reimprima os códigos.
-5. **Pedidos:** use o identificador bancário de cada Pix efetivamente recebido para confirmar e liberar a homenagem.
-
-Se desejar configurar um domínio personalizado, faça isso em **Cloudflare → Workers & Pages → Worker → Settings → Domains & Routes → Add → Custom Domain**. Não existe deploy automático ao domínio `ejc.migos.club` sem a etapa de associação ao seu domínio na conta Cloudflare.
-
-### Rodar localmente
+Node.js 22+, conta Cloudflare com Workers, D1 e R2 habilitados, npm e `openssl`.
 
 ```bash
 npm install
-cp .dev.vars.example .dev.vars
-# Configure ADMIN_PASSWORD e SESSION_SECRET em .dev.vars
-npm run db:local
-npm run dev
+npm run check
+npm run build
+bash scripts/deploy.sh
 ```
 
-Acesse `http://localhost:8787` e `/admin`. Os recursos D1/R2 ficam locais no modo dev, conforme o Wrangler. Lembre-se de que a gravação de microfone requer `https` ou `localhost`.
+O deploy cria/vincula D1 e R2, aplica ambas as migrations, **compila Vite para `dist/`** e publica o Worker com assets SPA. Configure os segredos `SESSION_SECRET` e `ADMIN_PASSWORD` pelo script, **nunca no repositório**.
 
-## Fluxo financeiro
+Para desenvolvimento local execute `npm run dev:worker` para a API com D1/R2 local na porta 8787. Em outra sessão execute `npm run dev` para o Vite na porta 5173. `vite.config.js` já encaminha `/api` para o Worker local. O script de produção serve frontend e API na mesma origem.
 
-**Pix estático não é Pix com confirmação automática.** O TXID identifica o pedido no QR Code, mas nem todos os aplicativos bancários o mostram claramente no extrato.
+Depois de publicar, configure em `/admin/configuracoes` a **chave Pix, titular, cidade, valor único, prazo de edição, horário de abertura do mural** e opcionalmente Measurement ID `G-...`. Importe os encontristas, gere os links privados e faça um Pix real de baixo valor, conferência, moderação, teste de áudio e foto no Safari, QR impresso e ZIP.
 
-- O comprador cria o pedido e recebe a cobrança com o valor e o `txid`.
-- O comprador pode solicitar conferência após pagar.
-- O administrador busca a transferência no **extrato real**, confere o valor e registra o identificador bancário exclusivo (preferencialmente o EndToEndId/E2E).
-- Só depois o Worker altera o estado de `pending/claimed` para `paid` e libera uploads e texto.
-- Se o banco não disponibilizar um identificador consistente, **não invente um ID**. Resolva a conciliação com a equipe e ajuste a validação antes de operar.
+> As migrations mantêm tabelas legadas de produtos da versão anterior para preservar dados existentes, mas **elas não aparecem no checkout nem são usadas pelas novas rotas**. Faça backup do D1 antes de migrar uma base existente.
 
-A cobrança Pix permanece reaproveitável no mundo bancário mesmo depois da confirmação ou do fechamento do site. Evite pedir pagamentos adicionais para uma cobrança já paga; concilie depósitos duplicados manualmente.
-
-## Arquivos e duração
-
-- Áudio gravado via `MediaRecorder`, usando formato nativo do navegador, enviado progressivamente em partes de 8 MiB para R2. O envio pode continuar depois da gravação parar; não feche a página até aparecer "salvo".
-- Em iPhone, o Safari pode suspender ou encerrar gravações longas ao bloquear a tela. O aplicativo **não estabelece tempo máximo**, mas não consegue eliminar as limitações de iOS, rede e espaço de armazenamento.
-- Fotos são enviadas individualmente, também multipart. Não há limite programado de quantidade; aplicam-se os limites técnicos da plataforma (incluindo até 10.000 partes por objeto), custo de armazenamento, rede e riscos de abuso.
-- Uploads incompletos são automaticamente abortados pelo R2 conforme a política da plataforma, tipicamente após 7 dias. Parte do áudio abaixo de 8 MiB ainda em memória pode ser perdida se o Safari encerrar antes de o usuário parar a gravação.
-- Bucket R2 **não deve ser exposto publicamente**. A reprodução é autenticada; para compradores utiliza-se URL temporária assinada de até 4 horas.
-- Edição encerrada pelo horário configurado; conteúdo continua disponível para leitura e administração até a política de retenção/exclusão adotada pela organização.
-
-## Segurança e proteção de dados
-
-- Não configure credenciais bancárias, e-mail/senha de banco, nem leitura automática do banco. **Nunca** peça comprovantes como prova definitiva.
-- Use uma senha administrativa de pelo menos 14 caracteres, preferencialmente longa e aleatória. Para proteção adicional, configure regras Cloudflare Access/WAF para `/admin` e `/api/admin/*`; o próprio painel mantém autenticação por cookie.
-- Evite divulgar dados dos encontristas além do nome autorizado. Confirme com a organização as permissões necessárias, especialmente para menores.
-- Estabeleça prazo de retenção e remoção de mensagens e arquivos após o evento. A versão inicial **não apaga automaticamente** dados pessoais após o EJC.
-- Apenas quem possuir o link privado pode editar a homenagem antes do encerramento. Não poste esse link em redes sociais.
-- Faça monitoramento de custos e atividade do R2, dado que o sistema não impõe quotas por usuário como solicitado.
-- O **painel não é uma contabilidade**: registre conciliação bancária e eventual estorno fora do sistema, segundo os procedimentos da organização.
-
-## Checklist obrigatório de aceitação antes de distribuir QR Code
-
-- [ ] Abrir site pelo QR Code impresso em Safari iPhone e Android.
-- [ ] Testar busca por encontrista com acentos e nomes semelhantes.
-- [ ] Criar pedido de baixo valor e verificar cálculo no servidor.
-- [ ] Validar **Pix Copia e Cola e QR** em pelo menos dois bancos, nome do recebedor, valor e recebimento.
-- [ ] Verificar que clicar "Já paguei" **não libera** conteúdo.
-- [ ] Confirmar pagamento real no painel usando E2E correto; tentar reutilizar E2E e ver rejeição.
-- [ ] Abrir link privado da homenagem e testar texto, foto HEIC/JPEG e áudio no Safari do iPhone.
-- [ ] Testar um áudio de 10+ minutos, tela ligada, upload completo, reprodução e interrupção de rede.
-- [ ] Testar bloqueio de edição após alterar temporariamente horário de encerramento no admin (e restaurar).
-- [ ] Testar rota `/admin?order=EJC-...` pelo QR do pedido, incluindo login e retorno.
-- [ ] Verificar que link de uma homenagem **não abre** arquivos de outra.
-- [ ] Confirmar a equipe e o fluxo de contingência sem internet.
-- [ ] Garantir que configurações da conta Cloudflare, R2 e DNS estejam sob controle da organização.
-
-## Organização do projeto
+## Estrutura
 
 ```text
-public/
-  index.html     Página base mobile-first
-  style.css      Identidade visual
-  app.js         Loja, painel e captura/upload de mídia
-  qr.js          QR Codes (biblioteca MIT empacotada localmente)
+index.html                    Entrada Vite
+client/
+  main.jsx                   React Router, layout e analytics
+  pages/                     Home, Send, Order, Mural, PublicLetters, Admin
+  components/                RichEditor, Recorder, VoicePlayer, LetterCard, QrCode
+  lib/                       API, IndexedDB, gerador QR
+  styles.css                 Design mobile e estilos de impressão
 src/
-  worker.js      API, validação, pagamentos, autenticação, R2
-  pix.js         Gerador BR Code Pix e CRC-16
-migrations/
-  0001_initial.sql
-scripts/
-  deploy.sh      Publicação direta, sem GitHub Actions
-tests/
-  pix.test.js    Testes unitários
+  worker.js                  API D1/R2, Pix, moderação, mural e demo
+  pix.js                     Geração Pix BR Code
+migrations/                  0001 e 0002
+scripts/deploy.sh            Build e deploy sem GitHub Actions
+tests/                       Testes de fluxo, privacidade e Pix
+wrangler.jsonc               Worker e SPA assets em dist/
 ```
-
-## Referências técnicas
-
-- Banco Central, Manual de Padrões para Iniciação do Pix (QR estático / txid): https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?numero=630&tipo=Instru%C3%A7%C3%A3o+Normativa+BCB
-- Workers Static Assets: https://developers.cloudflare.com/workers/static-assets/binding/
-- Cloudflare R2 multipart: https://developers.cloudflare.com/r2/api/workers/workers-multipart-usage/
-- D1 Wrangler: https://developers.cloudflare.com/d1/wrangler-commands/
-
-> Biblioteca QR: Kazuhiko Arase, **MIT License**, código de QRCode for JavaScript empacotado a partir do `qrcode-terminal` que acompanha o npm instalado. Os avisos de licença permanecem em `public/qr.js`.

@@ -47,3 +47,40 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .decorated-qr.blue { background: linear-gradient(145deg, #dfedff, #e9dcfb); }
 .decorated-qr.mint { background: linear-gradient(145deg, #ddf5e9, #ebdff6); }
 .decorated-qr.orange { background: linear-gradient(145deg, #fff0d6, #f8d5df); }
+
+/* Branded Pix receipt, still keeping an undecorated scan-safe quiet zone. */
+.pix-checkout { padding: clamp(16px, 4vw, 28px); }
+.pix-checkout .pix-headline { text-align: center; max-width: 510px; margin: 0 auto 22px; }
+.pix-checkout .pix-headline h2 { font-size: clamp(1.75rem, 4vw, 2.5rem); margin: 8px 0; }
+.pix-checkout .pix-headline p { font-size: .94rem; }
+.pix-ticket { background: linear-gradient(120deg, #ffefdc, #f9d3de 55%, #e5dcfb); border-radius: 23px; padding: 20px; margin-bottom: 19px; border: 1px solid #ebd9ee; }
+.pix-ticket-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: .68rem; letter-spacing: .09em; font-weight: 800; color: #674982; }
+.pix-ticket-heart { font-size: 28px; line-height: 1; }
+.pix-ticket .pix-amount { display: block; font-size: clamp(2.6rem, 8vw, 4rem); line-height: 1.1; letter-spacing: -.05em; color: #261936; margin: 12px 0 19px; }
+.pix-gift-target { display: flex; align-items: center; gap: 11px; }
+.pix-gift-target .recipient-avatar { width: 52px; height: 52px; border-radius: 14px; overflow: hidden; }
+.recipient-avatar img { display: block; height: 100%; width: 100%; object-fit: cover; border-radius: inherit; }
+.pix-gift-target span { display: grid; gap: 3px; }
+.pix-gift-target small { font-size: .74rem; color: #674982; }
+.pix-gift-target strong { font-size: 1.1rem; }
+.pix-qr-frame { display: grid; justify-items: center; padding: 21px 12px; background: #fff; border: 1px solid #e9e2e7; border-radius: 22px; margin-bottom: 17px; text-align: center; }
+.pix-qr-frame .pix-scanner-label { font-size: .7rem; font-weight: 800; letter-spacing: .12em; color: #552c80; margin-bottom: 10px; }
+.pix-qr-frame .qr-code { background: white; padding: 0; border-radius: 13px; width: max-content; max-width: 100%; }
+.pix-qr-frame canvas { display: block; width: min(100%, 280px) !important; height: auto !important; }
+.pix-qr-frame p { color: #777185; font-size: .8rem; margin: 12px 0 0; }
+.pix-details { display: grid; gap: 0; border: 1px solid #e9e2e7; border-radius: 15px; padding: 2px 15px; margin-bottom: 17px; }
+.pix-details > div { display: flex; justify-content: space-between; gap: 15px; padding: 11px 0; align-items: baseline; }
+.pix-details > div + div { border-top: 1px solid #f0eaf1; }
+.pix-details span { color: #777185; font-size: .83rem; }
+.pix-details strong { font-size: .86rem; overflow-wrap: anywhere; text-align: right; }
+.pix-raw { margin: 12px 0 17px; }
+.pix-raw summary { cursor: pointer; font-size: .78rem; font-weight: 700; color: #62328b; }
+.pix-raw code { display: block; overflow-wrap: anywhere; max-height: 95px; overflow: auto; padding: 11px; margin-top: 8px; font-size: .67rem; border-radius: 9px; background: #f6f1f9; }
+.pix-checkout > .btn { margin-bottom: 10px; }
+.pix-admin-identification { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e9e2e7; text-align: center; }
+.pix-admin-identification .qr-code { display: flex; justify-content: center; }
+@media (max-width: 560px) {
+  .pix-details > div { flex-direction: column; gap: 3px; }
+  .pix-details strong { text-align: left; }
+  .pix-access { position: static; }
+}

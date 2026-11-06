@@ -7,9 +7,11 @@ import RichEditor from '../components/RichEditor';
 import Recorder from '../components/Recorder';
 import VoicePlayer from '../components/VoicePlayer';
 import QrCode from '../components/QrCode';
+import { useApp } from '../main';
 import { LetterCard } from '../components/LetterCard';
 function sameDraft(a,b){return a===b;}
 export default function Order(){
+  const { recipients, config } = useApp();
   const {token}=useParams(),[order,setOrder]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[saved,setSaved]=useState(false);
   const [html,setHtml]=useState(''),[publicMessage,setPublicMessage]=useState(false),[assets,setAssets]=useState([]),[progress,setProgress]=useState('');
   const reload=useCallback(async()=>{try{const o=await api('/api/order',{token});setOrder(o);setError('');return o;}catch(e){setError(e.message);return null;}},[token]);
@@ -31,9 +33,89 @@ export default function Order(){
   }catch(e){setError(e.message);}finally{setBusy(false);}}
   if(error&&!order)return <div className="empty"><h2>Não foi possível abrir a sua cartinha.</h2><p>{error}</p><Link to="/" className="btn">Voltar</Link></div>;
   if(!order)return <div className="loading">Carregando sua cartinha... ♡</div>;
-  return <div className="order-wrap"><div className="section-head"><div><span className="eyebrow">PEDIDO {order.id}</span><h1>Para {order.recipient_name} <em>♡</em></h1><p>Este link é privado. Guarde-o para continuar depois.</p></div><span className={`status-pill ${paid?'success':'pending'}`}>{paid?'Pix confirmado':'Aguardando Pix'}</span></div>
-    {!paid ? <div className="payment-layout"><div className="form-card"><h2>Seu Pix está pronto!</h2><p className="muted">Pague pelo aplicativo do seu banco. A cartinha será liberada quando a coordenação conferir o extrato.</p><div className="pix-amount">{money(order.amount_cents)}</div><QrCode value={order.pix_code} size={225} variant="pix"/><div className="pix-code">{order.pix_code}</div><button className="btn wide" onClick={()=>{copy(order.pix_code);track('pix_copy');}}><Copy size={17}/> Copiar Pix Copia e Cola</button><button className="btn outline wide" disabled={busy} onClick={claim}>{busy?'Aguarde...':'Já paguei · solicitar conferência'}</button><button className="btn ghost wide" onClick={reload}><RefreshCw size={16}/> Verificar situação</button><div className="notice warning">O QR Code Pix e comprovantes não confirmam pagamento automaticamente. A coordenação conferirá no banco.</div></div>
-    <aside className="form-card"><h3>Guarde seu acesso</h3><p>Você poderá criar ou terminar a mensagem depois da confirmação do pagamento.</p><button className="btn ghost wide" onClick={()=>copy(privateOrder(token))}><LockKeyhole size={17}/> Copiar link secreto</button><h3>QR para a coordenação</h3><QrCode value={`${location.origin}/admin/pedidos/${order.id}`} size={140}/><p className="micro-label">{order.id}</p></aside></div>:
+  const recipient = recipients.find((r) => r.slug === order.recipient_slug);
+  return <div className="order-wrap"><div className="section-head"><div><span className="eyebrow">PEDIDO {order.id}</span><h1>Para {order.recipient_name} <em>♡</em></h1><p>Este link é privado. Guard{!paid ? (
+      <div className="payment-layout">
+        <section className="form-card pix-checkout">
+          <div className="pix-headline">
+            <span className="eyebrow">✳ CARTINHAS · XX EJC SIMONÉSIA</span>
+            <h2>Seu Pix está pronto!</h2>
+            <p className="muted">
+              Sua homenagem está reservada. Assim que o pagamento for confirmado pela
+              coordenação, você poderá enviar texto, fotos e áudios.
+            </p>
+          </div>
+
+          <div className="pix-ticket">
+            <div className="pix-ticket-top">
+              <span>CONTRIBUIÇÃO PARA UMA CARTINHA</span>
+              <span className="pix-ticket-heart" aria-hidden="true">♡</span>
+            </div>
+            <strong className="pix-amount">{money(order.amount_cents)}</strong>
+            <div className="pix-gift-target">
+              <div className="recipient-avatar lavender">
+                {recipient?.photo_url ? (
+                  <img src={recipient.photo_url} alt={`Foto de ${order.recipient_name}`} loading="lazy" />
+                ) : (
+                  order.recipient_name.slice(0, 2).toUpperCase()
+                )}
+              </div>
+              <span><small>Cartinha dedicada a</small><strong>{order.recipient_name}</strong></span>
+            </div>
+          </div>
+
+          <div className="pix-qr-frame">
+            <span className="pix-scanner-label">ESCANEIE COM SEU APP BANCÁRIO</span>
+            <QrCode value={order.pix_code} size={248} variant="pix" logoUrl={config?.logo_url} />
+            <p>Ou use o botão Pix Copia e Cola abaixo</p>
+          </div>
+
+          <div className="pix-details" aria-label="Detalhes do Pix">
+            <div><span>Recebedor</span><strong>{order.pix_receiver || 'Titular informado no banco'}</strong></div>
+            {order.pix_city && <div><span>Cidade</span><strong>{order.pix_city}</strong></div>}
+            <div><span>Valor</span><strong>{money(order.amount_cents)}</strong></div>
+            <div><span>Número do pedido</span><strong className="mono">{order.id}</strong></div>
+            <div><span>Identificador Pix</span><strong className="mono">{order.txid}</strong></div>
+          </div>
+
+          <button className="btn wide pix-copy" onClick={() => {copy(order.pix_code);track('pix_copy');}}>
+            <Copy size={18} /> Copiar Pix Copia e Cola
+          </button>
+          <details className="pix-raw">
+            <summary>Visualizar o código Pix completo</summary>
+            <code>{order.pix_code}</code>
+          </details>
+          <button className="btn outline wide" disabled={busy} onClick={claim}>
+            {busy ? 'Aguarde...' : 'Já paguei · solicitar conferência'}
+          </button>
+          <button className="btn ghost wide" onClick={reload}>
+            <RefreshCw size={16} /> Atualizar situação do pagamento
+          </button>
+          <div className="notice warning">
+            <Clock3 size={17} />
+            <span>O botão “Já paguei” não libera o envio automaticamente.
+              A equipe precisa conferir a entrada do dinheiro no banco.</span>
+          </div>
+        </section>
+        <aside className="form-card pix-access">
+          <h3>Guarde o acesso à sua cartinha 🔐</h3>
+          <p>Você pode voltar a qualquer momento pelo mesmo link, inclusive depois de pagar.</p>
+          <button className="btn ghost wide" onClick={() => copy(privateOrder(token))}>
+            <LockKeyhole size={17} /> Copiar link secreto
+          </button>
+          <div className="pix-admin-identification">
+            <h3>Identificação para a coordenação</h3>
+            <QrCode
+              value={`${location.origin}/admin/pedidos/${order.id}`}
+              size={155}
+              variant="standard"
+              logoUrl={config?.logo_url}
+            />
+            <p className="micro-label mono">{order.id}</p>
+          </div>
+        </aside>
+      </div>
+    )  para a coordenação</h3><QrCode value={`${location.origin}/admin/pedidos/${order.id}`} size={140}/><p className="micro-label">{order.id}</p></aside></div>:
     <div className="compose-layout"><div className="compose-main">
       <div className="notice success"><CheckCircle2 size={18}/> Pix confirmado. Você pode criar e atualizar sua homenagem {ended?'até o horário de encerramento, que já passou.':`até ${btime(order.deadline)}.`}</div>
       <div className="form-card"><div className="row between"><h2>Escreva sua cartinha</h2><span className="micro-label">formatação livre</span></div><RichEditor key={saved?'loaded':'initial'} value={html} onChange={setHtml} disabled={ended}/></div>

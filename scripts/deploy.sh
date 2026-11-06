@@ -49,6 +49,7 @@ fi
 info "Aplicando migrations D1 remotas"
 npx wrangler d1 migrations apply ejc-mini-mercado --remote
 info "Publicando Worker e frontend no Cloudflare"
+npm run build
 npx wrangler deploy
 
 info "Conferindo segredos do Worker"
@@ -67,5 +68,5 @@ if ! grep -q 'ADMIN_PASSWORD' <<<"$SECRETS"; then
 fi
 
 info "Concluído. Use a URL informada pelo Wrangler para abrir /admin."
-printf 'Antes de divulgar: configure Pix, encontristas, produtos, teste um pagamento real, e confira áudio e foto.\n'
+printf 'Antes de divulgar: configure Pix, valor da cartinha, encontristas, teste um pagamento real, e confira áudio e foto.\n'
 printf 'Subdomínio personalizado ejc.migos.club: configure no painel Cloudflare > Workers & Pages > Domínios personalizados.\n'

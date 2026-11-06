@@ -1,14 +1,28 @@
 {
-  "name":"ejc-mini-mercado",
-  "version":"1.0.0",
-  "private":true,
-  "type":"module",
-  "scripts":{
-    "dev":"wrangler dev --local",
-    "deploy":"wrangler deploy",
-    "db:local":"wrangler d1 migrations apply ejc-mini-mercado --local",
-    "db:remote":"wrangler d1 migrations apply ejc-mini-mercado --remote",
-    "check":"node --check src/worker.js && node --check public/app.js && node --check public/qr.js && node --test tests/*.test.js"
+  "name": "ejc-cartinhas",
+  "version": "2.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "dev:worker": "wrangler dev --local",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "deploy": "npm run build && wrangler deploy",
+    "db:local": "wrangler d1 migrations apply ejc-mini-mercado --local",
+    "db:remote": "wrangler d1 migrations apply ejc-mini-mercado --remote",
+    "check": "node --check src/worker.js && node --check src/pix.js && node --test tests/*.test.js"
   },
-  "devDependencies":{"wrangler":"^4.0.0"}
+  "dependencies": {
+    "dompurify": "^3.2.7",
+    "fflate": "^0.8.2",
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.5"
+  },
+  "devDependencies": {
+    "vite": "^7.1.12",
+    "wrangler": "^4.0.0"
+  }
 }

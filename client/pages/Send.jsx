@@ -29,7 +29,7 @@ export default function Send(){
   }
   if(!found)return <div className="empty"><h2>Encontrista não encontrado.</h2><Link to="/">Voltar à lista</Link></div>;
   return <div className="compose-layout"><div className="compose-main">
-    <div className="step-label">ETAPA 02 / CRIE SUA HOMENAGEM</div><h1>Uma cartinha para <em>{found.name}.</em></h1>
+    <div className="step-label">ETAPA 02 / CRIE SUA HOMENAGEM</div>{found.photo_url&&<div className="send-recipient"><img src={found.photo_url} alt={`Foto de ${found.name}`}/><span>Para {found.name}</span></div>}<h1>Uma cartinha para <em>{found.name}.</em></h1>
     <p className="muted">Você pode gravar quantas vezes quiser e ouvir antes de guardar. Tudo fica como rascunho neste aparelho até a confirmação do Pix.</p>
     <section className="form-card"><label htmlFor="sender">Como quer assinar? <span className="muted">(opcional)</span></label><input id="sender" value={sender} onChange={e=>setSender(e.target.value.slice(0,100))} placeholder="Seu nome ou uma pessoa especial"/></section>
     <section className="form-card"><div className="row between"><h2>01. Suas palavras ✍️</h2><span className="micro-label">editor de texto rico</span></div><RichEditor value={html} onChange={setHtml}/></section>

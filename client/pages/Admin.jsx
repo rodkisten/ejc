@@ -1,6 +1,6 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {NavLink,Routes,Route,useNavigate,useParams} from 'react-router-dom';
-import {ShieldCheck,ClipboardList,UsersRound,Settings2,QrCode as QrIcon,Eye,Check,Copy,Trash2,Sparkles,Printer,Download,LogOut,ExternalLink,RefreshCw,Heart} from 'lucide-react';
+import {ShieldCheck,ClipboardList,UsersRound,Settings2,QrCode as QrIcon,Eye,Check,Copy,Trash2,Sparkles,Printer,Download,LogOut,ExternalLink,RefreshCw,Heart,ImagePlus} from 'lucide-react';
 import { api, money, btime, track,download } from '../lib/api';
 import QrCode from '../components/QrCode';
 import {LetterCard} from '../components/LetterCard';
@@ -23,19 +23,76 @@ function OrderDetail({reload}){const {id}=useParams(),navigate=useNavigate(),[or
     <section className="form-card"><h2>Histórico do pedido</h2><div className="timeline">{(order.history||[]).map((ev,i)=><div key={i}><strong>{ev.type}</strong> <span className="muted">{new Date(ev.created_at).toLocaleString('pt-BR')}</span><p className="small">{ev.detail}</p></div>)}</div></section>
   </div>;
 }
-function People({info,reload}){const [names,setNames]=useState(''),[notice,setNotice]=useState(''),[error,setError]=useState(''),[invite,setInvite]=useState(null);
+function People({info,reload}){const [names,setNames]=useState(''),[notice,setNotice]=useState(''),[error,setError]=useState(''),[invite,setInvite]=useState(null),[uploading,setUploading]=useState('');
+  async function photoUpload(r,file) {
+    if(!file)return;
+    if(!window.confirm(`Confirmo que tenho autorização para divulgar a foto de ${r.name}, inclusive dos responsáveis se menor de idade.`))return;
+    setUploading(r.id);setError('');
+    try {
+      const response=await fetch(`/api/admin/recipients/${r.id}/photo`,{
+        method:'POST',body:file,credentials:'same-origin',
+        headers:{'Content-Type':file.type,'X-Photo-Consent':'confirmed'}
+      });
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok)throw Error(data.error||'Falha ao enviar foto.');
+      setNotice(`Foto de ${r.name} atualizada.`);await reload();
+    }catch(cause){setError(cause.message);}finally{setUploading('');}
+  }
+  async function photoRemove(r) {
+    if(!window.confirm(`Remover a foto de ${r.name}?`))return;
+    try{await api(`/api/admin/recipients/${r.id}/photo`,{method:'DELETE'});await reload();}
+    catch(cause){setError(cause.message);}
+  }
   const add=async()=>{try{const r=await api('/api/admin/recipients/import',{method:'POST',data:{names:names.split(/\r?\n/).filter(Boolean)}});setNotice(`${r.inserted} nomes importados.`);setNames('');await reload();}catch(e){setError(e.message);}};
   const createInvite=async r=>{if(!confirm(`Gerar novo link privado de ${r.name}? Isso invalida o anterior.`))return;try{const data=await api(`/api/admin/recipients/${r.id}/invite`,{method:'POST',data:{}});setInvite({name:r.name,url:data.url});}catch(e){setError(e.message);}};
-  return <><div className="section-head"><div><span className="eyebrow">ENCONTRISTAS</span><h1>Nomes e links exclusivos</h1><p>O link para enviar é público. O link de leitura do mural é privado e precisa ser entregue pessoalmente.</p></div></div><section className="form-card"><label>Importar nomes (um por linha)</label><textarea rows={4} value={names} onChange={e=>setNames(e.target.value)} placeholder={'Maria Eduarda\nJoão Pedro\nAna Clara'}/><button className="btn" onClick={add}>Adicionar encontristas</button></section>{error&&<div className="notice error">{error}</div>}{notice&&<div className="notice success">{notice}</div>}{invite&&<div className="notice success"><strong>Link privado de {invite.name}</strong><p className="small">Este link é mostrado apenas agora. Guarde-o com segurança.</p><div className="inline-actions"><button className="btn ghost" onClick={()=>copy(invite.url)}><Copy size={16}/> Copiar link privado</button></div></div>}
-    <div className="people-list">{info.recipients.map(r=><div className="form-card person-row" key={r.id}><div><strong>{r.name}</strong><small>/enviar/{r.slug}</small></div><div className="inline-actions"><button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}`)}><Copy size={15}/> Link de envio</button><button className="btn outline" onClick={()=>createInvite(r)}><Eye size={16}/> Link secreto</button></div></div>)}</div></>;
+  return <><div className="section-head"><div><span className="eyebrow">ENCONTRISTAS</span><h1>Nomes, fotos e links exclusivos</h1><p>O link para enviar é público. O link de leitura do mural é privado e precisa ser entregue pessoalmente.</p></div></div><section className="form-card"><label>Importar nomes (um por linha)</label><textarea rows={4} value={names} onChange={e=>setNames(e.target.value)} placeholder={'Maria Eduarda\nJoão Pedro\nAna Clara'}/><button className="btn" onClick={add}>Adicionar encontristas</button></section>{error&&<div className="notice error">{error}</div>}{notice&&<div className="notice success">{notice}</div>}{invite&&<div className="notice success"><strong>Link privado de {invite.name}</strong><p className="small">Este link é mostrado apenas agora. Guarde-o com segurança.</p><div className="inline-actions"><button className="btn ghost" onClick={()=>copy(invite.url)}><Copy size={16}/> Copiar link privado</button></div></div>}
+    <div className="people-list">{info.recipients.map(r=><div className="form-card person-row" key={r.id}>
+      <div className="person-with-photo">
+        <div className="recipient-avatar lavender">
+          {r.photo_url?<img src={r.photo_url} alt={`Foto de ${r.name}`}/>:r.name.slice(0,2).toUpperCase()}
+        </div>
+        <div><strong>{r.name}</strong><small>/enviar/{r.slug}</small></div>
+      </div>
+      <div className="inline-actions">
+        <label className="btn ghost person-photo-upload"><ImagePlus size={15}/>{uploading===r.id?'Enviando...':'Foto'}
+          <input type="file" accept="image/jpeg,image/png,image/webp" disabled={!!uploading}
+            onChange={event=>{photoUpload(r,event.target.files?.[0]);event.target.value='';}}/>
+        </label>
+        {r.photo_url&&<button className="btn outline" onClick={()=>photoRemove(r)}><Trash2 size={15}/> Remover foto</button>}
+        <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}`)}><Copy size={15}/> Link de envio</button><button className="btn outline" onClick={()=>createInvite(r)}><Eye size={16}/> Link secreto</button></div></div>)}</div></>;
+}
+function BrandLogo({ info, reload }) {
+  const [busy,setBusy]=useState(false),[message,setMessage]=useState('');
+  async function upload(file) {
+    if(!file)return;
+    setBusy(true);setMessage('');
+    try{
+      const response=await fetch('/api/admin/branding/logo',{
+        method:'POST',credentials:'same-origin',headers:{'Content-Type':file.type},body:file
+      });
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok)throw Error(data.error||'Não foi possível salvar a logo.');
+      setMessage('Logo oficial atualizada nos QR Codes.');await reload();
+    }catch(cause){setMessage(cause.message);}finally{setBusy(false);}
+  }
+  return <section className="form-card brand-settings">
+    <h2>Logo do Mini Mercado</h2>
+    <p>Envie a logo oficial (PNG, JPEG ou WebP, até 2 MB). Até então, será usada uma marca provisória “XX EJC”.</p>
+    {info.config.logo_url&&<img className="brand-logo-preview" src={info.config.logo_url} alt="Logo cadastrada"/>}
+    <label className="btn person-photo-upload"><ImagePlus size={17}/>{busy?'Enviando...':'Cadastrar logo'}
+      <input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy}
+        onChange={event=>{upload(event.target.files?.[0]);event.target.value='';}}/>
+    </label>
+    {message&&<div className="notice">{message}</div>}
+  </section>;
 }
 function Config({info,reload}){
   const [form,setForm]=useState({...info.config,open:info.config.open==='true'}),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
   const fields=[['store_title','Título do projeto','text'],['store_subtitle','Subtítulo','text'],['message_price_cents','Contribuição em centavos (R$ 10,00 = 1000)','number'],['pix_key','Chave Pix','text'],['pix_name','Titular do Pix','text'],['pix_city','Cidade do Pix (sem acentos)','text'],['deadline','Encerrar edição das cartinhas','datetime-local'],['release_at','Liberar murais dos encontristas','datetime-local'],['analytics_id','Google Analytics 4 (G-...)','text']];
   const save=async()=>{setBusy(true);try{await api('/api/admin/settings',{method:'PUT',data:{...form,message_price_cents:Number(form.message_price_cents)}});setNotice('Configurações salvas.');await reload();}catch(e){setNotice(e.message);}finally{setBusy(false);}};
-  return <><div className="section-head"><div><span className="eyebrow">CONFIGURAÇÕES</span><h1>Controle do evento</h1><p>O prazo de edição e a abertura do mural são horários independentes.</p></div></div><section className="form-card settings-form"><label className="toggle-line"><input type="checkbox" checked={!!form.open} onChange={e=>setForm(f=>({...f,open:e.target.checked}))}/> Aceitar novas cartinhas</label>{fields.map(([key,label,type])=><div className="field" key={key}><label htmlFor={key}>{label}</label><input id={key} type={type} value={form[key]||''} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}/></div>)}<button className="btn" disabled={busy} onClick={save}><Check size={17}/> Salvar configurações</button>{notice&&<div className="notice">{notice}</div>}</section></>;
+  return <><div className="section-head"><div><span className="eyebrow">CONFIGURAÇÕES</span><h1>Controle do evento</h1><p>O prazo de edição e a abertura do mural são horários independentes.</p></div></div><section className="form-card settings-form"><label className="toggle-line"><input type="checkbox" checked={!!form.open} onChange={e=>setForm(f=>({...f,open:e.target.checked}))}/> Aceitar novas cartinhas</label>{fields.map(([key,label,type])=><div className="field" key={key}><label htmlFor={key}>{label}</label><input id={key} type={type} value={form[key]||''} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}/></div>)}<button className="btn" disabled={busy} onClick={save}><Check size={17}/> Salvar configurações</button>{notice&&<div className="notice">{notice}</div>}</section><BrandLogo info={info} reload={reload}/></>;
 }
-function DecorQr({value,title,subtitle,color='rose'}){
+function DecorQr({value,title,subtitle,color='rose',logoUrl,photoUrl}){
   const el=useRef(null);
   const savePng = () => {
     const canvas = el.current?.querySelector('canvas');
@@ -44,10 +101,10 @@ function DecorQr({value,title,subtitle,color='rose'}){
       if (blob) download(blob, `qr-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`, 'image/png');
     }, 'image/png');
   };
-  return <div className={`decorated-qr ${color}`} ref={el}><div className="qr-kicker">✳ XX EJC SIMONÉSIA ✳</div><h3>{title}</h3><p>{subtitle}</p><QrCode value={value} size={212} variant="decorated"/><div className="qr-under">ESCANEIE &amp; ENVIE UM CARINHO ♡</div><div className="qr-tools no-print"><button className="btn ghost" onClick={savePng}><Download size={15}/> Baixar QR PNG</button></div></div>;
+  return <div className={`decorated-qr ${color}`} ref={el}><div className="qr-kicker">✳ XX EJC SIMONÉSIA ✳</div>{photoUrl&&<img className="poster-recipient-photo" src={photoUrl} alt="Encontrista"/>}<h3>{title}</h3><p>{subtitle}</p><QrCode value={value} size={212} variant="decorated" logoUrl={logoUrl}/><div className="qr-under">ESCANEIE &amp; ENVIE UM CARINHO ♡</div><div className="qr-tools no-print"><button className="btn ghost" onClick={savePng}><Download size={15}/> Baixar QR PNG</button></div></div>;
 }
 function QrPrint({info}){const [person,setPerson]=useState(''),[color,setColor]=useState('rose');const selected=info.recipients.find(r=>r.id===person),url=selected?`${location.origin}/enviar/${selected.slug}`:location.origin;
-  return <><div className="section-head no-print"><div><span className="eyebrow">MATERIAL IMPRESSO</span><h1>QR Codes decorados</h1><p>Para plaquinhas, cartazes e distribuição nas ruas.</p></div><button className="btn" onClick={()=>window.print()}><Printer size={16}/> Imprimir A4</button></div><div className="form-card no-print"><div className="row filters"><select value={person} onChange={e=>setPerson(e.target.value)}><option value="">QR geral: lista de encontristas</option>{info.recipients.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select><select value={color} onChange={e=>setColor(e.target.value)}><option value="rose">Rosa</option><option value="blue">Azul</option><option value="mint">Verde</option><option value="orange">Laranja</option></select></div><p className="muted small">Os QR Codes são links para o formulário, não para o Pix bancário nem para o mural secreto.</p></div><div className="qr-print-grid"><DecorQr value={url} title={selected?`Para ${selected.name}`:'Cartinhas do XX EJC'} subtitle="Suas palavras. Sua voz. Um encontro especial." color={color}/><DecorQr value={url} title={selected?`Um carinho para ${selected.name}`:'Uma mensagem de coração'} subtitle="Grave sua voz, adicione fotos, mande uma cartinha." color={color}/></div></>;
+  return <><div className="section-head no-print"><div><span className="eyebrow">MATERIAL IMPRESSO</span><h1>QR Codes decorados</h1><p>Para plaquinhas, cartazes e distribuição nas ruas.</p></div><button className="btn" onClick={()=>window.print()}><Printer size={16}/> Imprimir A4</button></div><div className="form-card no-print"><div className="row filters"><select value={person} onChange={e=>setPerson(e.target.value)}><option value="">QR geral: lista de encontristas</option>{info.recipients.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select><select value={color} onChange={e=>setColor(e.target.value)}><option value="rose">Rosa</option><option value="blue">Azul</option><option value="mint">Verde</option><option value="orange">Laranja</option></select></div><p className="muted small">Os QR Codes são links para o formulário, não para o Pix bancário nem para o mural secreto.</p></div><div className="qr-print-grid"><DecorQr value={url} title={selected?`Para ${selected.name}`:'Cartinhas do XX EJC'} subtitle="Suas palavras. Sua voz. Um encontro especial." color={color} logoUrl={info.config.logo_url} photoUrl={selected?.photo_url}/><DecorQr value={url} title={selected?`Um carinho para ${selected.name}`:'Uma mensagem de coração'} subtitle="Grave sua voz, adicione fotos, mande uma cartinha." color={color} logoUrl={info.config.logo_url} photoUrl={selected?.photo_url}/></div></>;
 }
 function Demo({reload}){const [message,setMessage]=useState(''),[busy,setBusy]=useState(false);async function run(action){if(action==='clear'&&!confirm('Apagar todos os pedidos de DEMONSTRAÇÃO?'))return;setBusy(true);try{const data=await api(`/api/admin/demo/${action}`,{method:action==='seed'?'POST':'DELETE',data:action==='seed'?{}:undefined});setMessage(`Concluído: ${data.inserted??data.deleted} demonstrações.`);await reload();}catch(e){setMessage(e.message);}finally{setBusy(false);}}
   return <><div className="section-head"><div><span className="eyebrow">AMBIENTE DE TESTE</span><h1>Demonstração</h1><p>Dados fictícios para explorar os estados do sistema. Nunca são cobrados por Pix.</p></div></div><section className="form-card"><h2>Exemplos de cartinhas e moderação</h2><div className="inline-actions"><button className="btn" disabled={busy} onClick={()=>run('seed')}><Sparkles size={16}/> Criar exemplos</button><button className="btn danger-btn" disabled={busy} onClick={()=>run('clear')}><Trash2 size={16}/> Apagar exemplos</button></div>{message&&<div className="notice">{message}</div>}</section></>;

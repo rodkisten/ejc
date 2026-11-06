@@ -1,72 +1,107 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "$0")/.."
 
 info() { printf '\n\033[1;35m▶ %s\033[0m\n' "$*"; }
 fail() { printf '\nERRO: %s\n' "$*" >&2; exit 1; }
-command -v node >/dev/null || fail "Instale Node.js 20 ou superior."
+trap 'code=$?; if ((code)); then printf "\nDeploy interrompido (código %s).\n" "$code" >&2; fi' EXIT
+
+DB_NAME=ejc-mini-mercado
+BUCKET=ejc-mini-mercado-media
+CONFIG=.wrangler.deploy.jsonc
+
+command -v node >/dev/null || fail "Instale Node.js 22+."
 command -v npm >/dev/null || fail "Instale npm."
-node -e 'process.exit(Number(process.versions.node.split(".")[0])>=22?0:1)' || fail "Instale Node.js 22 ou superior."
 command -v openssl >/dev/null || fail "Instale openssl."
-info "Instalando Wrangler (sem GitHub Actions)"
-npm install
-info "Conferindo autenticação Cloudflare"
-if ! npx wrangler whoami; then
-  printf '\nFaça login no Cloudflare. No Termius sem navegador, prefira CLOUDFLARE_API_TOKEN.\n'
-  npx wrangler login
+node -e 'process.exit(Number(process.versions.node.split(".")[0])>=22?0:1)' || fail "Instale Node.js 22+."
+
+info "Instalando dependências"
+npm install --no-audit --no-fund
+wrangler() { npx --no-install wrangler "$@"; }
+node -e 'const x=require("./node_modules/wrangler/package.json").version.split(".").map(Number);if(x[0]!==4||x[1]<119)process.exit(1)' ||
+  fail "É necessário Wrangler 4.119 ou superior, para login remoto pelo Safari."
+
+info "Verificando autenticação Cloudflare"
+if ! wrangler whoami >/dev/null 2>&1; then
+  if [[ -v CLOUDFLARE_API_TOKEN ]]; then
+    fail "Token Cloudflare presente mas sem permissão ou inválido."
+  fi
+  info "No Safari, abra https://dash.cloudflare.com/oauth2/device e digite o código exibido."
+  wrangler login --device --browser=false
+  wrangler whoami >/dev/null || fail "Não foi possível autenticar."
 fi
 
-info "Procurando banco D1"
-DB_JSON="$(npx wrangler d1 list --json)"
-read_db_id() {
-  DB_JSON="$DB_JSON" node - <<'NODE'
-const v=JSON.parse(process.env.DB_JSON);
-const rows=Array.isArray(v)?v:(v.result||v.databases||[]);
-const match=rows.find(x=>x.name==='ejc-mini-mercado');
-process.stdout.write(match?.uuid||match?.id||match?.database_id||'');
-NODE
+info "Procurando banco de dados D1"
+DB_LIST="$(wrangler d1 list --json)" || fail "Falha ao listar D1."
+db_id() {
+  printf '%s' "$DB_LIST" | node -e '
+    let data="";process.stdin.on("data",x=>data+=x).on("end",()=>{
+      const list=JSON.parse(data),rows=Array.isArray(list)?list:(list.result||list.databases||[]);
+      const row=rows.find(x=>x.name==="ejc-mini-mercado");
+      process.stdout.write(row?.uuid||row?.id||row?.database_id||"");
+    });'
 }
-DB_ID="$(read_db_id)"
+DB_ID="$(db_id)" || fail "A resposta do Wrangler para D1 não é JSON válido."
 if [[ -z "$DB_ID" ]]; then
-  info "Criando D1 ejc-mini-mercado"
-  npx wrangler d1 create ejc-mini-mercado
-  DB_JSON="$(npx wrangler d1 list --json)"
-  DB_ID="$(read_db_id)"
+  info "Criando D1 somente na primeira instalação"
+  wrangler d1 create "$DB_NAME" || fail "Falha ao criar D1."
+  DB_LIST="$(wrangler d1 list --json)" || fail "Falha ao consultar D1 após criação."
+  DB_ID="$(db_id)"
 fi
-[[ "$DB_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || fail "Não foi possível identificar UUID do D1 (verifique manualmente o comando 'wrangler d1 list --json')."
-DB_ID="$DB_ID" node - <<'NODE'
-const fs=require('fs');const filename='wrangler.jsonc';
-const config=JSON.parse(fs.readFileSync(filename,'utf8'));
-config.d1_databases[0].database_id=process.env.DB_ID;
-fs.writeFileSync(filename,JSON.stringify(config,null,2)+'\n');
-console.log('D1 vinculado:',process.env.DB_ID);
+[[ "$DB_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || fail "D1 não retornou um UUID válido."
+
+info "Gerando configuração local, ignorada pelo Git"
+DB_ID="$DB_ID" CONFIG="$CONFIG" node <<'NODE'
+const fs=require('node:fs');
+const config=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+const d1=config.d1_databases?.find(item=>item.binding==='DB');
+if(!d1)throw Error('Binding DB ausente no wrangler.jsonc');
+d1.database_id=process.env.DB_ID;
+fs.writeFileSync(process.env.CONFIG,JSON.stringify(config,null,2)+'\n',{mode:0o600});
+console.log('D1 conectado:',d1.database_name);
 NODE
 
-info "Conferindo bucket R2 privado"
-if ! npx wrangler r2 bucket list | grep -q 'ejc-mini-mercado-media'; then
-  npx wrangler r2 bucket create ejc-mini-mercado-media
+info "Verificando armazenamento privado R2"
+if ! wrangler r2 bucket info "$BUCKET" --json >/dev/null 2>&1; then
+  wrangler r2 bucket create "$BUCKET" || fail "R2 indisponível. Verifique ativação e permissões."
+  wrangler r2 bucket info "$BUCKET" --json >/dev/null || fail "R2 ainda indisponível."
 fi
-info "Aplicando migrations D1 remotas"
-npx wrangler d1 migrations apply ejc-mini-mercado --remote
-info "Publicando Worker e frontend no Cloudflare"
-npm run build
-npx wrangler deploy
 
-info "Conferindo segredos do Worker"
-SECRETS="$(npx wrangler secret list 2>/dev/null || true)"
+info "Validando API, testes automatizados e build antes do deploy"
+npm run check || fail "Corrija as falhas dos testes antes de publicar."
+npm run build || fail "Build React falhou."
+[[ -s dist/index.html ]] || fail "Vite não gerou dist/index.html."
+
+info "Aplicando migrações na D1 remota"
+wrangler d1 migrations apply "$DB_NAME" --remote --config "$CONFIG" ||
+  fail "Migração remota falhou; deploy não iniciado."
+
+info "Publicando Worker e arquivos estáticos"
+wrangler deploy --config "$CONFIG" || fail "Falha no deploy; verifique os logs acima."
+
+info "Criando somente os segredos que faltam"
+SECRETS="$(wrangler secret list --config "$CONFIG")" || fail "Falha ao consultar secrets."
 if ! grep -q 'SESSION_SECRET' <<<"$SECRETS"; then
-  info "Criando SESSION_SECRET aleatório de 64 caracteres (nunca será exibido)"
-  openssl rand -hex 32 | npx wrangler secret put SESSION_SECRET
+  openssl rand -hex 32 | wrangler secret put SESSION_SECRET --config "$CONFIG" >/dev/null
 fi
 if ! grep -q 'ADMIN_PASSWORD' <<<"$SECRETS"; then
-  info "Escolha uma senha forte para a coordenação (mínimo 14 caracteres)."
-  read -r -s -p 'Senha de administração: ' ADMIN_PASSWORD
-  printf '\n'
-  [[ ${#ADMIN_PASSWORD} -ge 14 ]] || fail "Senha precisa ter ao menos 14 caracteres."
-  printf '%s' "$ADMIN_PASSWORD" | npx wrangler secret put ADMIN_PASSWORD
+  if [[ ! -v ADMIN_PASSWORD ]]; then
+    [[ -t 0 ]] || fail "Defina ADMIN_PASSWORD em um terminal interativo."
+    printf 'Senha de administração (14+ caracteres): '
+    read -r -s ADMIN_PASSWORD
+    printf '\n'
+  fi
+  [[ $(printf '%s' "$ADMIN_PASSWORD" | wc -c) -ge 14 ]] || fail "Senha muito curta."
+  printf '%s' "$ADMIN_PASSWORD" | wrangler secret put ADMIN_PASSWORD --config "$CONFIG" >/dev/null
   unset ADMIN_PASSWORD
 fi
 
-info "Concluído. Use a URL informada pelo Wrangler para abrir /admin."
-printf 'Antes de divulgar: configure Pix, valor da cartinha, encontristas, teste um pagamento real, e confira áudio e foto.\n'
-printf 'Subdomínio personalizado ejc.migos.club: configure no painel Cloudflare > Workers & Pages > Domínios personalizados.\n'
+info "Verificação final"
+if [[ -v EJC_PUBLIC_URL ]] && [[ -n "$EJC_PUBLIC_URL" ]]; then
+  command -v curl >/dev/null || fail "Instale curl para testar a URL publicada."
+  curl --fail --silent --show-error --max-time 20 "$EJC_PUBLIC_URL/api/health" ||
+    fail "O health check remoto de D1/R2 falhou."
+else
+  printf 'Para validar o site: curl https://DOMINIO_DO_WORKER/api/health\n'
+fi
+info "Concluído. Teste Pix real e o Safari antes de divulgar os QR Codes."

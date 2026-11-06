@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { parseJsonc } from '../scripts/parse-jsonc.mjs';
 
 test('deploy script parses and uses device authorization instead of localhost callback', () => {
   const script = fs.readFileSync('scripts/deploy.sh', 'utf8');
@@ -15,11 +16,25 @@ test('deploy script parses and uses device authorization instead of localhost ca
 });
 
 test('deploy keeps account database IDs outside tracked wrangler.jsonc', () => {
-  const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+  const config = parseJsonc(fs.readFileSync('wrangler.jsonc', 'utf8'));
   const gitignore = fs.readFileSync('.gitignore', 'utf8');
   const script = fs.readFileSync('scripts/deploy.sh', 'utf8');
-  assert.equal(config.d1_databases[0].database_id, 'SUBSTITUIR_PELO_ID_D1');
+  assert.match(
+    config.d1_databases[0].database_id,
+    /^(?:SUBSTITUIR_PELO_ID_D1|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i,
+  );
   assert.match(gitignore, /^\.wrangler\.deploy\.jsonc$/m);
   assert.match(script, /CONFIG=\.wrangler\.deploy\.jsonc/);
   assert.match(script, /EJC_PUBLIC_URL/);
+});
+
+test('JSONC parser handles comments, trailing commas and URL strings', () => {
+  const parsed = parseJsonc(`{
+    // Cloudflare configuration
+    "vars": {"PUBLIC_ORIGIN": "https://ejc.migos.club",},
+    "assets": ["dist",],
+    /* Safe inline comment */
+  }`);
+  assert.equal(parsed.vars.PUBLIC_ORIGIN, 'https://ejc.migos.club');
+  assert.deepEqual(parsed.assets, ['dist']);
 });

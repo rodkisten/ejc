@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "vite": "^7.1.12",
-    "wrangler": "^4.119.0",
+    "wrangler": "^4.0.0",
     "prettier": "^3.6.2"
   }
 }

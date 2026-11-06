@@ -18,8 +18,8 @@ node -e 'process.exit(Number(process.versions.node.split(".")[0])>=22?0:1)' || f
 info "Instalando dependências"
 npm install --no-audit --no-fund
 wrangler() { npx --no-install wrangler "$@"; }
-node -e 'const x=require("./node_modules/wrangler/package.json").version.split(".").map(Number);if(x[0]!==4||x[1]<119)process.exit(1)' ||
-  fail "É necessário Wrangler 4.119 ou superior, para login remoto pelo Safari."
+# O package-lock existente mantém Wrangler 4.86 para build/deploy.
+# O login remoto por código é executado com Wrangler mais recente, sob demanda.
 
 info "Verificando autenticação Cloudflare"
 if ! wrangler whoami >/dev/null 2>&1; then
@@ -27,7 +27,7 @@ if ! wrangler whoami >/dev/null 2>&1; then
     fail "Token Cloudflare presente mas sem permissão ou inválido."
   fi
   info "No Safari, abra https://dash.cloudflare.com/oauth2/device e digite o código exibido."
-  wrangler login --device --browser=false
+  npx --yes wrangler@latest login --device --browser=false
   wrangler whoami >/dev/null || fail "Não foi possível autenticar."
 fi
 

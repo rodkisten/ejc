@@ -120,7 +120,7 @@ Consulte [o plano de confirmação automática do Pix](docs/pix-automatico.md) p
 
 Use Node.js 22+ e `bash scripts/deploy.sh` na raiz do projeto. O script agora:
 
-1. Instala dependências, incluindo Wrangler 4.119+.
+1. Instala dependências, incluindo o Wrangler registrado no package-lock (e, apenas para login remoto, Wrangler atualizado sob demanda).
 2. Se não houver autenticação Cloudflare, exibe **URL fixa + código curto** via `wrangler login --device --browser=false`. Abra `https://dash.cloudflare.com/oauth2/device` no Safari e digite o código.
 3. Localiza ou cria o D1, sem alterar `wrangler.jsonc`: cria `.wrangler.deploy.jsonc` na raiz, ignorado pelo Git, contendo o UUID da **sua conta**.
 4. Verifica o bucket R2 e o cria, se necessário.

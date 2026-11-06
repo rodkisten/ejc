@@ -126,7 +126,7 @@ function bearer(req) {
 }
 async function buyer(req,env) {
   const hash=await digest(bearer(req));
-  const row=await env.DB.prepare('SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE token_hash=?').bind(hash).first();
+  const row=await env.DB.prepare('SELECT o.*,r.name AS recipient_name,r.slug AS recipient_slug FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE token_hash=?').bind(hash).first();
   if (!row) bad('Pedido não encontrado.',404);
   return row;
 }
@@ -151,10 +151,13 @@ async function signedMedia(req,env,id,url) {
   return fetchMedia(req,env,media);
 }
 async function orderInfo(env,o) {
+  const config=await settings(env);
   const rows=(await env.DB.prepare("SELECT id,kind,filename,content_type,bytes,created_at FROM media WHERE order_id=? AND status='ready' ORDER BY created_at").bind(o.id).all()).results;
   const visible=activeOrder(o)?await Promise.all(rows.map(async m=>({...m,url:await mediaUrl(env,m.id,o.id)}))):[];
   return {id:o.id,recipient_name:o.recipient_name,recipient_slug:o.recipient_slug,sender_name:o.sender_name,status:o.status,
-    amount_cents:o.total_cents,pix_code:o.pix_payload,txid:o.txid,rich_html:activeOrder(o)?o.rich_html:'',
+    amount_cents:o.total_cents,pix_code:o.pix_payload,txid:o.txid,
+    pix_receiver:config.pix_name||'',pix_city:config.pix_city||'',
+    rich_html:activeOrder(o)?o.rich_html:'',
     public_message:!!o.public_message,moderation:o.moderation,moderation_note:o.moderation_note,
     payment_claimed_at:o.payment_claimed_at,created_at:o.created_at,media:visible};
 }
@@ -254,13 +257,69 @@ async function mediaWrite(req,env,o,params,path) {
   }
   bad('Ação de arquivo inválida.',404);
 }
+
+const IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/webp']);
+function recipientPhotoUrl(r) {
+  return r.photo_key && r.photo_consent
+    ? `/api/recipients/${r.id}/photo?v=${encodeURIComponent(r.photo_key.split('/').pop())}`
+    : null;
+}
+async function receiveSafeImage(request, maxBytes) {
+  const type = (request.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+  if (!IMAGE_MIME.has(type)) bad('Envie uma imagem PNG, JPEG ou WebP.', 415);
+  const declared = Number(request.headers.get('Content-Length') || 0);
+  if (declared > maxBytes) bad('Imagem muito grande.', 413);
+  if (!request.body) bad('Arquivo de imagem ausente.');
+  const reader = request.body.getReader(), chunks = [];
+  let bytesLength = 0;
+  for (;;) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    bytesLength += value.byteLength;
+    if (bytesLength > maxBytes) { await reader.cancel(); bad('Imagem excede o tamanho permitido.', 413); }
+    chunks.push(value);
+  }
+  if (!bytesLength) bad('Imagem vazia.');
+  const bytes = new Uint8Array(bytesLength);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  const png = bytes.length >= 8 && [137,80,78,71,13,10,26,10].every((b,i)=>bytes[i]===b);
+  const jpeg = bytes.length >= 3 && bytes[0]===255 && bytes[1]===216 && bytes[2]===255;
+  const webp = bytes.length >= 12 && String.fromCharCode(...bytes.slice(0,4))==='RIFF' &&
+    String.fromCharCode(...bytes.slice(8,12))==='WEBP';
+  if (!(type==='image/png'&&png || type==='image/jpeg'&&jpeg || type==='image/webp'&&webp))
+    bad('A assinatura do arquivo não corresponde ao tipo de imagem.',415);
+  return {bytes,type};
+}
+function serveBrandImage(blob) {
+  const headers = new Headers(BASE_HEADERS);
+  headers.set('Content-Type',blob.httpMetadata?.contentType||'image/png');
+  headers.set('Cache-Control','public, max-age=300');
+  return new Response(blob.body,{headers});
+}
+
 async function publicRoute(req,env,path) {
+  if(path==='/api/branding/logo' && req.method==='GET') {
+    const logo=await env.MEDIA.get('branding/ejc-market-logo');
+    if(!logo)bad('Logo ainda não cadastrada.',404);
+    return serveBrandImage(logo);
+  }
+  const photo=path.match(/^\\/api\\/recipients\\/([a-f0-9-]{36})\\/photo$/);
+  if(photo && req.method==='GET') {
+    const r=await env.DB.prepare('SELECT photo_key,photo_consent FROM recipients WHERE id=? AND active=1').bind(photo[1]).first();
+    if(!r || !r.photo_consent || !r.photo_key)bad('Foto não disponível.',404);
+    const blob=await env.MEDIA.get(r.photo_key);
+    if(!blob)bad('Foto não disponível.',404);
+    return serveBrandImage(blob);
+  }
   const config=await settings(env);
   if (path==='/api/public' && req.method==='GET') {
-    const recipients=(await env.DB.prepare('SELECT id,name,slug FROM recipients WHERE active=1 ORDER BY name COLLATE NOCASE').all()).results;
+    const recipients=(await env.DB.prepare('SELECT id,name,slug,photo_key,photo_consent FROM recipients WHERE active=1 ORDER BY name COLLATE NOCASE').all()).results.map(r=>({id:r.id,name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r)}));
+    const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({recipients,config:{deadline:config.deadline,release_at:config.release_at,
       open:config.open==='true',store_title:config.store_title,store_subtitle:config.store_subtitle,
       amount_cents:Number(config.message_price_cents||1000),analytics_id:config.analytics_id||'',
+      logo_url:logo?`/api/branding/logo?v=${logo.uploaded?.getTime()||0}`:null,
       payments_ready:!!(config.pix_key && config.pix_name && config.pix_city)}});
   }
   if (path==='/api/publicas' && req.method==='GET') {
@@ -343,15 +402,43 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
   await requireAdmin(req,env);
   if(path==='/api/admin/me')return result({authenticated:true});
+  if(path==='/api/admin/branding/logo' && req.method==='POST') {
+    const image=await receiveSafeImage(req,2*1024*1024);
+    await env.MEDIA.put('branding/ejc-market-logo',image.bytes,{httpMetadata:{contentType:image.type}});
+    return result({ok:true,logo_url:`/api/branding/logo?v=${Date.now()}`});
+  }
+  if(path==='/api/admin/branding/logo' && req.method==='DELETE') {
+    await env.MEDIA.delete('branding/ejc-market-logo');
+    return result({ok:true});
+  }
+  const photoUpload=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/photo$/);
+  if(photoUpload && (req.method==='POST'||req.method==='DELETE')) {
+    const r=await env.DB.prepare('SELECT id,photo_key FROM recipients WHERE id=?').bind(photoUpload[1]).first();
+    if(!r)bad('Encontrista não encontrado.',404);
+    if(req.method==='DELETE') {
+      await env.DB.prepare('UPDATE recipients SET photo_key=NULL,photo_consent=0 WHERE id=?').bind(r.id).run();
+      if(r.photo_key)await env.MEDIA.delete(r.photo_key);
+      return result({ok:true});
+    }
+    if(req.headers.get('X-Photo-Consent')!=='confirmed')bad('Confirme a autorização para divulgação da foto.',403);
+    const image=await receiveSafeImage(req,5*1024*1024);
+    const key=`recipients/${r.id}/${newId()}`;
+    await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:image.type}});
+    await env.DB.prepare('UPDATE recipients SET photo_key=?,photo_consent=1 WHERE id=?').bind(key,r.id).run();
+    if(r.photo_key)await env.MEDIA.delete(r.photo_key);
+    return result({ok:true,photo_url:`/api/recipients/${r.id}/photo?v=${key.split('/').pop()}`});
+  }
   if(path==='/api/admin/bootstrap'&&req.method==='GET'){
     const [config,recipients,orders]=await Promise.all([
       settings(env),
-      env.DB.prepare('SELECT id,name,slug,active,created_at FROM recipients ORDER BY name COLLATE NOCASE').all(),
+      env.DB.prepare('SELECT id,name,slug,active,created_at,photo_key,photo_consent FROM recipients ORDER BY name COLLATE NOCASE').all(),
       env.DB.prepare(`SELECT o.id,o.sender_name,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,o.moderation,o.moderation_note,o.public_message,o.release_override,o.demo,
         r.name AS recipient_name,r.slug AS recipient_slug,(SELECT COUNT(*) FROM media m WHERE m.order_id=o.id AND m.status='ready') AS files
         FROM orders o JOIN recipients r ON o.recipient_id=r.id ORDER BY o.created_at DESC LIMIT 500`).all()
     ]);
-    return result({config,recipients:recipients.results,orders:orders.results});
+    const logo=await env.MEDIA.head('branding/ejc-market-logo');
+    return result({config:{...config,logo_url:logo?`/api/branding/logo?v=${logo.uploaded?.getTime()||0}`:null},
+      recipients:recipients.results.map(r=>({...r,photo_url:recipientPhotoUrl(r)})),orders:orders.results});
   }
   if(path==='/api/admin/settings'&&req.method==='PUT'){
     const data=await jsonBody(req),keys=['pix_key','pix_name','pix_city','deadline','release_at','open','store_title','store_subtitle','message_price_cents','analytics_id'];

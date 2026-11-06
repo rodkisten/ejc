@@ -37,8 +37,14 @@ function Config({info,reload}){
 }
 function DecorQr({value,title,subtitle,color='rose'}){
   const el=useRef(null);
-  const saveSvg=()=>{const svg=el.current?.querySelector('svg');if(!svg)return;const copySvg=svg.cloneNode(true);copySvg.setAttribute('xmlns','http://www.w3.org/2000/svg');download(new Blob([new XMLSerializer().serializeToString(copySvg)],{type:'image/svg+xml'}),`qr-${title.toLowerCase().replace(/[^a-z0-9]+/g,'-')}.svg`,'image/svg+xml');};
-  return <div className={`decorated-qr ${color}`} ref={el}><div className="qr-kicker">✳ XX EJC SIMONÉSIA ✳</div><h3>{title}</h3><p>{subtitle}</p><QrCode value={value} size={212}/><div className="qr-under">ESCANEIE &amp; ENVIE UM CARINHO ♡</div><div className="qr-tools no-print"><button className="btn ghost" onClick={saveSvg}><Download size={15}/> QR SVG</button></div></div>;
+  const savePng = () => {
+    const canvas = el.current?.querySelector('canvas');
+    if (!canvas) return;
+    canvas.toBlob((blob) => {
+      if (blob) download(blob, `qr-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`, 'image/png');
+    }, 'image/png');
+  };
+  return <div className={`decorated-qr ${color}`} ref={el}><div className="qr-kicker">✳ XX EJC SIMONÉSIA ✳</div><h3>{title}</h3><p>{subtitle}</p><QrCode value={value} size={212} variant="decorated"/><div className="qr-under">ESCANEIE &amp; ENVIE UM CARINHO ♡</div><div className="qr-tools no-print"><button className="btn ghost" onClick={savePng}><Download size={15}/> Baixar QR PNG</button></div></div>;
 }
 function QrPrint({info}){const [person,setPerson]=useState(''),[color,setColor]=useState('rose');const selected=info.recipients.find(r=>r.id===person),url=selected?`${location.origin}/enviar/${selected.slug}`:location.origin;
   return <><div className="section-head no-print"><div><span className="eyebrow">MATERIAL IMPRESSO</span><h1>QR Codes decorados</h1><p>Para plaquinhas, cartazes e distribuição nas ruas.</p></div><button className="btn" onClick={()=>window.print()}><Printer size={16}/> Imprimir A4</button></div><div className="form-card no-print"><div className="row filters"><select value={person} onChange={e=>setPerson(e.target.value)}><option value="">QR geral: lista de encontristas</option>{info.recipients.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select><select value={color} onChange={e=>setColor(e.target.value)}><option value="rose">Rosa</option><option value="blue">Azul</option><option value="mint">Verde</option><option value="orange">Laranja</option></select></div><p className="muted small">Os QR Codes são links para o formulário, não para o Pix bancário nem para o mural secreto.</p></div><div className="qr-print-grid"><DecorQr value={url} title={selected?`Para ${selected.name}`:'Cartinhas do XX EJC'} subtitle="Suas palavras. Sua voz. Um encontro especial." color={color}/><DecorQr value={url} title={selected?`Um carinho para ${selected.name}`:'Uma mensagem de coração'} subtitle="Grave sua voz, adicione fotos, mande uma cartinha." color={color}/></div></>;

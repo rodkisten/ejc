@@ -82,3 +82,9 @@ scripts/deploy.sh            Build e deploy sem GitHub Actions
 tests/                       Testes de fluxo, privacidade e Pix
 wrangler.jsonc               Worker e SPA assets em dist/
 ```
+
+## Formatação e QR Codes
+
+Rode `npm install`, `npm run format` e `npm run format:check` para padronizar os arquivos com Prettier 3. Os arquivos SQL ficam excluídos até a instalação de um plugin de formatação SQL.
+
+A interface gera QR Codes com `react-qrcode-logo` (Pix de alto contraste, cartazes decorados e identificadores). A opção de download dos QR Codes do painel agora exporta PNG a partir do canvas.

@@ -13,7 +13,8 @@
     "db:remote": "wrangler d1 migrations apply ejc-mini-mercado --remote",
     "check": "node --check src/worker.js && node --check src/pix.js && node --test tests/*.test.js",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "deploy:doctor": "node --test tests/deploy.test.js"
   },
   "dependencies": {
     "dompurify": "^3.2.7",

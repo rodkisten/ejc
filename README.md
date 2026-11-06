@@ -115,3 +115,26 @@ npm run check
 As etapas dependem de login Cloudflare e de npm disponível no ambiente do operador. Nenhuma dessas operações publica a aplicação automaticamente.
 
 Consulte [o plano de confirmação automática do Pix](docs/pix-automatico.md) para ligar a API de um banco recebedor ou um PSP. A confirmação **continua manual** nesta branch.
+
+## Deploy corrigido para Codespaces, Termius e Safari (06/11)
+
+Use Node.js 22+ e `bash scripts/deploy.sh` na raiz do projeto. O script agora:
+
+1. Instala dependências, incluindo Wrangler 4.119+.
+2. Se não houver autenticação Cloudflare, exibe **URL fixa + código curto** via `wrangler login --device --browser=false`. Abra `https://dash.cloudflare.com/oauth2/device` no Safari e digite o código.
+3. Localiza ou cria o D1, sem alterar `wrangler.jsonc`: cria `.wrangler.deploy.jsonc` na raiz, ignorado pelo Git, contendo o UUID da **sua conta**.
+4. Verifica o bucket R2 e o cria, se necessário.
+5. Executa `npm run check` e `npm run build`. Não publica se algum falhar.
+6. Aplica migrações remotas (incluindo fotos) e publica Worker + React.
+7. Preserva segredos existentes e solicita senha administrativa no terminal somente se estiver faltando.
+8. Opcionalmente valida `GET /api/health` se passar `EJC_PUBLIC_URL=https://SEU_DOMINIO` no ambiente.
+
+**Sem acesso à internet ou com limites da conta Cloudflare:** não há como completar o deploy remotamente. O projeto já pode ficar no GitHub, mas a implantação só se conclui quando Wrangler conectar à conta e todos os passos forem aprovados.
+
+Para diagnosticar o script sem Cloudflare, execute `npm run deploy:doctor`.
+
+## Pagamento Mercado Pago: conta pessoa física
+
+A conta Mercado Pago PF pode ser usada como ponto de partida para configurar uma aplicação de pagamentos, sujeito à liberação de credenciais e produtos para a conta. A API Pix Checkout Transparente exige criar **uma cobrança por pedido**, vinculada a uma referência externa e a dados mínimos do comprador (incluindo e-mail), e configurar webhooks assinados para acompanhar `approved`.
+
+O **QR Pix estático configurado hoje** não ganha confirmação automática só por ser uma chave Mercado Pago. Até implantar e homologar a API, a coordenação confere e aprova manualmente cada transferência. Não inclua credenciais do Mercado Pago em GitHub nem no navegador; use Wrangler Secrets.

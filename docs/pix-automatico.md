@@ -36,3 +36,15 @@ Exemplo Woovi/OpenPix: criar cobrança via API com `correlationID` igual ao pedi
 - https://developers.woovi.com/
 - https://developers.woovi.com/docs/boleto/boleto-webhook
 - https://docs.asaas.com/
+
+## Mercado Pago PF: integração futura
+
+O recebimento atual já é pela conta PF do Mercado Pago, portanto não exige migração para PJ para avaliar a API. Entretanto, habilitação de credenciais de produção e do fluxo Checkout Transparente Pix deve ser conferida na conta.
+
+Documentação: https://www.mercadopago.com.br/developers/pt/docs/checkout-api-orders/payment-integration/websites/pix
+
+O produto **Checkout API Orders** exige gerar um pedido no Mercado Pago com `external_reference` e `X-Idempotency-Key`, `transactions.payments[0].payment_method.id = pix`, `type = bank_transfer`, `processing_mode = automatic`, e `payer.email`. Isso significa que será preciso solicitar o e-mail do pagador no checkout, no momento de criar a cobrança, com aviso claro de privacidade.
+
+Ao receber um webhook de pagamento, validar a assinatura `x-signature`, consultar o recurso no Mercado Pago com `Access Token` **no servidor**, comparar `external_reference`, status aprovado e valor exato, e atualizar a ordem no D1 em operação idempotente. O botão "Já paguei" continua sem poder liberar uma homenagem.
+
+Não está implementado nesta entrega e não foi configurado nenhum token de produção.

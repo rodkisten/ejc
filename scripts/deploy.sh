@@ -51,9 +51,10 @@ fi
 [[ "$DB_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || fail "D1 não retornou um UUID válido."
 
 info "Gerando configuração local, ignorada pelo Git"
-DB_ID="$DB_ID" CONFIG="$CONFIG" node <<'NODE'
-const fs=require('node:fs');
-const config=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+DB_ID="$DB_ID" CONFIG="$CONFIG" node --input-type=module <<'NODE'
+import fs from 'node:fs';
+import { parseJsonc } from './scripts/parse-jsonc.mjs';
+const config=parseJsonc(fs.readFileSync('wrangler.jsonc','utf8'));
 const d1=config.d1_databases?.find(item=>item.binding==='DB');
 if(!d1)throw Error('Binding DB ausente no wrangler.jsonc');
 d1.database_id=process.env.DB_ID;

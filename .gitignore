@@ -8,3 +8,6 @@ node_modules/
 *.log
 dist/
 .vite/
+
+# Generated per Cloudflare account; never commit the D1 database ID.
+.wrangler.deploy.jsonc

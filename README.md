@@ -1,5 +1,7 @@
 # 💌 Mini Mercado Digital · XX EJC Simonésia
 
+> ejcsimonesia2026@
+
 MVP independente, pensado para mobile e publicado em **um único Cloudflare Worker** com D1 e R2 privado. **Não depende de GitHub Actions nem de um provedor Pix com webhook.**
 
 > **Status:** código pronto para configuração e testes. Não foi publicado nem testado em conta Cloudflare real neste ambiente. Não use em um evento real sem executar o checklist abaixo.

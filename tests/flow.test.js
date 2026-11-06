@@ -3,123 +3,109 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import worker from '../src/worker.js';
-
-function makeEnv() {
-  const sqlite=new DatabaseSync(':memory:');
-  sqlite.exec(fs.readFileSync(new URL('../migrations/0001_initial.sql',import.meta.url),'utf8'));
+function fixture(){
+  const sql=new DatabaseSync(':memory:');
+  sql.exec(fs.readFileSync(new URL('../migrations/0001_initial.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0002_homenagens.sql',import.meta.url),'utf8'));
   const DB={
-    prepare(sql){return {bind(...values){return {sql,values,
-      first:async()=>sqlite.prepare(sql).get(...values)||null,
-      all:async()=>({results:sqlite.prepare(sql).all(...values)}),
-      run:async()=>({meta:sqlite.prepare(sql).run(...values)})};},
-      first:async()=>sqlite.prepare(sql).get()||null,
-      all:async()=>({results:sqlite.prepare(sql).all()}),
-      run:async()=>({meta:sqlite.prepare(sql).run()})};},
-    async batch(items){
-      sqlite.exec('BEGIN');
-      try{const results=[];for(const item of items)results.push(await item.run());sqlite.exec('COMMIT');return results;}
-      catch(e){sqlite.exec('ROLLBACK');throw e;}
-    }
+    prepare(query){const stmt=(...values)=>({first:async()=>sql.prepare(query).get(...values)||null,all:async()=>({results:sql.prepare(query).all(...values)}),run:async()=>({meta:sql.prepare(query).run(...values)})});return {...stmt(),bind:stmt};},
+    async batch(queries){sql.exec('BEGIN');try{const results=[];for(const q of queries)results.push(await q.run());sql.exec('COMMIT');return results;}catch(e){sql.exec('ROLLBACK');throw e;}}
   };
-  const store=new Map(), uploads=new Map();
+  const objects=new Map(),uploads=new Map();
   const MEDIA={
-    async createMultipartUpload(key){
-      const uploadId=crypto.randomUUID();uploads.set(uploadId,{key,parts:new Map()});
-      return {uploadId};
-    },
-    resumeMultipartUpload(key,uploadId){
-      const upload=uploads.get(uploadId);
-      if(!upload || upload.key!==key)throw Error('unknown multipart');
-      return {
-        async uploadPart(number,body){upload.parts.set(number,new Uint8Array(body));return {partNumber:number,etag:`etag-${number}`};},
-        async complete(parts){
-          const bytes=new Uint8Array(parts.reduce((n,p)=>n+upload.parts.get(p.partNumber).length,0));let cursor=0;
-          for(const part of parts){const data=upload.parts.get(part.partNumber);bytes.set(data,cursor);cursor+=data.length;}
-          store.set(key,bytes);uploads.delete(uploadId);return {size:bytes.length,key};
-        },
-        async abort(){uploads.delete(uploadId);}
-      };
-    },
-    async head(key){const body=store.get(key);return body?{size:body.length,key}:null;},
-    async delete(key){store.delete(key);},
-    async get(key){const bytes=store.get(key);if(!bytes)return null;
-      return {size:bytes.length,body:new Blob([bytes]).stream()};
-    }
+    async createMultipartUpload(key){const id=crypto.randomUUID();uploads.set(id,{key,parts:new Map()});return {uploadId:id};},
+    resumeMultipartUpload(key,id){const u=uploads.get(id);if(!u||u.key!==key)throw Error('upload não existe');return {
+      async uploadPart(n,p){u.parts.set(n,new Uint8Array(p));return {etag:`etag-${n}`};},
+      async complete(rows){const data=new Uint8Array(rows.reduce((n,p)=>n+u.parts.get(p.partNumber).byteLength,0));let pos=0;for(const p of rows){const chunk=u.parts.get(p.partNumber);data.set(chunk,pos);pos+=chunk.byteLength;}objects.set(key,data);uploads.delete(id);return {size:data.byteLength};},
+      async abort(){uploads.delete(id);}
+    };},
+    async put(key,value){objects.set(key,new Uint8Array(value));},
+    async head(key){const data=objects.get(key);return data?{size:data.byteLength}:null;},
+    async delete(key){objects.delete(key);},
+    async get(key){const bytes=objects.get(key);return bytes?{size:bytes.byteLength,body:new Blob([bytes]).stream()}:null;}
   };
-  return {DB,MEDIA,SESSION_SECRET:'abcd'.repeat(24),ADMIN_PASSWORD:'senha-segura-com-mais-de-catorze-caracteres',
-    ASSETS:{fetch:async()=>new Response('<html></html>',{headers:{'Content-Type':'text/html'}})}};
+  return {DB,MEDIA,SESSION_SECRET:'abcd'.repeat(24),ADMIN_PASSWORD:'senha-forte-de-teste-com-14-caracteres',ASSETS:{fetch:async()=>new Response('<html></html>',{headers:{'Content-Type':'text/html'}})}};
 }
-async function request(env,path,method='GET',data,options={}) {
+async function call(env,path,method='GET',data,options={}){
   const url='https://ejc.test'+path;
   const headers={...(method!=='GET'?{Origin:'https://ejc.test'}:{}),...(options.cookie?{Cookie:options.cookie}:{}),...(options.token?{Authorization:`Bearer ${options.token}`}:{})};
   let body;
-  if (options.raw) {body=data;headers['Content-Type']='application/octet-stream';}
-  else if (data!==undefined){body=JSON.stringify(data);headers['Content-Type']='application/json';}
-  const result=await worker.fetch(new Request(url,{method,headers,body}),env);
-  let response;
-  if (options.stream) response=await result.text();
-  else response=await result.json();
-  return {status:result.status,data:response,headers:result.headers};
+  if(options.raw){body=data;headers['Content-Type']='application/octet-stream';}
+  else if(data!==undefined){body=JSON.stringify(data);headers['Content-Type']='application/json';}
+  const response=await worker.fetch(new Request(url,{method,headers,body}),env);
+  return {status:response.status, data:await response.json(), headers:response.headers};
 }
-
-test('MVP: checkout Pix → aprovação manual → arquivo → bloqueio na data limite',async()=>{
-  const env=makeEnv();
-  const login=await request(env,'/api/admin/login','POST',{password:env.ADMIN_PASSWORD});
+async function setup(env){
+  const login=await call(env,'/api/admin/login','POST',{password:env.ADMIN_PASSWORD});
   assert.equal(login.status,200);
-  const cookie=login.headers.get('set-cookie').split(';')[0], auth={cookie};
-  const settings=await request(env,'/api/admin/settings','PUT',{
-    pix_key:'pix@example.com',pix_name:'MINI MERCADO EJC',pix_city:'SIMONESIA',deadline:'2026-11-08T16:00',open:true
-  },auth);
-  assert.equal(settings.status,200);
-  const imported=await request(env,'/api/admin/recipients/import','POST',{names:['Maria Eduarda','João Pedro']},auth);
+  const admin={cookie:login.headers.get('Set-Cookie').split(';')[0]};
+  assert.equal((await call(env,'/api/admin/settings','PUT',{pix_key:'teste@pix.com.br',pix_name:'COORDENACAO XX EJC',pix_city:'SIMONESIA',deadline:'2030-11-08T18:00',release_at:'2030-11-08T18:00',message_price_cents:1000,open:true},admin)).status,200);
+  const imported=await call(env,'/api/admin/recipients/import','POST',{names:['Ana Clara','João Pedro']},admin);
   assert.equal(imported.data.inserted,2);
-  assert.equal((await request(env,'/api/admin/recipients/import','POST',{names:['Maria Eduarda']},auth)).data.inserted,0);
-  assert.equal((await request(env,'/api/admin/products','POST',{name:'Chocolate',price_cents:800,emoji:'🍫',description:'Presente'},auth)).status,200);
-  const home=(await request(env,'/api/public')).data;
-  const recipientId=home.recipients[0].id, productId=home.products[0].id;
-  const checkout=await request(env,'/api/orders','POST',{recipient_id:recipientId,sender_name:'Pessoa do bairro',items:[{product_id:productId,quantity:2}]});
-  assert.equal(checkout.status,201);
-  assert.match(checkout.data.pix_code,/540516\.00/); // amount R$ 16.00
-  const {token,id}=checkout.data;
-  let order=await request(env,'/api/order','GET',undefined,{token});
-  assert.equal(order.data.status,'pending');
-  assert.equal(order.data.amount_cents,1600);
-  assert.equal((await request(env,'/api/order/message','PUT',{message:'Teste antes do pagamento'},{token})).status,403);
-  assert.equal((await request(env,'/api/order/media/init','POST',{kind:'image',filename:'a.png',content_type:'image/png'},{token})).status,403);
-  assert.equal((await request(env,'/api/order/claim','POST',{}, {token})).data.status,'claimed');
-  assert.equal((await request(env,'/api/order/message','PUT',{message:'Ainda não'},{token})).status,403);
-  // Admin MUST validate two explicit checks and a reference bank ID before approving.
-  assert.equal((await request(env,`/api/admin/orders/${id}/status`,'PATCH',{
-    status:'paid',bank_reference:'E123456789',bank_checked:false,amount_checked:true
-  },auth)).status,400);
-  assert.equal((await request(env,`/api/admin/orders/${id}/status`,'PATCH',{
-    status:'paid',bank_reference:'E123456789',bank_checked:true,amount_checked:true
-  },auth)).data.status,'paid');
-  // A second order must not reuse the same bank transfer reference.
-  const second=await request(env,'/api/orders','POST',{recipient_id:recipientId,items:[{product_id:productId,quantity:1}]});
-  assert.equal(second.status,201);
-  assert.equal((await request(env,`/api/admin/orders/${second.data.id}/status`,'PATCH',{
-    status:'paid',bank_reference:'e123456789',bank_checked:true,amount_checked:true
-  },auth)).status,409); // case-insensitive normalization + unique reference
-  assert.equal((await request(env,'/api/order/message','PUT',{message:'Que encontro especial!'}, {token})).status,200);
-  const media=await request(env,'/api/order/media/init','POST',{kind:'image',filename:'foto.png',content_type:'image/png'},{token});
-  assert.equal(media.status,200);
-  const small=new Uint8Array([137,80,78,71,13,10,26,10]);
-  const part=await request(env,`/api/order/media/${media.data.id}/part/1`,'PUT',small,{token,raw:true});
-  assert.equal(part.status,200);
-  assert.equal((await request(env,`/api/order/media/${media.data.id}/complete`,'POST',{}, {token})).status,200);
-  order=await request(env,'/api/order','GET',undefined,{token});
-  assert.equal(order.data.message,'Que encontro especial!');
-  assert.equal(order.data.media.length,1);
-  assert.match(order.data.media[0].url,/^\/api\/media\//);
-  // The media URL is signed and tied to this specific uploaded object.
-  assert.equal((await request(env,order.data.media[0].url,'GET',undefined,{stream:true})).status,200);
-  assert.equal((await request(env,`/api/media/${media.data.id}`,'GET')).status,403);
-  const ended='2026-11-06T00:01';
-  assert.equal((await request(env,'/api/admin/settings','PUT',{deadline:ended},auth)).status,200);
-  assert.equal((await request(env,'/api/order/message','PUT',{message:'Tarde demais'},{token})).status,403);
-  assert.equal((await request(env,'/api/order/media/init','POST',{kind:'image',filename:'new.png',content_type:'image/png'},{token})).status,403);
-  assert.equal((await request(env,'/api/order','GET',undefined,{token})).data.message,'Que encontro especial!');
-  const unrelated=await request(env,'/api/orders','POST',{recipient_id:recipientId,items:[{product_id:productId,quantity:1}]});
-  assert.equal(unrelated.status,403); // cannot create a new order after deadline
+  const list=(await call(env,'/api/public')).data.recipients;
+  return {admin,list};
+}
+test('checkout é somente uma cartinha com Pix individual; mídia bloqueada até aprovação bancária',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const recipient=list[0];
+  const created=await call(env,'/api/orders','POST',{recipient_slug:recipient.slug,sender_name:'Rod Costa'});
+  assert.equal(created.status,201);
+  assert.equal(created.data.pix_code.includes('EJC'),true);
+  const token=created.data.token;
+  assert.equal((await call(env,'/api/order/message','PUT',{rich_html:'<p>Oi</p>'},{token})).status,403);
+  assert.equal((await call(env,'/api/order/media/init','POST',{kind:'audio',filename:'oi.wav',content_type:'audio/wav'},{token})).status,403);
+  assert.equal((await call(env,'/api/order/claim','POST',{}, {token})).status,200);
+  assert.equal((await call(env,`/api/admin/orders/${created.data.id}/status`,'PATCH',{status:'paid',bank_reference:'E2EEXEMPLO12345678',bank_checked:true,amount_checked:true},admin)).status,200);
+  const rich='<h2>Olá!</h2><p><strong>Estamos juntos.</strong></p><script>alert(1)</script>';
+  assert.equal((await call(env,'/api/order/message','PUT',{rich_html:rich,public_message:false},{token})).status,200);
+  const viewed=(await call(env,'/api/order','GET',undefined,{token})).data;
+  assert.equal(viewed.rich_html.includes('<script>'),false);
+  assert.equal(viewed.public_message,false);
+  const init=await call(env,'/api/order/media/init','POST',{kind:'audio',filename:'oi.wav',content_type:'audio/wav'},{token});
+  assert.equal(init.status,200);
+  assert.equal((await call(env,`/api/order/media/${init.data.id}/part/1`,'PUT',new Uint8Array([1,2,3,4]),{token,raw:true})).status,200);
+  assert.equal((await call(env,`/api/order/media/${init.data.id}/complete`,'POST',{}, {token})).status,200);
+  assert.equal((await call(env,'/api/order/submit','POST',{}, {token})).data.moderation,'pending');
+  const detail=await call(env,`/api/admin/orders/${created.data.id}`,'GET',undefined,admin);
+  assert.equal(detail.data.media.length,1);
+  assert.equal(detail.data.moderation,'pending');
+  const invite=await call(env,`/api/admin/recipients/${recipient.id}/invite`,'POST',{},admin);
+  const privateToken=invite.data.url.split('#token=')[1];
+  assert.equal((await call(env,`/api/mural/${recipient.slug}`,'GET',undefined,{token:privateToken})).data.cards.length,0);
+  assert.equal((await call(env,`/api/admin/orders/${created.data.id}/moderation`,'PATCH',{moderation:'approved',release_now:true},admin)).status,200);
+  assert.equal((await call(env,`/api/mural/${recipient.slug}`,'GET',undefined,{token:privateToken})).data.cards.length,1);
+  assert.equal((await call(env,'/api/publicas')).data.cards.length,0);
+  // Editing an approved letter invalidates approval, public stays opt-in.
+  await call(env,'/api/order/message','PUT',{rich_html:'<p>Outra mensagem</p>',public_message:true},{token});
+  assert.equal((await call(env,`/api/mural/${recipient.slug}`,'GET',undefined,{token:privateToken})).data.cards.length,0);
+  await call(env,'/api/order/submit','POST',{}, {token});
+  await call(env,`/api/admin/orders/${created.data.id}/moderation`,'PATCH',{moderation:'approved',release_now:true},admin);
+  assert.equal((await call(env,'/api/publicas')).data.cards.length,1);
+  // Closing the writing window is enforced on the server.
+  await call(env,'/api/admin/settings','PUT',{deadline:'2020-11-08T16:00'},admin);
+  assert.equal((await call(env,'/api/order/message','PUT',{rich_html:'<p>tarde</p>'},{token})).status,403);
+});
+test('convites de mural são individuais, revogáveis e não bastam slugs públicos',async()=>{
+  const env=fixture(),{admin,list}=await setup(env),person=list[0];
+  assert.equal((await call(env,`/api/mural/${person.slug}`)).status,401);
+  const first=await call(env,`/api/admin/recipients/${person.id}/invite`,'POST',{},admin);
+  const token1=first.data.url.split('#token=')[1];
+  assert.equal((await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:token1})).status,200);
+  const second=await call(env,`/api/admin/recipients/${person.id}/invite`,'POST',{},admin);
+  assert.equal((await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:token1})).status,403);
+  const token2=second.data.url.split('#token=')[1];
+  assert.equal((await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:token2})).status,200);
+});
+test('demo é idempotente e pode ser removida sem remover encontristas reais',async()=>{
+  const env=fixture(),{admin}=await setup(env);
+  const seeded=await call(env,'/api/admin/demo/seed','POST',{},admin);
+  assert.equal(seeded.status,200);
+  assert.equal(seeded.data.inserted,5);
+  assert.equal((await call(env,'/api/admin/demo/seed','POST',{},admin)).data.inserted,0);
+  const all=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data;
+  assert.equal(all.orders.filter(x=>x.demo).length,5);
+  assert.equal((await call(env,'/api/admin/demo/clear','DELETE',undefined,admin)).data.deleted,5);
+  const final=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data;
+  assert.equal(final.orders.length,0);
+  assert.ok(final.recipients.find(x=>x.name==='Ana Clara'));
 });

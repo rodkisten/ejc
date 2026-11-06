@@ -115,7 +115,7 @@ export default function Order(){
           </div>
         </aside>
       </div>
-    )  para a coordenação</h3><QrCode value={`${location.origin}/admin/pedidos/${order.id}`} size={140}/><p className="micro-label">{order.id}</p></aside></div>:
+    ) :
     <div className="compose-layout"><div className="compose-main">
       <div className="notice success"><CheckCircle2 size={18}/> Pix confirmado. Você pode criar e atualizar sua homenagem {ended?'até o horário de encerramento, que já passou.':`até ${btime(order.deadline)}.`}</div>
       <div className="form-card"><div className="row between"><h2>Escreva sua cartinha</h2><span className="micro-label">formatação livre</span></div><RichEditor key={saved?'loaded':'initial'} value={html} onChange={setHtml} disabled={ended}/></div>

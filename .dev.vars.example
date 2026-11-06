@@ -1,0 +1,2 @@
+ADMIN_PASSWORD="substitua-por-senha-forte-com-14-ou-mais-caracteres"
+SESSION_SECRET="substitua-por-uma-string-aleatoria-de-pelo-menos-32-caracteres"

@@ -1,0 +1,14 @@
+{
+  "name":"ejc-mini-mercado",
+  "version":"1.0.0",
+  "private":true,
+  "type":"module",
+  "scripts":{
+    "dev":"wrangler dev --local",
+    "deploy":"wrangler deploy",
+    "db:local":"wrangler d1 migrations apply ejc-mini-mercado --local",
+    "db:remote":"wrangler d1 migrations apply ejc-mini-mercado --remote",
+    "check":"node --check src/worker.js && node --check public/app.js && node --check public/qr.js && node --test tests/*.test.js"
+  },
+  "devDependencies":{"wrangler":"^4.0.0"}
+}

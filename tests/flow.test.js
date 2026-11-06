@@ -7,6 +7,7 @@ function fixture(){
   const sql=new DatabaseSync(':memory:');
   sql.exec(fs.readFileSync(new URL('../migrations/0001_initial.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0002_homenagens.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0003_recipient_photos.sql',import.meta.url),'utf8'));
   const DB={
     prepare(query){const stmt=(...values)=>({first:async()=>sql.prepare(query).get(...values)||null,all:async()=>({results:sql.prepare(query).all(...values)}),run:async()=>({meta:sql.prepare(query).run(...values)})});return {...stmt(),bind:stmt};},
     async batch(queries){sql.exec('BEGIN');try{const results=[];for(const q of queries)results.push(await q.run());sql.exec('COMMIT');return results;}catch(e){sql.exec('ROLLBACK');throw e;}}
@@ -108,4 +109,11 @@ test('demo é idempotente e pode ser removida sem remover encontristas reais',as
   const final=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data;
   assert.equal(final.orders.length,0);
   assert.ok(final.recipients.find(x=>x.name==='Ana Clara'));
+});
+
+test('health verifica D1 e R2 sem exigir login',async()=>{
+  const env=fixture();
+  const check=await call(env,'/api/health');
+  assert.equal(check.status,200);
+  assert.equal(check.data.ok,true);
 });

@@ -299,6 +299,11 @@ function serveBrandImage(blob) {
 }
 
 async function publicRoute(req,env,path) {
+  if(path==='/api/health' && req.method==='GET') {
+    await env.DB.prepare('SELECT 1 AS ok').first();
+    await env.MEDIA.head('healthcheck/does-not-exist');
+    return result({ok:true,service:'ejc-cartinhas'});
+  }
   if(path==='/api/branding/logo' && req.method==='GET') {
     const logo=await env.MEDIA.get('branding/ejc-market-logo');
     if(!logo)bad('Logo ainda não cadastrada.',404);

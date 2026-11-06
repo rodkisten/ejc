@@ -304,7 +304,7 @@ async function publicRoute(req,env,path) {
     if(!logo)bad('Logo ainda não cadastrada.',404);
     return serveBrandImage(logo);
   }
-  const photo=path.match(/^\\/api\\/recipients\\/([a-f0-9-]{36})\\/photo$/);
+  const photo=path.match(/^\/api\/recipients\/([a-f0-9-]{36})\/photo$/);
   if(photo && req.method==='GET') {
     const r=await env.DB.prepare('SELECT photo_key,photo_consent FROM recipients WHERE id=? AND active=1').bind(photo[1]).first();
     if(!r || !r.photo_consent || !r.photo_key)bad('Foto não disponível.',404);

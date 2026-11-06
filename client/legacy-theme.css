@@ -95,3 +95,5 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .poster-recipient-photo{display:block;width:90px;height:90px;object-fit:cover;border-radius:50%;margin:0 auto 12px;border:4px solid #fff9}
 .send-recipient{display:flex;align-items:center;gap:12px;font-weight:700;color:#552c80;margin:12px 0 8px}
 .send-recipient img{width:60px;height:60px;border-radius:18px;object-fit:cover}
+
+.mural-portrait{width:104px;height:104px;object-fit:cover;border-radius:28px;display:block;margin:0 auto 18px;border:5px solid white;box-shadow:0 14px 30px #271b4030}

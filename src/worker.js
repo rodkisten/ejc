@@ -332,13 +332,13 @@ async function publicRoute(req,env,path) {
   }
   const mural=path.match(/^\/api\/mural\/([a-z0-9-]+)$/);
   if (mural && req.method==='GET') {
-    const r=await env.DB.prepare('SELECT id,name,slug,mural_token_hash FROM recipients WHERE slug=? AND active=1').bind(mural[1]).first();
+    const r=await env.DB.prepare('SELECT id,name,slug,mural_token_hash,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1').bind(mural[1]).first();
     if(!r)bad('Encontrista não encontrado.',404);
     const admin=await isAdmin(req,env);
     if(!admin){const digestToken=await digest(bearer(req));if(!r.mural_token_hash || r.mural_token_hash!==digestToken)bad('Convite privado inválido.',403);}
     const rows=(await env.DB.prepare("SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON o.recipient_id=r.id WHERE o.recipient_id=? AND o.moderation='approved' ORDER BY o.approved_at DESC").bind(r.id).all()).results;
     const cards=await Promise.all(rows.filter(o=>admin||moderated(o,config)).map(o=>cardInfo(env,o)));
-    return result({recipient:{name:r.name,slug:r.slug},cards,release_at:config.release_at,is_admin:admin,locked:!admin && Date.now()<brazilTimeEnd(config.release_at)});
+    return result({recipient:{name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r)},cards,release_at:config.release_at,is_admin:admin,locked:!admin && Date.now()<brazilTimeEnd(config.release_at)});
   }
   if (path==='/api/orders' && req.method==='POST') {
     if(config.open!=='true')bad('As homenagens estão temporariamente fechadas.',403);

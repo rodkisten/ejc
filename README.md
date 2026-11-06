@@ -88,3 +88,30 @@ wrangler.jsonc               Worker e SPA assets em dist/
 Rode `npm install`, `npm run format` e `npm run format:check` para padronizar os arquivos com Prettier 3. Os arquivos SQL ficam excluídos até a instalação de um plugin de formatação SQL.
 
 A interface gera QR Codes com `react-qrcode-logo` (Pix de alto contraste, cartazes decorados e identificadores). A opção de download dos QR Codes do painel agora exporta PNG a partir do canvas.
+
+## Marca original, fotos e QR Codes
+
+- Identidade visual restaurada: roxo, lilás, rosa e pêssego; não usa a paleta predominantemente vinho da migração inicial.
+- Configurações > **Logo do Mini Mercado**: envie PNG/JPEG/WebP até 2 MB. A logo é armazenada no R2 e aparece centralizada em QR Codes gerados com `react-qrcode-logo`.
+- Sem imagem cadastrada, é exibida apenas uma marca **provisória "XX EJC"**. Para usar a logo oficial, faça o upload no painel.
+- Administração > Encontristas: cada nome tem foto individual (PNG, JPEG, WebP até 5 MB), exibida na busca, no checkout Pix e no mural. O envio exige confirmação expressa de autorização de imagem, inclusive dos responsáveis no caso de menores.
+- As imagens são servidas somente pelo Worker, com conteúdo do R2 e conferência da autorização para fotos dos encontristas.
+- A tela Pix exibe valor, nome do encontrista, titular recebedor, cidade, ID do pedido e txid. **Esses detalhes ficam fora do QR bancário** para manter o BR Code intacto.
+- Verifique leitura do QR com câmeras e apps de bancos diferentes antes de divulgar na rua. Se o QR com logo não for reconhecido, use o Pix Copia e Cola e reduza/retire o logotipo. Não publique antes de validar.
+
+### Migrar o banco de dados
+
+A migração `0003_recipient_photos.sql` adiciona os campos de foto e autorização sem apagar os encontristas já cadastrados.
+
+```bash
+npm install
+npm run db:remote
+npm run format
+npm run format:check
+npm run build
+npm run check
+```
+
+As etapas dependem de login Cloudflare e de npm disponível no ambiente do operador. Nenhuma dessas operações publica a aplicação automaticamente.
+
+Consulte [o plano de confirmação automática do Pix](docs/pix-automatico.md) para ligar a API de um banco recebedor ou um PSP. A confirmação **continua manual** nesta branch.

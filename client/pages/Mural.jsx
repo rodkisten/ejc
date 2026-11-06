@@ -12,7 +12,7 @@ export default function Mural(){
     }catch(e){setError(e.message);}
   },[slug]);
   useEffect(()=>{load();},[load]);
-  return <div className="mural-page"><div className="mural-intro"><div className="hero-kicker"><LockKeyhole size={16}/> ESTE É UM ESPAÇO SECRETO</div><h1>{data?.recipient?.name ? `O mural de ${data.recipient.name}` : 'Um cantinho só seu.'} <em>♡</em></h1><p>Uma coleção de palavras, memórias, fotos e vozes que alguém guardou especialmente para você.</p></div>
+  return <div className="mural-page"><div className="mural-intro">{data?.recipient?.photo_url&&<img className="mural-portrait" src={data.recipient.photo_url} alt={`Foto de ${data.recipient.name}`}/>}<div className="hero-kicker"><LockKeyhole size={16}/> ESTE É UM ESPAÇO SECRETO</div><h1>{data?.recipient?.name ? `O mural de ${data.recipient.name}` : 'Um cantinho só seu.'} <em>♡</em></h1><p>Uma coleção de palavras, memórias, fotos e vozes que alguém guardou especialmente para você.</p></div>
     {error&&<div className="form-card"><h2>Convite privado necessário 🔐</h2><p>{error}</p><p>Peça à coordenação o link completo do seu mural, com a chave secreta. Apenas o nome do encontrista não libera o conteúdo.</p><Link to="/" className="btn">Voltar ao início</Link></div>}
     {data&&<><div className="mural-count"><Sparkles size={18}/> {data.cards.length} {data.cards.length===1?'cartinha especial':'cartinhas especiais'} para você</div>
       {data.locked&&<div className="notice warning">O mural abre no horário definido pela coordenação. Homenagens liberadas antecipadamente já podem ser vistas.</div>}

@@ -10,6 +10,7 @@ import Mural from './pages/Mural';
 import PublicLetters from './pages/PublicLetters';
 import Admin from './pages/Admin';
 import './styles.css';
+import './legacy-theme.css';
 
 export const AppContext=React.createContext({ config:null, recipients:[], reload:async()=>{} });
 export function useApp(){return React.useContext(AppContext);}

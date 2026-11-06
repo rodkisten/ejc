@@ -1,0 +1,49 @@
+/* Restored from the original Mini Mercado identity: plum, lilac, peach and pink. */
+:root {
+  --ink: #1e1830;
+  --muted: #777185;
+  --rose: #62328b;
+  --deep: #552c80;
+  --soft: #f0e9fa;
+  --paper: #ffffff;
+  --border: #e9e2e7;
+  --shadow: 0 12px 36px rgba(39, 22, 52, 0.065);
+  color: var(--ink);
+  background: #faf8f4;
+}
+body { background: #faf8f4; color: var(--ink); }
+h1, h2 { font-family: 'Fraunces', 'Playfair Display', Georgia, serif; }
+h1 em, .hero h1 em { color: #68368e; }
+.site-header { background: rgba(250, 248, 244, .94); border-color: #e9e2e7; }
+.brand-spark, .header-heart, .eyebrow, .step-label, .hero-kicker { color: #68368e; }
+.header-link, .icon-button, .btn.ghost { background: #f1eafa; color: #552c80; border-color: #e6d8f4; }
+.btn { background: #291b3c; border-color: #291b3c; color: white; }
+.btn.outline { background: white; color: #552c80; border-color: #cbb4d9; }
+.btn:hover:not(:disabled) { box-shadow: 0 8px 25px rgba(68, 35, 100, .18); }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline-color: #7442a0; }
+.hero { background: linear-gradient(120deg, #ffefdc 0%, #f9d3de 55%, #e5dcfb 100%); color: #1e1830; }
+.hero p { color: #61546b; }
+.hero::after { content: '✦'; position: absolute; right: -26px; top: -40px; font-size: 190px; line-height: 1; color: rgba(255, 255, 255, .38); pointer-events: none; }
+.hero-grid { position: relative; z-index: 1; }
+.paper-back { background: #a17ac5; color: #f8efff; }
+.paper-front { background: #fffdf9; }
+.paper-front span, .paper-front i { color: #704296; }
+.paper-front .paper-heart { color: #da6691; }
+.floating-star { color: #bb9bde; }
+.benefits { border-color: #e9dfee; }
+.benefits svg, .search-box svg, .bottom-cta svg { color: #7442a0; }
+.count-chip, .recipient-avatar { background: #efe7f7; color: #552c80; }
+.recipient-card:hover { border-color: #c6a9df; }
+.recipient-card > svg { color: #68368e; }
+.notice { background: #f4edfc; color: #543370; }
+.notice.warning { background: #fff3dc; color: #806022; }
+.notice.success { background: #e4f8ed; color: #175a44; }
+.form-card, .recipient-card { background: #fff; border-color: var(--border); }
+.editor-toolbar { background: #f6f0fc; border-color: #e5d7f0; }
+.status-pill.pending { background: #fff3dc; color: #7a571c; }
+.status-pill.success { background: #e4f8ed; color: #175a44; }
+.qr-kicker, .qr-under { color: #62328b; }
+.decorated-qr.rose { background: linear-gradient(145deg, #ffefdc, #f9d3de 55%, #e5dcfb); }
+.decorated-qr.blue { background: linear-gradient(145deg, #dfedff, #e9dcfb); }
+.decorated-qr.mint { background: linear-gradient(145deg, #ddf5e9, #ebdff6); }
+.decorated-qr.orange { background: linear-gradient(145deg, #fff0d6, #f8d5df); }

@@ -11,7 +11,9 @@
     "deploy": "npm run build && wrangler deploy",
     "db:local": "wrangler d1 migrations apply ejc-mini-mercado --local",
     "db:remote": "wrangler d1 migrations apply ejc-mini-mercado --remote",
-    "check": "node --check src/worker.js && node --check src/pix.js && node --test tests/*.test.js"
+    "check": "node --check src/worker.js && node --check src/pix.js && node --test tests/*.test.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "dompurify": "^3.2.7",
@@ -23,6 +25,7 @@
   },
   "devDependencies": {
     "vite": "^7.1.12",
-    "wrangler": "^4.0.0"
+    "wrangler": "^4.0.0",
+    "prettier": "^3.6.2"
   }
 }

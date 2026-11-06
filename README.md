@@ -19,19 +19,19 @@ Aplicação de homenagens digitais: **React 19 + React Router 7 + Vite 7** no fr
 
 ## React Router
 
-| URL | Página | Acesso |
-| --- | --- | --- |
-| `/` | Lista pesquisável de encontristas | Público |
-| `/enviar/:slug` | Editor, gravação, fotos e checkout inicial | Público |
-| `/pedido/:token` | Pix, status, rascunho e envio para moderação | Link privado |
-| `/mural/:slug` | Mural secreto | Convite `#token` ou admin |
-| `/publicas` | Cartinhas explicitamente públicas | Público |
-| `/admin` | Pedidos e moderação | Administrador |
-| `/admin/pedidos/:id` | Conferência do Pix e aprovação | Administrador |
-| `/admin/encontristas` | Importação, links individuais e mural secreto | Administrador |
-| `/admin/configuracoes` | Pix, valor, horários, GA4 | Administrador |
-| `/admin/qrcodes` | Cartazes QR coloridos e impressão A4 | Administrador |
-| `/admin/demo` | Criar/apagar exemplos fictícios | Administrador |
+| URL                    | Página                                        | Acesso                    |
+| ---------------------- | --------------------------------------------- | ------------------------- |
+| `/`                    | Lista pesquisável de encontristas             | Público                   |
+| `/enviar/:slug`        | Editor, gravação, fotos e checkout inicial    | Público                   |
+| `/pedido/:token`       | Pix, status, rascunho e envio para moderação  | Link privado              |
+| `/mural/:slug`         | Mural secreto                                 | Convite `#token` ou admin |
+| `/publicas`            | Cartinhas explicitamente públicas             | Público                   |
+| `/admin`               | Pedidos e moderação                           | Administrador             |
+| `/admin/pedidos/:id`   | Conferência do Pix e aprovação                | Administrador             |
+| `/admin/encontristas`  | Importação, links individuais e mural secreto | Administrador             |
+| `/admin/configuracoes` | Pix, valor, horários, GA4                     | Administrador             |
+| `/admin/qrcodes`       | Cartazes QR coloridos e impressão A4          | Administrador             |
+| `/admin/demo`          | Criar/apagar exemplos fictícios               | Administrador             |
 
 ## Segurança e limites práticos
 

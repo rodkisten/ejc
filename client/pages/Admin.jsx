@@ -35,10 +35,75 @@ function AdminDashboard({ info, reload }) {
         <ShieldCheck size={19} />
         A coordenação acessa apenas dados operacionais de pagamento e envio. Mensagens, fotos e áudios não são exibidos.
       </div>
+      <CheckoutList reloadOrders={reload} />
       <OrderList orders={info.orders} navigate={navigate} />
     </>
   );
 }
+
+function CheckoutList({ reloadOrders }) {
+  const [checkouts,setCheckouts]=useState([]);
+  const [selected,setSelected]=useState(null);
+  const [reference,setReference]=useState('');
+  const [bankChecked,setBankChecked]=useState(false);
+  const [amountChecked,setAmountChecked]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const refresh=useCallback(async()=>{
+    try{
+      const result=await api('/api/admin/checkouts');
+      setCheckouts(result.checkouts||[]);
+    }catch(cause){setError(cause.message);}
+  },[]);
+  useEffect(()=>{refresh();},[refresh]);
+  async function confirm(){
+    if(!selected)return;
+    setBusy(true);setError('');
+    try{
+      await api('/api/admin/checkouts/'+selected.id+'/status',{
+        method:'PATCH',
+        data:{status:'paid',bank_reference:reference,
+          bank_checked:bankChecked,amount_checked:amountChecked}
+      });
+      setSelected(null);setReference('');setBankChecked(false);setAmountChecked(false);
+      await Promise.all([refresh(),reloadOrders()]);
+    }catch(cause){setError(cause.message);}
+    finally{setBusy(false);}
+  }
+  return <section className="form-card admin-checkouts">
+    <div className="row between">
+      <div><h2>Pix com várias cartinhas</h2><p className="muted small">Uma compra, um Pix, várias cartas privadas.</p></div>
+      <button type="button" className="btn ghost" onClick={refresh}><RefreshCw size={16}/> Atualizar</button>
+    </div>
+    {error&&<div className="notice error" role="alert">{error}</div>}
+    {!checkouts.length?<p className="muted small">Ainda não há compras agrupadas.</p>:
+      <div className="admin-order-list">
+        {checkouts.map((checkout)=><button key={checkout.id} type="button" className="admin-order"
+          onClick={()=>{setSelected(checkout);setReference('');setBankChecked(false);setAmountChecked(false);}}>
+          <span><strong>{checkout.item_count} cartinha(s)</strong><small>{checkout.id}</small></span>
+          <span className="order-tags"><b>{money(checkout.total_cents)}</b>
+            <small>{checkout.status==='paid'?'Pix confirmado':checkout.status==='claimed'?'Conferir Pix':'Aguardando Pix'}</small></span>
+        </button>)}
+      </div>}
+    {selected&&<div className="form-card admin-checkout-confirm">
+      <h3>{selected.id} · {money(selected.total_cents)}</h3>
+      <p className="muted">Confirme um único crédito do valor total para liberar {selected.item_count} cartinha(s). Não compartilhe comprovantes ou conteúdo das mensagens.</p>
+      {selected.status==='paid'?<p className="notice">Este Pix já foi confirmado.</p>:<>
+        <label htmlFor="checkout-reference">Identificador bancário (E2E)</label>
+        <input id="checkout-reference" value={reference} onChange={e=>setReference(e.target.value)}
+          placeholder="Identificador completo da transferência"/>
+        <label className="toggle-line"><input type="checkbox" checked={bankChecked}
+          onChange={e=>setBankChecked(e.target.checked)}/> Confirmei a entrada no extrato real</label>
+        <label className="toggle-line"><input type="checkbox" checked={amountChecked}
+          onChange={e=>setAmountChecked(e.target.checked)}/> Confirmei o valor total de {money(selected.total_cents)}</label>
+        <button type="button" className="btn" disabled={busy||!bankChecked||!amountChecked||reference.trim().length<8}
+          onClick={confirm}><Check size={17}/> Confirmar Pix de todas as cartinhas</button>
+      </>}
+      <button type="button" className="btn ghost" onClick={()=>setSelected(null)}>Fechar</button>
+    </div>}
+  </section>;
+}
+
 function OrderList({ orders, navigate }) {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
@@ -63,7 +128,7 @@ function OrderList({ orders, navigate }) {
       </div>
       <div className="admin-order-list">
         {rows.map((order) => (
-          <button key={order.id} className="admin-order" onClick={() => navigate(`/admin/pedidos/${order.id}`)}>
+          <button key={order.id} className="admin-order" onClick={() => navigate(order.checkout_id ? '/admin' : `/admin/pedidos/${order.id}`)}>
             <span><strong>{order.recipient_name}</strong><small>{order.id}</small></span>
             <span className="order-tags">
               <b>{money(order.total_cents)}</b>

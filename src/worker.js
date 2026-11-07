@@ -331,6 +331,38 @@ async function validMuralGrant(env,grant,recipient) {
   }catch{return false;}
 }
 
+function escapeMeta(value){
+  return String(value||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');
+}
+function buildSocialMeta(origin,recipient,kind){
+  const title=(kind==='mural'?'Mural secreto de ':'Envie uma cartinha para ')+recipient.name+' · XX EJC Simonésia';
+  const description=kind==='mural'
+    ?'Suas cartinhas, fotos e áudios, guardados em um mural privado e liberados no horário do encontro.'
+    :'Grave um áudio e envie fotos e palavras especiais para '+recipient.name+' no XX EJC Simonésia.';
+  const canonical=origin+'/'+kind+'/'+encodeURIComponent(recipient.slug);
+  const image=recipient.og_key && (!recipient.photo_key||recipient.photo_consent)
+    ?origin+'/og/'+recipient.slug+'.png?v='+encodeURIComponent(recipient.og_key.split('/').pop())
+    :null;
+  const fields=[
+    ['property','og:type','website'],['property','og:locale','pt_BR'],
+    ['property','og:site_name','Cartinhas do XX EJC Simonésia'],
+    ['property','og:title',title],['property','og:description',description],
+    ['property','og:url',canonical],
+    ['name','twitter:card',image?'summary_large_image':'summary'],
+    ['name','twitter:title',title],['name','twitter:description',description],
+  ];
+  if(image)fields.push(
+    ['property','og:image',image],['property','og:image:secure_url',image],
+    ['property','og:image:type','image/png'],
+    ['property','og:image:width','1200'],['property','og:image:height','630'],
+    ['property','og:image:alt','Cartinhas para '+recipient.name+' no XX EJC Simonésia'],
+    ['name','twitter:image',image]
+  );
+  return {title,description,tags:fields.map(([attr,key,value])=>
+    '<meta '+attr+'="'+escapeMeta(key)+'" content="'+escapeMeta(value)+'" />').join('\n')};
+}
+
 async function publicRoute(req,env,path) {
   const ogImage=path.match(/^\/og\/([a-z0-9-]+)\.png$/);
   if(ogImage&&req.method==='GET'){
@@ -730,6 +762,11 @@ export default {
         if (stream && request.method==='GET') return await signedMedia(request,env,stream[1],url);
         return await publicRoute(request,env,path);
       }
+      // OG tags must be in the server's HTML so social bots can read them without JS.
+      const social=path.match(/^\/(enviar|mural)\/([a-z0-9-]+)$/);
+      const socialRecipient=social?await env.DB.prepare(
+        'SELECT name,slug,og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
+      ).bind(social[2]).first():null;
       // Static files, hosted in the same Worker.
       const response=await env.ASSETS.fetch(request);
       const headers=new Headers(response.headers);
@@ -739,6 +776,18 @@ export default {
       headers.set('Permissions-Policy','microphone=(self), camera=(self), geolocation=()');
       if ((headers.get('Content-Type')||'').includes('text/html')) {
         headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+      }
+      if(path==='/abrir'||path.startsWith('/mural/')||path.startsWith('/pedido/')||path.startsWith('/admin')){
+        headers.set('X-Robots-Tag','noindex, nofollow, noarchive');
+      }
+      if(socialRecipient && (headers.get('Content-Type')||'').includes('text/html')){
+        const meta=buildSocialMeta(url.origin,socialRecipient,social[1]);
+        const html=(await response.text())
+          .replace(/<title>[\s\S]*?<\/title>/i,'<title>'+escapeMeta(meta.title)+'</title>')
+          .replace(/<meta\s+name="description"[^>]*>/i,'')
+          .replace('</head>','<meta name="description" content="'+escapeMeta(meta.description)+'" />'+meta.tags+'</head>');
+        headers.set('Cache-Control','public, max-age=120');
+        return new Response(html,{status:response.status,headers});
       }
       return new Response(response.body,{status:response.status,headers});
     } catch(e) {

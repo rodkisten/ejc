@@ -817,15 +817,21 @@ export default {
     if(ctx?.waitUntil)ctx.waitUntil(pending);
     else await pending;
   },
-  async fetch(request,env) {
+  async fetch(request,env,ctx) {
     try {
       const url=new URL(request.url), path=url.pathname;
       if (path.startsWith('/api/')) {
         allowOrigin(request);
-        if (path.startsWith('/api/admin/')) return await adminRoute(request,env,path);
+        if (path.startsWith('/api/admin/')) {
+          const response=await adminRoute(request,env,path);
+          if(WRITE_METHODS.has(request.method)&&ctx?.waitUntil)ctx.waitUntil(dispatch(env));
+          return response;
+        }
         const stream=path.match(/^\/api\/media\/([a-f0-9-]{36})$/);
         if (stream && request.method==='GET') return await signedMedia(request,env,stream[1],url);
-        return await publicRoute(request,env,path);
+        const response=await publicRoute(request,env,path);
+        if(WRITE_METHODS.has(request.method)&&ctx?.waitUntil)ctx.waitUntil(dispatch(env));
+        return response;
       }
       // Fetch the SPA shell from / explicitly: crawlers often request deep links
       // without the Accept/Sec-Fetch headers that Cloudflare SPA fallback expects.

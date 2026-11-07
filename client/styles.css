@@ -611,6 +611,7 @@ select:focus-visible {
   margin: 12px 0;
 }
 .compose-main > p {
+  margin-top: 15px;
   margin-bottom: 30px;
 }
 .compose-side {
@@ -713,15 +714,15 @@ select:focus-visible {
   color: #9b5a76;
 }
 .record-studio {
-  border: 1px dashed #d3b3c1;
+  border: 1px dashed #b3d3bc;
   border-radius: 15px;
   padding: 14px;
   margin: 12px 0;
 }
 .record-start {
   border: 0;
-  background: #f7e4eb;
-  color: #923e63;
+  background: #e4f7eb;
+  color: #3e923f;
   padding: 16px;
   border-radius: 12px;
   display: flex;
@@ -733,7 +734,7 @@ select:focus-visible {
 .record-start > span {
   width: 50px;
   height: 50px;
-  background: #9b4166;
+  background: #419b4c;
   color: #fff;
   display: grid;
   place-items: center;
@@ -751,13 +752,13 @@ select:focus-visible {
   font-weight: 800;
   letter-spacing: 0.1em;
   font-size: 0.75rem;
-  color: #a32d4e;
+  color: #419b4c;
 }
 .blink {
   display: inline-block;
   width: 9px;
   height: 9px;
-  background: #ce385c;
+  background: #419b4c;
   border-radius: 50%;
   animation: blink 1s infinite;
 }
@@ -776,7 +777,7 @@ select:focus-visible {
 .record-motion span {
   width: 3px;
   border-radius: 2px;
-  background: #b9527b;
+  background: #b3d3bc;
   animation: pulse 0.9s ease-in-out infinite alternate;
 }
 @keyframes pulse {

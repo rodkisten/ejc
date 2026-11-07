@@ -101,8 +101,12 @@ test('cartinhas são privadas: a coordenação confirma Pix sem ler, ouvir nem m
   assert.equal((await call(env,'/api/publicas')).status,410);
   assert.equal((await call(env,`/api/mural/${person.slug}`,'GET',undefined,admin)).status,403);
 
-  const invite=await call(env,`/api/admin/recipients/${person.id}/invite`,'POST',{},admin);
-  const muralToken=invite.data.url.split('#token=')[1];
+  assert.equal((await call(env,'/api/admin/mural-codes/generate','POST',{regenerate:false},admin)).status,200);
+  const config=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data;
+  const muralCode=config.recipients.find(p=>p.id===person.id).mural_code;
+  const redeemed=await call(env,'/api/mural/redeem','POST',{code:muralCode});
+  assert.equal(redeemed.status,200);
+  const muralToken=redeemed.data.grant;
   const before=await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:muralToken});
   assert.equal(before.status,200);
   assert.equal(before.data.cards.length,0);
@@ -126,17 +130,22 @@ test('cartinhas são privadas: a coordenação confirma Pix sem ler, ouvir nem m
     {rich_html:'<p>Tarde</p>'},{token})).status,403);
 });
 
-test('convites de mural são individuais, revogáveis e não bastam slugs públicos',async()=>{
-  const env=fixture(),{admin,list}=await setup(env),person=list[0];
-  assert.equal((await call(env,`/api/mural/${person.slug}`)).status,401);
-  const first=await call(env,`/api/admin/recipients/${person.id}/invite`,'POST',{},admin);
-  const token1=first.data.url.split('#token=')[1];
-  assert.equal((await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:token1})).status,200);
-  const second=await call(env,`/api/admin/recipients/${person.id}/invite`,'POST',{},admin);
-  assert.equal((await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:token1})).status,403);
-  const token2=second.data.url.split('#token=')[1];
-  assert.equal((await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:token2})).status,200);
+test('mural não aceita acesso administrativo nem criação de convites legados',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const person=list[0];
+  assert.equal((await call(env,`/api/mural/${person.slug}`)).status,403);
+  assert.equal((await call(env,`/api/mural/${person.slug}`,'GET',undefined,admin)).status,403);
+  const legacy=await call(env,`/api/admin/recipients/${person.id}/invite`,'POST',{},admin);
+  assert.equal(legacy.status,404);
+  const valid=await call(env,'/api/admin/mural-codes/generate','POST',{regenerate:false},admin);
+  assert.equal(valid.status,200);
+  const adminView=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data;
+  const code=adminView.recipients.find(p=>p.id===person.id).mural_code;
+  const redemption=await call(env,'/api/mural/redeem','POST',{code});
+  assert.equal(redemption.status,200);
+  assert.equal((await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:redemption.data.grant})).status,200);
 });
+
 test('demo é idempotente e pode ser removida sem remover encontristas reais',async()=>{
   const env=fixture(),{admin}=await setup(env);
   const seeded=await call(env,'/api/admin/demo/seed','POST',{},admin);

@@ -5,7 +5,7 @@ import { api, money, btime, track,download } from '../lib/api';
 import QrCode from '../components/QrCode';
 import Labels from './Labels';
 import StickerAdmin from './StickerAdmin';
-import { publishOgImage } from '../lib/og';
+import { publishOgImage, publishDefaultOgImage } from '../lib/og';
 function useAdmin(){const [info,setInfo]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const reload=useCallback(async()=>{try{setInfo(await api('/api/admin/bootstrap'));setError('');}catch(e){setError(e.message);setInfo(null);}finally{setLoading(false);}},[]);
   useEffect(()=>{reload();},[reload]);return {info,loading,error,reload};}
@@ -266,12 +266,22 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
     } catch (cause) { setError(cause.message); }
     finally { setOgProgress(''); }
   }
+  async function makeHomeOg(){
+    setOgProgress('Gerando a imagem social moderna da home...');
+    setError('');
+    try{
+      await publishDefaultOgImage();
+      setNotice('Imagem de compartilhamento da home publicada. A prévia já foi atualizada no R2.');
+    }catch(cause){setError(cause.message);}
+    finally{setOgProgress('');}
+  }
   async function makeAllOg(){
     setOgProgress('Preparando imagens...');
     setError('');
     let complete=0;
     let failed=0;
     try{
+      await publishDefaultOgImage();
       for(const person of info.recipients.filter(p=>p.active!==0)){
         setOgProgress('Gerando '+(complete+failed+1)+' de '+info.recipients.length+' · '+person.name);
         try { await publishOgImage(person); complete++; }
@@ -285,6 +295,10 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
   return <><div className="section-head"><div><span className="eyebrow">ENCONTRISTAS</span><h1>Nomes, fotos e links exclusivos</h1><p>A coordenação gerencia os nomes, fotos e QR Codes, mas não lê nem escuta as cartinhas. Entregue os códigos dos murais individualmente.</p></div></div><section className="form-card"><label>Importar nomes (um por linha)</label><textarea rows={4} value={names} onChange={e=>setNames(e.target.value)} placeholder={'Maria Eduarda\nJoão Pedro\nAna Clara'}/><button className="btn" onClick={add}>Adicionar encontristas</button></section>
     <section className="form-card">
       <h2>Imagens para redes sociais</h2>
+      <p className="muted small">Atualize a arte da home e as prévias individuais (nome e foto). O WhatsApp e o Telegram receberão PNGs com dimensões reais.</p>
+      <button className="btn ghost" disabled={!!ogProgress} onClick={makeHomeOg}>
+        <ImagePlus size={16}/> Publicar nova OG da home
+      </button>
       <p className="muted small">Os nomes e as fotos devem ficar dentro da área central visível mesmo quando o WhatsApp recortar a miniatura.</p>
       {info.recipients.filter(p=>p.active!==0&&!p.og_safe).length>0&&
         <div className="notice warning">

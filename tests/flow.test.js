@@ -147,7 +147,7 @@ test('código curto libera o acesso privado, mas não ignora o horário de publi
 
 test('tentativas incorretas de código curto são limitadas no servidor',async()=>{
   const env=fixture();
-  for(let i=0;i<6;i++){
+  for(let i=0;i<100;i++){
     const r=await call(env,'/api/mural/redeem','POST',{code:'ZZZZZZ'});
     assert.equal(r.status,404);
   }

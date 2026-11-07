@@ -412,7 +412,7 @@ select:focus-visible {
 }
 .paper-front .paper-heart {
   position: absolute;
-  right: 33px;
+  right: 45px;
   bottom: 11px;
   color: #e27e9f;
   font-size: 3.4rem;
@@ -882,6 +882,9 @@ select:focus-visible {
 .upload-label {
   display: inline-flex;
   align-items: center;
+
+  flex-direction: row-reverse;
+  
   gap: 10px;
   padding: 13px 18px;
   border: 1px dashed #c48ca4;

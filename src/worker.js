@@ -1,5 +1,5 @@
 import { generatePix } from './pix.js';
-import { normalizeComposition } from '../shared/letter.js';
+import { normalizeComposition, STICKERS_BY_ID } from '../shared/letter.js';
 import { enqueue, enableReceipt, disableReceipt, confirmReceipt, markRead, queueRelease, dispatch, validateEmail, emailsReady } from './notify.js';
 
 const PART_SIZE = 8 * 1024 * 1024;
@@ -338,7 +338,7 @@ function escapeMeta(value){
 // Social crawlers do not execute React. Always publish complete OG metadata
 // in Worker-rendered HTML, even when the admin has not generated a portrait PNG.
 const DEFAULT_OG_PATH = '/og-ejc-default.png';
-const DEFAULT_OG_VERSION = '20261107b';
+const DEFAULT_OG_VERSION = '20261107c';
 function socialImage(recipient) {
   const personalized = recipient?.og_key && (!recipient.photo_key || recipient.photo_consent);
   if (personalized) {
@@ -500,6 +500,16 @@ async function publicRoute(req,env,path) {
     const logo=await env.MEDIA.get('branding/ejc-market-logo');
     if(!logo)bad('Logo ainda não cadastrada.',404);
     return serveBrandImage(logo);
+  }
+  const stickerImage=path.match(/^\/api\/stickers\/([a-z0-9-]+)\.png$/);
+  if(stickerImage&&(req.method==='GET'||req.method==='HEAD')){
+    if(!STICKERS_BY_ID[stickerImage[1]])bad('Adesivo desconhecido.',404);
+    const object=await env.MEDIA.get('stickers/v1/'+stickerImage[1]+'.png');
+    if(!object)bad('Adesivo PNG ainda não cadastrado.',404);
+    return new Response(req.method==='HEAD'?null:object.body,{headers:{
+      'Content-Type':'image/png','Cache-Control':'public, max-age=300',
+      'X-Content-Type-Options':'nosniff','Content-Length':String(object.size)
+    }});
   }
   const photo=path.match(/^\/api\/recipients\/([a-f0-9-]{36})\/photo$/);
   if(photo && req.method==='GET') {
@@ -683,6 +693,28 @@ async function adminRoute(req,env,path) {
     await env.MEDIA.delete('branding/ejc-market-logo');
     return result({ok:true});
   }
+  const stickerUpload=path.match(/^\/api\/admin\/stickers\/([a-z0-9-]+)\.png$/);
+  if(stickerUpload&&(req.method==='POST'||req.method==='DELETE')){
+    const id=stickerUpload[1];
+    if(!STICKERS_BY_ID[id])bad('Adesivo desconhecido.',404);
+    const key='stickers/v1/'+id+'.png';
+    if(req.method==='DELETE'){
+      await env.MEDIA.delete(key);
+      return result({ok:true});
+    }
+    const asset=await receiveSafeImage(req,10*1024*1024);
+    if(asset.type!=='image/png')bad('Envie a arte original em PNG.',415);
+    if(asset.bytes.length<24||!asset.bytes.slice(0,8).every((b,index)=>b===[137,80,78,71,13,10,26,10][index]))
+      bad('O arquivo não é um PNG válido.',415);
+    await env.MEDIA.put(key,asset.bytes,{httpMetadata:{contentType:'image/png'}});
+    return result({ok:true,url:'/api/stickers/'+id+'.png?v='+Date.now()});
+  }
+  if(path==='/api/admin/stickers'&&req.method==='GET'){
+    const entries=await Promise.all(Object.keys(STICKERS_BY_ID).map(async id=>({
+      id,exists:!!(await env.MEDIA.head('stickers/v1/'+id+'.png'))
+    })));
+    return result({stickers:entries});
+  }
   const ogUpload=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/og$/);
   if(ogUpload&&req.method==='POST'){
     const r=await env.DB.prepare('SELECT id,slug,og_key,photo_key,photo_consent FROM recipients WHERE id=? AND active=1').bind(ogUpload[1]).first();
@@ -693,7 +725,7 @@ async function adminRoute(req,env,path) {
     const dimensions=new DataView(image.bytes.buffer,image.bytes.byteOffset,image.bytes.byteLength);
     if(image.bytes.byteLength<24||dimensions.getUint32(16)!==1200||dimensions.getUint32(20)!==630)
       bad('A imagem deve ter 1200 x 630 pixels.',400);
-    const key='og/v2/'+r.id+'/'+newId()+'.png';
+    const key='og/v3/'+r.id+'/'+newId()+'.png';
     await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:'image/png'}});
     await env.DB.prepare('UPDATE recipients SET og_key=? WHERE id=?').bind(key,r.id).run();
     if(r.og_key)await env.MEDIA.delete(r.og_key);
@@ -764,7 +796,7 @@ async function adminRoute(req,env,path) {
         ...r,
         photo_url:recipientPhotoUrl(r),
         og_url:socialImage(r).path,
-        og_safe:typeof r.og_key==='string'&&r.og_key.startsWith('og/v2/')
+        og_safe:typeof r.og_key==='string'&&r.og_key.startsWith('og/v3/')
       })),orders:orders.results});
   }
 

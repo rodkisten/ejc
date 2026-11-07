@@ -540,6 +540,12 @@ test('link do Pix permite editar, confirmar e sincronizar anexos antes do pagame
     new Uint8Array([137,80,78,71,13,10,26,10]),{token:first.token,raw:true})).status,200);
   assert.equal((await call(env,'/api/order/media/'+file.data.id+'/complete','POST',
     {},{token:first.token})).status,200);
+  const extra=await call(env,'/api/order/media/init','POST',{
+    kind:'image',filename:'exagero.png',content_type:'image/png'
+  },{token:first.token});
+  assert.equal(extra.status,200);
+  assert.equal((await call(env,'/api/order/media/'+extra.data.id+'/part/7','PUT',
+    new Uint8Array([1]),{token:first.token,raw:true})).status,413);
   const media=(await call(env,'/api/order','GET',undefined,{token:first.token})).data.media;
   assert.equal(media.length,1);
   const preview=await worker.fetch(new Request('https://ejc.test'+media[0].url),env);

@@ -120,7 +120,7 @@ export async function createOgImage({ name, photoUrl }) {
   ctx.font = '900 42px "DM Sans", Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillStyle = '#FAFC75';
-  ctx.fillText('SIMONÉSIA', 83, 7, 200);
+  ctx.fillText('EJC • MG', 83, 7, 200);
   ctx.restore();
 
   // Central block must survive a square preview crop of 1200 x 630.
@@ -139,7 +139,7 @@ export async function createOgImage({ name, photoUrl }) {
   ctx.fillStyle = '#17182C';
   ctx.font = '900 21px "DM Sans", Arial, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('UMA CARTINHA SÓ PARA VOCÊ  ✳', 600, 86, 478);
+  ctx.fillText('CARTINHAS · XX EJC SIMONÉSIA  ✳', 600, 86, 478);
 
   const portrait = await loadPortrait(photoUrl);
   const photoX = 342, photoY = 114, photoW = 516, photoH = 284;
@@ -203,7 +203,7 @@ export async function createOgImage({ name, photoUrl }) {
 
   ctx.fillStyle = '#25162A';
   ctx.font = '800 16px "DM Sans", Arial, sans-serif';
-  ctx.fillText('💌  FOTO  ·  VOZ  ·  ADESIVOS  ·  AMOR', 600, 567, 480);
+  ctx.fillText('Sua voz, suas fotos e seus adesivos.', 600, 567, 480);
 
   // Details outside central safe zone only.
   ctx.save(); ctx.translate(960, 500); ctx.rotate(-.12);

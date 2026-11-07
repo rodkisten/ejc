@@ -342,7 +342,7 @@ function buildSocialMeta(origin,recipient,kind){
     :'Grave um áudio e envie fotos e palavras especiais para '+recipient.name+' no XX EJC Simonésia.';
   const canonical=origin+'/'+kind+'/'+encodeURIComponent(recipient.slug);
   const image=recipient.og_key && (!recipient.photo_key||recipient.photo_consent)
-    ?origin+'/og/'+recipient.slug+'.png?v='+encodeURIComponent(recipient.og_key.split('/').pop())
+    ?origin+'/api/og/'+recipient.slug+'.png?v='+encodeURIComponent(recipient.og_key.split('/').pop())
     :null;
   const fields=[
     ['property','og:type','website'],['property','og:locale','pt_BR'],
@@ -364,7 +364,7 @@ function buildSocialMeta(origin,recipient,kind){
 }
 
 async function publicRoute(req,env,path) {
-  const ogImage=path.match(/^\/og\/([a-z0-9-]+)\.png$/);
+  const ogImage=path.match(/^\/api\/og\/([a-z0-9-]+)\.png$/);
   if(ogImage&&req.method==='GET'){
     const r=await env.DB.prepare(
       'SELECT og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
@@ -396,7 +396,7 @@ async function publicRoute(req,env,path) {
   }
   const config=await settings(env);
   if (path==='/api/public' && req.method==='GET') {
-    const recipients=(await env.DB.prepare('SELECT id,name,slug,photo_key,photo_consent,og_key FROM recipients WHERE active=1 ORDER BY name COLLATE NOCASE').all()).results.map(r=>({id:r.id,name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r),og_url:r.og_key?'/og/'+r.slug+'.png':null}));
+    const recipients=(await env.DB.prepare('SELECT id,name,slug,photo_key,photo_consent,og_key FROM recipients WHERE active=1 ORDER BY name COLLATE NOCASE').all()).results.map(r=>({id:r.id,name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r),og_url:r.og_key?'/api/og/'+r.slug+'.png':null}));
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({recipients,config:{deadline:config.deadline,release_at:config.release_at,
       open:config.open==='true',store_title:config.store_title,store_subtitle:config.store_subtitle,
@@ -533,7 +533,7 @@ async function adminRoute(req,env,path) {
     await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:'image/png'}});
     await env.DB.prepare('UPDATE recipients SET og_key=? WHERE id=?').bind(key,r.id).run();
     if(r.og_key)await env.MEDIA.delete(r.og_key);
-    return result({ok:true,url:'/og/'+r.slug+'.png'});
+    return result({ok:true,url:'/api/og/'+r.slug+'.png'});
   }
   const photoUpload=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/photo$/);
   if(photoUpload && (req.method==='POST'||req.method==='DELETE')) {
@@ -564,7 +564,7 @@ async function adminRoute(req,env,path) {
     ]);
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({config:{...config,logo_url:logo?`/api/branding/logo?v=${logo.uploaded?.getTime()||0}`:null},
-      recipients:recipients.results.map(r=>({...r,photo_url:recipientPhotoUrl(r),og_url:r.og_key?'/og/'+r.slug+'.png':null})),orders:orders.results});
+      recipients:recipients.results.map(r=>({...r,photo_url:recipientPhotoUrl(r),og_url:r.og_key?'/api/og/'+r.slug+'.png':null})),orders:orders.results});
   }
 
   if(path==='/api/admin/mural-codes/generate'&&req.method==='POST'){

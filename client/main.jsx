@@ -5,7 +5,7 @@ import { Heart, ArrowLeft, Instagram, ShieldCheck, ShoppingBag } from 'lucide-re
 import { CartProvider, useCart } from './lib/cart';
 import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
-import './styles/cart.css';
+
 import { api, enableAnalytics, track } from './lib/api';
 import Home from './pages/Home';
 import Send from './pages/Send';

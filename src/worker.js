@@ -155,7 +155,7 @@ async function orderInfo(env,o) {
   const rows=(await env.DB.prepare("SELECT id,kind,filename,content_type,bytes,created_at FROM media WHERE order_id=? AND status='ready' ORDER BY created_at").bind(o.id).all()).results;
   const visible=activeOrder(o)?await Promise.all(rows.map(async m=>({...m,url:await mediaUrl(env,m.id,o.id)}))):[];
   const receipt=await env.DB.prepare('SELECT verified_at,notified_at FROM order_read_receipts WHERE order_id=?').bind(o.id).first();
-  return {id:o.id,recipient_name:o.recipient_name,recipient_slug:o.recipient_slug,sender_name:o.sender_name,status:o.status,
+  return {id:o.id,recipient_name:o.recipient_name,recipient_slug:o.recipient_slug,sender_name:o.sender_name,status:o.status,checkout_id:o.checkout_id,
     amount_cents:o.total_cents,pix_code:o.pix_payload,txid:o.txid,
     pix_receiver:config.pix_name||'',pix_city:config.pix_city||'',
     rich_html:activeOrder(o)?o.rich_html:'',
@@ -399,6 +399,83 @@ function buildSocialMeta(origin, recipient, kind = 'enviar') {
   };
 }
 
+
+async function checkoutBuyer(req, env) {
+  const access=bearer(req);
+  const checkout=await env.DB.prepare('SELECT * FROM checkouts WHERE token_hash=?').bind(await digest(access)).first();
+  if (!checkout) bad('Compra não encontrada.',404);
+  return {checkout,access};
+}
+async function checkoutInfo(env,checkout,access) {
+  const rows=(await env.DB.prepare(
+    'SELECT o.id,o.status,o.checkout_item_index,r.name AS recipient_name,r.slug AS recipient_slug FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.checkout_id=? ORDER BY o.checkout_item_index'
+  ).bind(checkout.id).all()).results;
+  return {
+    id:checkout.id,status:checkout.status,amount_cents:checkout.total_cents,
+    txid:checkout.txid,pix_code:checkout.pix_payload,created_at:checkout.created_at,
+    claimed_at:checkout.claimed_at,confirmed_at:checkout.confirmed_at,
+    items:await Promise.all(rows.map(async row=>({
+      id:row.id,status:row.status,recipient_name:row.recipient_name,
+      recipient_slug:row.recipient_slug,token:await digest(access+':item:'+row.checkout_item_index)
+    })))
+  };
+}
+async function createCheckout(req,env,config) {
+  if (config.open!=='true') bad('As cartinhas estão temporariamente fechadas.',403);
+  editable(config);
+  if(!config.pix_key||!config.pix_name||!config.pix_city) bad('A chave Pix ainda não foi configurada.',503);
+  const input=await jsonBody(req,24000);
+  if(!Array.isArray(input.items)||input.items.length<1||input.items.length>20)
+    bad('Adicione entre 1 e 20 cartinhas ao carrinho.');
+  const unit=Number(config.message_price_cents||1000);
+  if(!Number.isSafeInteger(unit)||unit<100||unit>5000000)bad('Valor unitário inválido.',503);
+  const amount=unit*input.items.length;
+  if(!Number.isSafeInteger(amount)||amount>5000000)bad('O total Pix excede o limite permitido.',400);
+  const slugs=input.items.map(item=>assertText(item.recipient_slug||'',65,'Encontrista'));
+  const found=(await env.DB.prepare('SELECT id,name,slug FROM recipients WHERE active=1').all()).results;
+  const bySlug=new Map(found.map(r=>[r.slug,r]));
+  const recipients=slugs.map(slug=>bySlug.get(slug));
+  if(recipients.some(r=>!r))bad('Um dos encontristas não está disponível.',400);
+  const prepared=input.items.map((item,index)=>({
+    recipient:recipients[index],
+    sender:assertText(item.sender_name||'',100,'Remetente',false),
+    email:item.notify_on_read===true?validateEmail(item.read_receipt_email):null,
+    notify:item.notify_on_read===true
+  }));
+  if(prepared.some(p=>p.notify&&(!emailsReady(env)||!p.email)))
+    bad('Confira o e-mail de aviso de leitura.',400);
+  const fingerprint=await digest((req.headers.get('CF-Connecting-IP')||'local')+':orders:'+env.SESSION_SECRET);
+  const seconds=Math.floor(Date.now()/1000);
+  const rate=await env.DB.prepare('SELECT attempts,window_start FROM order_rate WHERE fingerprint=?').bind(fingerprint).first();
+  if(rate&&rate.window_start>seconds-3600&&rate.attempts>=15)bad('Muitas compras neste período.',429);
+  const code=randomCode(),checkoutId='EJCB-'+code,txid='EJCB'+code,access=token();
+  const pix=generatePix({key:config.pix_key,merchantName:config.pix_name,
+    merchantCity:config.pix_city,amountCents:amount,txid});
+  const records=await Promise.all(prepared.map(async(item,index)=>{
+    const orderCode=randomCode(),id='EJC-'+orderCode;
+    const itemToken=await digest(access+':item:'+index);
+    return {id,token:itemToken,tokenHash:await digest(itemToken),...item,index};
+  }));
+  const statements=[
+    env.DB.prepare('INSERT INTO checkouts(id,token_hash,txid,total_cents,pix_payload) VALUES(?,?,?,?,?)')
+      .bind(checkoutId,await digest(access),txid,amount,pix),
+    ...records.map(row=>env.DB.prepare(
+      'INSERT INTO orders(id,token_hash,recipient_id,sender_name,total_cents,pix_payload,txid,public_message,checkout_id,checkout_item_index) VALUES(?,?,?,?,?,?,?,?,?,?)'
+    ).bind(row.id,row.tokenHash,row.recipient.id,row.sender,unit,pix,'ITEM'+row.id.slice(4),0,checkoutId,row.index)),
+    env.DB.prepare('INSERT INTO order_rate(fingerprint,attempts,window_start) VALUES(?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET attempts=excluded.attempts,window_start=excluded.window_start')
+      .bind(fingerprint,rate&&rate.window_start>seconds-3600?rate.attempts+1:1,rate&&rate.window_start>seconds-3600?rate.window_start:seconds)
+  ];
+  await env.DB.batch(statements);
+  for(const row of records){
+    await event(env,row.id,'created');
+    await enqueue(env,row.id,'order_created');
+    if(row.notify)await enableReceipt(env,row.id,row.email);
+  }
+  return result({id:checkoutId,token:access,txid,pix_code:pix,amount_cents:amount,
+    items:records.map(row=>({id:row.id,token:row.token,recipient_slug:row.recipient.slug,recipient_name:row.recipient.name}))
+  },201);
+}
+
 async function publicRoute(req,env,path) {
   const ogImage=path.match(/^\/api\/og\/([a-z0-9-]+)\.png$/);
   if(ogImage&&(req.method==='GET'||req.method==='HEAD')){
@@ -496,6 +573,26 @@ async function publicRoute(req,env,path) {
     const body=await jsonBody(req,400);
     if(!await confirmReceipt(env,body.token))bad('Link de confirmação inválido ou expirado.',400);
     return result({ok:true});
+  }
+  if (path==='/api/checkouts'&&req.method==='POST') return createCheckout(req,env,config);
+  if (path==='/api/checkout'&&req.method==='GET'){
+    const {checkout,access}=await checkoutBuyer(req,env);
+    return result(await checkoutInfo(env,checkout,access));
+  }
+  if (path==='/api/checkout/claim'&&req.method==='POST'){
+    const {checkout}=await checkoutBuyer(req,env);
+    if(checkout.status==='paid')return result({ok:true,status:'paid'});
+    if(checkout.status==='cancelled')bad('Compra cancelada.',409);
+    const changed=await env.DB.prepare(
+      "UPDATE checkouts SET status='claimed',claimed_at=COALESCE(claimed_at,?) WHERE id=? AND status IN ('pending','claimed')"
+    ).bind(now(),checkout.id).run();
+    if(changed.meta.changes){
+      await env.DB.prepare("UPDATE orders SET status='claimed',payment_claimed_at=COALESCE(payment_claimed_at,?),updated_at=? WHERE checkout_id=? AND status IN ('pending','claimed')")
+        .bind(now(),now(),checkout.id).run();
+      const children=(await env.DB.prepare('SELECT id FROM orders WHERE checkout_id=?').bind(checkout.id).all()).results;
+      for(const row of children){await event(env,row.id,'payment_claimed');await enqueue(env,row.id,'payment_claimed');}
+    }
+    return result({ok:true,status:'claimed'});
   }
   if (path==='/api/orders' && req.method==='POST') {
     if(config.open!=='true')bad('As homenagens estão temporariamente fechadas.',403);
@@ -621,6 +718,37 @@ async function adminRoute(req,env,path) {
     if(r.og_key)await env.MEDIA.delete(r.og_key);
     return result({ok:true,photo_url:`/api/recipients/${r.id}/photo?v=${key.split('/').pop()}`});
   }
+  if(path==='/api/admin/checkouts'&&req.method==='GET'){
+    const checkouts=(await env.DB.prepare(
+      "SELECT c.id,c.status,c.total_cents,c.txid,c.created_at,c.claimed_at,c.confirmed_at,c.bank_reference,COUNT(o.id) AS item_count FROM checkouts c JOIN orders o ON o.checkout_id=c.id GROUP BY c.id ORDER BY c.created_at DESC LIMIT 500"
+    ).all()).results;
+    return result({checkouts});
+  }
+  const checkoutStatus=path.match(/^\/api\/admin\/checkouts\/(EJCB-[A-F0-9]{12})\/status$/);
+  if(checkoutStatus&&req.method==='PATCH'){
+    const input=await jsonBody(req,700);
+    if(input.status!=='paid')bad('A coordenação só pode confirmar o Pix.',409);
+    const order=await env.DB.prepare('SELECT id,status,total_cents FROM checkouts WHERE id=?').bind(checkoutStatus[1]).first();
+    if(!order)bad('Compra não encontrada.',404);
+    if(!['pending','claimed'].includes(order.status))bad('A compra já foi processada.',409);
+    if(input.bank_checked!==true||input.amount_checked!==true)bad('Confira recebimento e total no extrato.',400);
+    const reference=assertText(input.bank_reference||'',128,'Identificador bancário').toUpperCase();
+    if(!/^[A-Z0-9:/._-]{8,128}$/.test(reference))bad('Identificador bancário inválido.');
+    const priorCheckout=await env.DB.prepare('SELECT id FROM checkouts WHERE bank_reference=?').bind(reference).first();
+    const priorOrder=await env.DB.prepare('SELECT id FROM orders WHERE bank_reference=?').bind(reference).first();
+    if(priorCheckout||priorOrder)bad('Esta transferência já foi confirmada.',409);
+    const confirmed=now();
+    const changed=await env.DB.prepare(
+      "UPDATE checkouts SET status='paid',bank_reference=?,confirmed_at=? WHERE id=? AND status IN ('pending','claimed')"
+    ).bind(reference,confirmed,order.id).run();
+    if(changed.meta.changes!==1)bad('Compra alterada por outro administrador.',409);
+    await env.DB.prepare(
+      "UPDATE orders SET status='paid',confirmed_at=?,updated_at=? WHERE checkout_id=? AND status IN ('pending','claimed')"
+    ).bind(confirmed,confirmed,order.id).run();
+    const children=(await env.DB.prepare('SELECT id FROM orders WHERE checkout_id=?').bind(order.id).all()).results;
+    for(const row of children){await event(env,row.id,'payment_confirmed');await enqueue(env,row.id,'payment_confirmed');}
+    return result({ok:true,status:'paid',letters:children.length});
+  }
   if(path==='/api/admin/bootstrap'&&req.method==='GET'){
     const [config,recipients,orders]=await Promise.all([
       settings(env),
@@ -714,8 +842,9 @@ async function adminRoute(req,env,path) {
   }
   const status=path.match(/^\/api\/admin\/orders\/(EJC-[A-F0-9]{12})\/status$/);
   if(status&&req.method==='PATCH'){
-    const data=await jsonBody(req),order=await env.DB.prepare('SELECT id,status FROM orders WHERE id=?').bind(status[1]).first();
+    const data=await jsonBody(req),order=await env.DB.prepare('SELECT id,status,checkout_id FROM orders WHERE id=?').bind(status[1]).first();
     if(!order)bad('Pedido inexistente.',404);
+    if(order.checkout_id)bad('Confirme o Pix pelo checkout agrupado.',409);
     if(data.status!=='paid')bad('A coordenação só pode confirmar o pagamento Pix.',409);
     if(!['pending','claimed'].includes(order.status))bad('Pedido não está aguardando Pix.',409);
     const ref=assertText(data.bank_reference||'',128,'Identificador bancário').toUpperCase();

@@ -206,3 +206,57 @@ nunca textos, áudios, mensagens ou códigos secretos.
 - **Analytics**: somente rotas genéricas (sem tokens e códigos) são enviadas como visualizações de página, após consentimento. Não enviar conteúdo das cartas, voz, fotos, códigos privados ou tokens.
 
 A política transparente está disponível em `/privacidade` e a coordenação só deve dizer que **não tem acesso ao conteúdo pelo painel**. Para confidencialidade inclusive frente à infraestrutura será necessária uma arquitetura E2EE adicional.
+
+## Personalização das cartinhas (stickers, papel e Instagram)
+
+A partir da versão de composição, os participantes podem decorar suas cartinhas
+antes de pagar e ajustar o resultado após o Pix confirmado:
+
+- **20 adesivos católicos originais**, em quatro categorias (Parabéns, Coragem, Fé e Versículos).
+  Referências no padrão católico: **João 15,9**, **Filipenses 1,6** e **Filipenses 4,13**.
+  As artes são SVG e CSS produzidos no próprio projeto, sem imagens externas.
+- **4 papéis** (Lavanda, Rosa Chá, Azul Mariano e Pêssego) e **3 opções de fonte**
+  (Clássica, Manuscrita e Moderna). Seleção com um toque, sem configurar estilos manualmente.
+- **Assinatura opcional**, com nome personalizado ou envio sem assinatura.
+- **Adesivos com toque, arrastar, setas do teclado, girar, aumentar, diminuir e remover**.
+  Até seis adesivos, posicionados numa área decorativa que evita cobrir o texto da carta.
+  O botão **Surpreenda-me** distribui dois adesivos harmonizados com o papel selecionado.
+- **Tipografia adaptável** na prévia para reduzir o vazio em cartas curtas; conteúdos
+  extensos continuam completos e podem aumentar a altura da carta.
+- **Exportação em PNG com múltiplas páginas** quando o texto é longo; ZIP preserva
+  fotos, áudios, texto e todas as páginas. Exportação para **Instagram Feed
+  1080 × 1350** e **Stories 1080 × 1920**, com prévia truncada explicitamente
+  se o texto inteiro não couber. Compartilhamento pelo menu nativo do iPhone.
+- **Sem publicação automática**: somente o autor ou destinatário com link
+  autorizado pode compartilhar. Nenhuma composição, assinatura personalizada
+  ou imagem da carta é exposta às rotas administrativas.
+
+A decoração é salva no **IndexedDB** durante a preparação pré-Pix e em
+`orders.composition_json` na D1 após confirmar o pagamento. A migração
+`migrations/0007_letter_compositions.sql` mantém as cartinhas anteriores
+compatíveis: caso não haja composição, aplica o papel Lavanda e a fonte Clássica.
+
+### Arquivos adicionados
+
+```text
+shared/letter.js                         Catálogo, temas, normalização e layout puro
+client/components/letter/Sticker.jsx      Artes vetoriais
+client/components/letter/StickerPicker.jsx
+client/components/letter/StickerLayer.jsx
+client/components/letter/LetterControls.jsx
+client/components/letter/LetterCanvas.jsx
+client/components/social/InstagramExportPanel.jsx
+client/hooks/useLetterComposer.js
+client/lib/letterExport.js                Renderização em Canvas, páginas, feed, story
+client/styles/                             Estilos e comportamento responsivo
+tests/letter-composition.test.js
+migrations/0007_letter_compositions.sql
+```
+
+### Antes de disponibilizar ao público
+
+Rode `npm ci && npm run format && npm run format:check && npm run check && npm run build`
+no Codespaces. Verifique na prática o Safari do iPhone, tanto em portrait quanto
+landscape, especialmente o arrastar dos adesivos e o compartilhamento de imagens.
+O deploy existente aplica a migração D1 de forma incremental. Sem aprovação dos
+testes, não publique a versão nova.

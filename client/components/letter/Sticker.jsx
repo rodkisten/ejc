@@ -10,7 +10,7 @@ export function Sticker({ presetId, small = false }) {
   return (
     <span className={`ejc-sticker-image${small ? ' ejc-sticker-image--small' : ''}`}>
       <img
-        src={`/stickers/${encodeURIComponent(preset.id)}.${useFallback ? 'svg' : 'webp'}`}
+        src={useFallback ? `/stickers/${encodeURIComponent(preset.id)}.svg` : `/api/stickers/${encodeURIComponent(preset.id)}.webp`}
         onError={() => setUseFallback(true)}
         alt={preset.text}
         loading="lazy" draggable={false} />

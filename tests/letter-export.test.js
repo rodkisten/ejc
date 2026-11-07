@@ -9,6 +9,7 @@ function mockCanvas() {
     for (const method of [
       'fillRect', 'stroke', 'roundRect', 'beginPath', 'moveTo',
       'lineTo', 'fillText', 'save', 'restore', 'translate', 'rotate', 'fill',
+      'ellipse', 'bezierCurveTo', 'closePath',
     ]) ctx[method] = () => {};
     ctx.measureText = (value) => {
       const size = Number(ctx.font.match(/(\d+)px/)?.[1] || 30);

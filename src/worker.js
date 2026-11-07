@@ -520,6 +520,12 @@ async function publicRoute(req,env,path) {
     if(!blob)bad('Foto não disponível.',404);
     return serveBrandImage(blob);
   }
+  if(path==='/api/stickers'&&req.method==='GET'){
+    const entries=await Promise.all(Object.keys(STICKERS_BY_ID).map(async id=>({
+      id,exists:!!(await env.MEDIA.head('stickers/v1/'+id+'.png'))
+    })));
+    return result({stickers:entries.filter(item=>item.exists).map(item=>item.id)},200,{'Cache-Control':'public, max-age=45'});
+  }
   const config=await settings(env);
   if (path==='/api/public' && req.method==='GET') {
     const recipients=(await env.DB.prepare('SELECT id,name,slug,photo_key,photo_consent,og_key FROM recipients WHERE active=1 ORDER BY name COLLATE NOCASE').all()).results.map(r=>({id:r.id,name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r),og_url:socialImage(r).path}));
@@ -705,7 +711,7 @@ async function adminRoute(req,env,path) {
       await env.MEDIA.delete(key);
       return result({ok:true});
     }
-    const asset=await receiveSafeImage(req,10*1024*1024);
+    const asset=await receiveSafeImage(req,16*1024*1024);
     if(asset.type!=='image/png')bad('Envie a arte original em PNG.',415);
     if(asset.bytes.length<24||!asset.bytes.slice(0,8).every((b,index)=>b===[137,80,78,71,13,10,26,10][index]))
       bad('O arquivo não é um PNG válido.',415);

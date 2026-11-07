@@ -14,6 +14,7 @@ function fixture(){
   sql.exec(fs.readFileSync(new URL('../migrations/0006_private_letters.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0007_letter_compositions.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0008_read_receipts_notifications.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0009_checkout_cart.sql',import.meta.url),'utf8'));
 
   const DB={
     prepare(query){const stmt=(...values)=>({first:async()=>sql.prepare(query).get(...values)||null,all:async()=>({results:sql.prepare(query).all(...values)}),run:async()=>({meta:sql.prepare(query).run(...values)})});return {...stmt(),bind:stmt};},
@@ -415,4 +416,85 @@ test('pedido com e-mail inválido e opt-in não é criado',async()=>{
   });
   assert.equal(result.status,400);
   assert.equal((await env.DB.prepare('SELECT COUNT(*) AS c FROM orders').first()).c,0);
+});
+
+
+test('carrinho: um único Pix com preço verificado no servidor para três cartinhas, inclusive destinatários repetidos', async () => {
+  const env = fixture(), {admin,list} = await setup(env);
+  const created = await call(env,'/api/checkouts','POST',{
+    items:[
+      {recipient_slug:list[0].slug,sender_name:'Mãe'},
+      {recipient_slug:list[1].slug,sender_name:'Seus amigos'},
+      {recipient_slug:list[0].slug,sender_name:'Anônimo'},
+    ],
+  });
+  assert.equal(created.status,201);
+  assert.equal(created.data.items.length,3);
+  assert.equal(created.data.amount_cents,3000);
+  assert.match(created.data.pix_code,/540530\.00/);
+  assert.equal(new Set(created.data.items.map(i=>i.id)).size,3);
+  const parent = await call(env,'/api/checkout','GET',undefined,{token:created.data.token});
+  assert.equal(parent.status,200);
+  assert.equal(parent.data.amount_cents,3000);
+  assert.equal(parent.data.items.length,3);
+  assert.equal(parent.data.items[0].recipient_slug,list[0].slug);
+  assert.equal(parent.data.items[2].recipient_slug,list[0].slug);
+
+  for(const item of parent.data.items){
+    const before = await call(env,'/api/order','GET',undefined,{token:item.token});
+    assert.equal(before.data.status,'pending');
+    assert.equal(before.data.amount_cents,1000);
+    assert.equal(before.data.checkout_id,created.data.id);
+  }
+  assert.equal((await call(env,'/api/order','GET',undefined,{token:created.data.token})).status,404);
+
+  const adminOrders=await call(env,'/api/admin/bootstrap','GET',undefined,admin);
+  assert.equal(adminOrders.status,200);
+  for(const secret of ['Mãe','Seus amigos','Anônimo',created.data.token]){
+    assert.ok(!JSON.stringify(adminOrders.data.orders).includes(secret));
+  }
+  const pending=await call(env,'/api/admin/checkouts','GET',undefined,admin);
+  assert.equal(pending.data.checkouts.length,1);
+  assert.equal(pending.data.checkouts[0].item_count,3);
+  assert.equal(pending.data.checkouts[0].total_cents,3000);
+
+  const claimed=await call(env,'/api/checkout/claim','POST',{}, {token:created.data.token});
+  assert.equal(claimed.status,200);
+  const confirmed=await call(env,'/api/admin/checkouts/'+created.data.id+'/status','PATCH',{
+    status:'paid',bank_reference:'E2EGROUPPAYMENT98765',bank_checked:true,amount_checked:true,
+  },admin);
+  assert.equal(confirmed.status,200);
+  assert.equal(confirmed.data.letters,3);
+  assert.equal((await call(env,'/api/admin/checkouts/'+created.data.id+'/status','PATCH',{
+    status:'paid',bank_reference:'E2EGROUPPAYMENT98765',bank_checked:true,amount_checked:true
+  },admin)).status,409);
+
+  for(const item of parent.data.items){
+    const order=await call(env,'/api/order','GET',undefined,{token:item.token});
+    assert.equal(order.data.status,'paid');
+    const saved=await call(env,'/api/order/message','PUT',{
+      rich_html:'<p>Cartinha para '+item.recipient_name+'</p>',
+      composition:{theme:'marian',stickers:[]},
+    },{token:item.token});
+    assert.equal(saved.status,200);
+    assert.equal((await call(env,'/api/order/submit','POST',{}, {token:item.token})).status,200);
+  }
+  const parentAfter=await call(env,'/api/checkout','GET',undefined,{token:created.data.token});
+  assert.ok(parentAfter.data.items.every(i=>i.status==='paid'));
+});
+
+test('carrinho: valida itens e recusa associação manual de pagamento individual', async () => {
+  const env=fixture(), {admin,list}=await setup(env);
+  assert.equal((await call(env,'/api/checkouts','POST',{items:[]})).status,400);
+  assert.equal((await call(env,'/api/checkouts','POST',{items:[{recipient_slug:'nao-existe'}]})).status,400);
+  const created=await call(env,'/api/checkouts','POST',{
+    items:[{recipient_slug:list[0].slug,sender_name:'Pessoa'}],
+  });
+  const item=created.data.items[0];
+  assert.equal((await call(env,'/api/admin/orders/'+item.id+'/status','PATCH',{
+    status:'paid',bank_reference:'E2EUNICO777777',bank_checked:true,amount_checked:true,
+  },admin)).status,409);
+  assert.equal((await call(env,'/api/admin/checkouts/'+created.data.id+'/status','PATCH',{
+    status:'paid',bank_reference:'E2EUNICO777777',bank_checked:false,amount_checked:true,
+  },admin)).status,400);
 });

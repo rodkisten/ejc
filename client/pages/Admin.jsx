@@ -7,6 +7,7 @@ import Labels from './Labels';
 import StickerAdmin from './StickerAdmin';
 import { publishOgImage, publishDefaultOgImage } from '../lib/og';
 import SquarePhotoEditor from '../components/SquarePhotoEditor';
+import PaymentLookup from './PaymentLookup';
 function useAdmin(){const [info,setInfo]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const reload=useCallback(async()=>{try{setInfo(await api('/api/admin/bootstrap'));setError('');}catch(e){setError(e.message);setInfo(null);}finally{setLoading(false);}},[]);
   useEffect(()=>{reload();},[reload]);return {info,loading,error,reload};}
@@ -39,8 +40,7 @@ function AdminDashboard({ info, reload }) {
         <ShieldCheck size={19} />
         A coordenação acessa apenas dados operacionais de pagamento e envio. Mensagens, fotos e áudios não são exibidos.
       </div>
-      <CheckoutList orders={info.orders} reloadOrders={reload} />
-      <OrderList orders={info.orders} navigate={navigate} />
+      <PaymentLookup recipients={info.recipients} onConfirmed={reload} />
     </>
   );
 }

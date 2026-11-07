@@ -332,6 +332,18 @@ async function validMuralGrant(env,grant,recipient) {
 }
 
 async function publicRoute(req,env,path) {
+  const ogImage=path.match(/^\/og\/([a-z0-9-]+)\.png$/);
+  if(ogImage&&req.method==='GET'){
+    const r=await env.DB.prepare(
+      'SELECT og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
+    ).bind(ogImage[1]).first();
+    if(!r||!r.og_key||(r.photo_key&&!r.photo_consent))bad('Imagem não disponível.',404);
+    const object=await env.MEDIA.get(r.og_key);
+    if(!object)bad('Imagem não disponível.',404);
+    return new Response(object.body,{headers:{
+      ...BASE_HEADERS,'Content-Type':'image/png','Cache-Control':'public, max-age=300'
+    }});
+  }
   if(path==='/api/health' && req.method==='GET') {
     await env.DB.prepare('SELECT 1 AS ok').first();
     await env.MEDIA.head('healthcheck/does-not-exist');
@@ -352,7 +364,7 @@ async function publicRoute(req,env,path) {
   }
   const config=await settings(env);
   if (path==='/api/public' && req.method==='GET') {
-    const recipients=(await env.DB.prepare('SELECT id,name,slug,photo_key,photo_consent FROM recipients WHERE active=1 ORDER BY name COLLATE NOCASE').all()).results.map(r=>({id:r.id,name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r)}));
+    const recipients=(await env.DB.prepare('SELECT id,name,slug,photo_key,photo_consent,og_key FROM recipients WHERE active=1 ORDER BY name COLLATE NOCASE').all()).results.map(r=>({id:r.id,name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r),og_url:r.og_key?'/og/'+r.slug+'.png':null}));
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({recipients,config:{deadline:config.deadline,release_at:config.release_at,
       open:config.open==='true',store_title:config.store_title,store_subtitle:config.store_subtitle,
@@ -475,34 +487,52 @@ async function adminRoute(req,env,path) {
     await env.MEDIA.delete('branding/ejc-market-logo');
     return result({ok:true});
   }
+  const ogUpload=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/og$/);
+  if(ogUpload&&req.method==='POST'){
+    const r=await env.DB.prepare('SELECT id,slug,og_key,photo_key,photo_consent FROM recipients WHERE id=? AND active=1').bind(ogUpload[1]).first();
+    if(!r)bad('Encontrista não encontrado.',404);
+    if(r.photo_key&&!r.photo_consent)bad('Foto sem autorização de publicação.',403);
+    const image=await receiveSafeImage(req,5*1024*1024);
+    if(image.type!=='image/png')bad('A prévia deve ser PNG.',415);
+    const dimensions=new DataView(image.bytes.buffer,image.bytes.byteOffset,image.bytes.byteLength);
+    if(image.bytes.byteLength<24||dimensions.getUint32(16)!==1200||dimensions.getUint32(20)!==630)
+      bad('A imagem deve ter 1200 x 630 pixels.',400);
+    const key='og/'+r.id+'/'+newId()+'.png';
+    await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:'image/png'}});
+    await env.DB.prepare('UPDATE recipients SET og_key=? WHERE id=?').bind(key,r.id).run();
+    if(r.og_key)await env.MEDIA.delete(r.og_key);
+    return result({ok:true,url:'/og/'+r.slug+'.png'});
+  }
   const photoUpload=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/photo$/);
   if(photoUpload && (req.method==='POST'||req.method==='DELETE')) {
-    const r=await env.DB.prepare('SELECT id,photo_key FROM recipients WHERE id=?').bind(photoUpload[1]).first();
+    const r=await env.DB.prepare('SELECT id,photo_key,og_key FROM recipients WHERE id=?').bind(photoUpload[1]).first();
     if(!r)bad('Encontrista não encontrado.',404);
     if(req.method==='DELETE') {
-      await env.DB.prepare('UPDATE recipients SET photo_key=NULL,photo_consent=0 WHERE id=?').bind(r.id).run();
+      await env.DB.prepare('UPDATE recipients SET photo_key=NULL,photo_consent=0,og_key=NULL WHERE id=?').bind(r.id).run();
       if(r.photo_key)await env.MEDIA.delete(r.photo_key);
+      if(r.og_key)await env.MEDIA.delete(r.og_key);
       return result({ok:true});
     }
     if(req.headers.get('X-Photo-Consent')!=='confirmed')bad('Confirme a autorização para divulgação da foto.',403);
     const image=await receiveSafeImage(req,5*1024*1024);
     const key=`recipients/${r.id}/${newId()}`;
     await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:image.type}});
-    await env.DB.prepare('UPDATE recipients SET photo_key=?,photo_consent=1 WHERE id=?').bind(key,r.id).run();
+    await env.DB.prepare('UPDATE recipients SET photo_key=?,photo_consent=1,og_key=NULL WHERE id=?').bind(key,r.id).run();
     if(r.photo_key)await env.MEDIA.delete(r.photo_key);
+    if(r.og_key)await env.MEDIA.delete(r.og_key);
     return result({ok:true,photo_url:`/api/recipients/${r.id}/photo?v=${key.split('/').pop()}`});
   }
   if(path==='/api/admin/bootstrap'&&req.method==='GET'){
     const [config,recipients,orders]=await Promise.all([
       settings(env),
-      env.DB.prepare('SELECT id,name,slug,active,created_at,photo_key,photo_consent,mural_code FROM recipients ORDER BY name COLLATE NOCASE').all(),
+      env.DB.prepare('SELECT id,name,slug,active,created_at,photo_key,photo_consent,og_key,mural_code FROM recipients ORDER BY name COLLATE NOCASE').all(),
       env.DB.prepare(`SELECT o.id,o.sender_name,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,o.moderation,o.moderation_note,o.public_message,o.release_override,o.demo,
         r.name AS recipient_name,r.slug AS recipient_slug,(SELECT COUNT(*) FROM media m WHERE m.order_id=o.id AND m.status='ready') AS files
         FROM orders o JOIN recipients r ON o.recipient_id=r.id ORDER BY o.created_at DESC LIMIT 500`).all()
     ]);
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({config:{...config,logo_url:logo?`/api/branding/logo?v=${logo.uploaded?.getTime()||0}`:null},
-      recipients:recipients.results.map(r=>({...r,photo_url:recipientPhotoUrl(r)})),orders:orders.results});
+      recipients:recipients.results.map(r=>({...r,photo_url:recipientPhotoUrl(r),og_url:r.og_key?'/og/'+r.slug+'.png':null})),orders:orders.results});
   }
 
   if(path==='/api/admin/mural-codes/generate'&&req.method==='POST'){

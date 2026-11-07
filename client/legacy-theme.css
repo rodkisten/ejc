@@ -138,3 +138,57 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .pix-access { padding: 20px; }
   .pix-qr-frame .pix-scanner-label { font-size: .64rem; }
 }
+
+/* Six-character access, with tap targets suitable for iPhone Safari. */
+.unlock-page {
+  max-width: 620px;
+  margin: clamp(12px, 5vw, 60px) auto 60px;
+  text-align: center;
+  min-width: 0;
+}
+.unlock-page h1 {
+  margin: 18px auto 14px;
+  font-size: clamp(2.2rem, 8vw, 4rem);
+  line-height: 1.12;
+}
+.unlock-page h1 em { color: #68368e; }
+.unlock-page > p { max-width: 510px; margin: 15px auto; color: #6b6075; }
+.unlock-icon {
+  background: linear-gradient(130deg, #ffeddf, #e8dcf9);
+  color: #68368e;
+  width: 75px;
+  height: 75px;
+  border-radius: 24px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 20px;
+}
+.unlock-form {
+  margin: 22px auto;
+  max-width: 430px;
+  padding: 24px;
+  display: grid;
+  gap: 14px;
+  text-align: left;
+}
+.unlock-form label { font-weight: 750; }
+.unlock-form .mural-code-input {
+  width: 100%;
+  min-width: 0;
+  height: 68px;
+  background: #f7f0fc;
+  border: 2px solid #d6bde8;
+  font: 900 clamp(1.5rem, 7vw, 2.35rem)/1 'DM Sans',sans-serif;
+  text-align: center;
+  letter-spacing: .24em;
+  border-radius: 16px;
+  color: #492466;
+  padding: 12px 8px;
+  text-transform: uppercase;
+}
+.unlock-form .btn { min-height: 52px; }
+.unlock-privacy,.unlock-page > .small { display: flex; align-items: center; justify-content: center; gap: 7px; }
+@media(max-width:640px) {
+  .unlock-form { padding: 20px 14px; }
+  .unlock-form .mural-code-input { font-size: clamp(1.4rem, 8vw, 2rem); }
+}

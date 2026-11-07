@@ -72,12 +72,11 @@ export default function LetterCanvas({ letter, recipient, editable = false, onCo
       <AdaptiveBody html={letter?.rich_html || ''} layout={layout} font={font.body} />
       {!!images.length && (
         <div className={`letter-photos letter-photos--${images.length === 1 ? 'single' : 'grid'}`}>
-          {images.slice(0, 6).map((image, i) => (
+          {images.map((image, i) => (
             <div className="letter-photo-frame" key={image.id || i}>
               <img src={image.url} alt={`Foto ${i + 1} enviada junto da cartinha`} loading="lazy" />
             </div>
           ))}
-          {images.length > 6 && <span className="letter-more-photos">+{images.length - 6} fotos na cartinha</span>}
         </div>
       )}
       {!!audios.length && (

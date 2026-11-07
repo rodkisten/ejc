@@ -117,14 +117,18 @@ test('cartinhas são privadas: a coordenação confirma Pix sem ler, ouvir nem m
   await call(env,'/api/admin/settings','PUT',{release_at:'2020-11-08T16:00'},admin);
   const released=await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:muralToken});
   assert.equal(released.data.cards.length,1);
-  assert.equal(released.data.cards[0].rich_html.includes('Mensagem privada'),true);
+  assert.equal('rich_html' in released.data.cards[0],false);
+  const actuallyOpened=await call(env,`/api/mural/${person.slug}/cards/${id}`,'GET',undefined,{token:muralToken});
+  assert.equal(actuallyOpened.status,200);
+  assert.equal(actuallyOpened.data.card.rich_html.includes('Mensagem privada'),true);
 
   // Edits after sending remain private and no longer need administrative approval.
   await call(env,'/api/order/message','PUT',
     {rich_html:'<p>Nova versão privada</p>',public_message:true},{token});
   const edited=await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:muralToken});
   assert.equal(edited.data.cards.length,1);
-  assert.match(edited.data.cards[0].rich_html,/Nova versão privada/);
+  const reopened=await call(env,`/api/mural/${person.slug}/cards/${id}`,'GET',undefined,{token:muralToken});
+  assert.match(reopened.data.card.rich_html,/Nova versão privada/);
   assert.equal((await call(env,'/api/publicas')).status,410);
 
   await call(env,'/api/admin/settings','PUT',{deadline:'2020-11-08T16:00'},admin);
@@ -340,6 +344,7 @@ test('composição visual é privada, normalizada e entregue somente ao destinat
   await call(env,'/api/admin/settings','PUT',{release_at:'2020-11-08T16:00'},admin);
   const mural=await call(env,`/api/mural/${list[0].slug}`,'GET',undefined,{token:access.data.grant});
   assert.equal(mural.status,200);
-  assert.equal(mural.data.cards[0].composition.stickers[0].presetId,'nossa-senhora');
-  assert.equal(mural.data.cards[0].composition.theme,'marian');
+  const openedCard=await call(env,`/api/mural/${list[0].slug}/cards/${created.data.id}`,'GET',undefined,{token:access.data.grant});
+  assert.equal(openedCard.data.card.composition.stickers[0].presetId,'nossa-senhora');
+  assert.equal(openedCard.data.card.composition.theme,'marian');
 });

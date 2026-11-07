@@ -1,0 +1,6 @@
+.instagram-export{background:#f8f2fb;border:1px solid #eadbed;border-radius:19px;padding:16px;display:grid;gap:10px;min-width:0}
+.instagram-export .eyebrow{font-size:10px}
+.instagram-export p{margin:0}
+.instagram-export-actions{display:flex;gap:8px;flex-wrap:wrap}
+.instagram-export-actions .btn{min-width:0;white-space:normal;flex:1;min-height:44px;justify-content:center}
+@media(max-width:520px){.instagram-export-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.instagram-export-actions .btn{font-size:12px}}

@@ -156,6 +156,11 @@
   object-position: center;
 }
 .label-profile img { width: 100%; height: 100%; }
+/* Printed labels and personal murals use a rounded square, never a circle. */
+.label-profile,
+.poster-recipient-photo,
+.mural-portrait { border-radius: 13px !important; }
+.label-profile img { border-radius: 10px; }
 @media (max-width: 900px) {
   .classic-ejc-home .hero { padding: 33px 30px; }
   .classic-ejc-home .hero-grid { gap: 13px; }

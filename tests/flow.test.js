@@ -10,6 +10,7 @@ function fixture(){
   sql.exec(fs.readFileSync(new URL('../migrations/0003_recipient_photos.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0004_mural_codes.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0005_og_images.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0006_private_letters.sql',import.meta.url),'utf8'));
 
   const DB={
     prepare(query){const stmt=(...values)=>({first:async()=>sql.prepare(query).get(...values)||null,all:async()=>({results:sql.prepare(query).all(...values)}),run:async()=>({meta:sql.prepare(query).run(...values)})});return {...stmt(),bind:stmt};},
@@ -49,46 +50,82 @@ async function setup(env){
   const list=(await call(env,'/api/public')).data.recipients;
   return {admin,list};
 }
-test('checkout é somente uma cartinha com Pix individual; mídia bloqueada até aprovação bancária',async()=>{
+test('cartinhas são privadas: a coordenação confirma Pix sem ler, ouvir nem moderar',async()=>{
   const env=fixture(),{admin,list}=await setup(env);
-  const recipient=list[0];
-  const created=await call(env,'/api/orders','POST',{recipient_slug:recipient.slug,sender_name:'Rod Costa'});
+  const person=list[0];
+  const created=await call(env,'/api/orders','POST',{recipient_slug:person.slug,sender_name:'Remetente privado'});
   assert.equal(created.status,201);
-  assert.equal(created.data.pix_code.includes('EJC'),true);
-  const token=created.data.token;
-  assert.equal((await call(env,'/api/order/message','PUT',{rich_html:'<p>Oi</p>'},{token})).status,403);
-  assert.equal((await call(env,'/api/order/media/init','POST',{kind:'audio',filename:'oi.wav',content_type:'audio/wav'},{token})).status,403);
+  const token=created.data.token,id=created.data.id;
+
+  assert.equal((await call(env,'/api/order/message','PUT',{rich_html:'<p>Segredo</p>'},{token})).status,403);
+  assert.equal((await call(env,'/api/order/media/init','POST',{kind:'audio',filename:'privado.wav',content_type:'audio/wav'},{token})).status,403);
   assert.equal((await call(env,'/api/order/claim','POST',{}, {token})).status,200);
-  assert.equal((await call(env,`/api/admin/orders/${created.data.id}/status`,'PATCH',{status:'paid',bank_reference:'E2EEXEMPLO12345678',bank_checked:true,amount_checked:true},admin)).status,200);
-  const rich='<h2>Olá!</h2><p><strong>Estamos juntos.</strong></p><script>alert(1)</script>';
-  assert.equal((await call(env,'/api/order/message','PUT',{rich_html:rich,public_message:false},{token})).status,200);
+  const paid=await call(env,`/api/admin/orders/${id}/status`,'PATCH',
+    {status:'paid',bank_reference:'E2EPRIVADO123456789',bank_checked:true,amount_checked:true},admin);
+  assert.equal(paid.status,200);
+
+  const rich='<h2>Olá!</h2><p><strong>Mensagem privada.</strong></p><script>alert(1)</script>';
+  assert.equal((await call(env,'/api/order/message','PUT',
+    {rich_html:rich,public_message:true},{token})).status,200);
   const viewed=(await call(env,'/api/order','GET',undefined,{token})).data;
+  assert.equal(viewed.rich_html.includes('Mensagem privada'),true);
   assert.equal(viewed.rich_html.includes('<script>'),false);
-  assert.equal(viewed.public_message,false);
-  const init=await call(env,'/api/order/media/init','POST',{kind:'audio',filename:'oi.wav',content_type:'audio/wav'},{token});
+  assert.equal('public_message' in viewed,false);
+  assert.equal('moderation' in viewed,false);
+
+  const init=await call(env,'/api/order/media/init','POST',
+    {kind:'audio',filename:'privado.wav',content_type:'audio/wav'},{token});
   assert.equal(init.status,200);
-  assert.equal((await call(env,`/api/order/media/${init.data.id}/part/1`,'PUT',new Uint8Array([1,2,3,4]),{token,raw:true})).status,200);
+  assert.equal((await call(env,`/api/order/media/${init.data.id}/part/1`,'PUT',
+    new Uint8Array([1,2,3,4]),{token,raw:true})).status,200);
   assert.equal((await call(env,`/api/order/media/${init.data.id}/complete`,'POST',{}, {token})).status,200);
-  assert.equal((await call(env,'/api/order/submit','POST',{}, {token})).data.moderation,'pending');
-  const detail=await call(env,`/api/admin/orders/${created.data.id}`,'GET',undefined,admin);
-  assert.equal(detail.data.media.length,1);
-  assert.equal(detail.data.moderation,'pending');
-  const invite=await call(env,`/api/admin/recipients/${recipient.id}/invite`,'POST',{},admin);
-  const privateToken=invite.data.url.split('#token=')[1];
-  assert.equal((await call(env,`/api/mural/${recipient.slug}`,'GET',undefined,{token:privateToken})).data.cards.length,0);
-  assert.equal((await call(env,`/api/admin/orders/${created.data.id}/moderation`,'PATCH',{moderation:'approved',release_now:true},admin)).status,200);
-  assert.equal((await call(env,`/api/mural/${recipient.slug}`,'GET',undefined,{token:privateToken})).data.cards.length,1);
-  assert.equal((await call(env,'/api/publicas')).data.cards.length,0);
-  // Editing an approved letter invalidates approval, public stays opt-in.
-  await call(env,'/api/order/message','PUT',{rich_html:'<p>Outra mensagem</p>',public_message:true},{token});
-  assert.equal((await call(env,`/api/mural/${recipient.slug}`,'GET',undefined,{token:privateToken})).data.cards.length,0);
-  await call(env,'/api/order/submit','POST',{}, {token});
-  await call(env,`/api/admin/orders/${created.data.id}/moderation`,'PATCH',{moderation:'approved',release_now:true},admin);
-  assert.equal((await call(env,'/api/publicas')).data.cards.length,1);
-  // Closing the writing window is enforced on the server.
+  const submitted=await call(env,'/api/order/submit','POST',{}, {token});
+  assert.equal(submitted.status,200);
+  assert.equal(submitted.data.submitted,true);
+
+  const detail=await call(env,`/api/admin/orders/${id}`,'GET',undefined,admin);
+  assert.equal(detail.status,200);
+  for(const key of ['rich_html','media','sender_name','moderation','public_message','moderation_note']){
+    assert.equal(key in detail.data,false,'O admin não pode receber '+key);
+  }
+  assert.ok(!JSON.stringify(detail.data).includes('Mensagem privada'));
+  assert.ok(!JSON.stringify(detail.data).includes('privado.wav'));
+  const summary=await call(env,'/api/admin/bootstrap','GET',undefined,admin);
+  assert.equal(summary.data.orders.find(o=>o.id===id).submitted,1);
+  assert.ok(!JSON.stringify(summary.data.orders).includes('Mensagem privada'));
+  assert.ok(!JSON.stringify(summary.data.orders).includes('Remetente privado'));
+
+  assert.equal((await call(env,`/api/admin/orders/${id}/moderation`,'PATCH',
+    {moderation:'approved'},admin)).status,404);
+  assert.equal((await call(env,`/api/admin/media/${init.data.id}/file`,'GET',undefined,admin)).status,404);
+  assert.equal((await call(env,'/api/publicas')).status,410);
+  assert.equal((await call(env,`/api/mural/${person.slug}`,'GET',undefined,admin)).status,403);
+
+  const invite=await call(env,`/api/admin/recipients/${person.id}/invite`,'POST',{},admin);
+  const muralToken=invite.data.url.split('#token=')[1];
+  const before=await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:muralToken});
+  assert.equal(before.status,200);
+  assert.equal(before.data.cards.length,0);
+  assert.equal(before.data.locked,true);
+
+  await call(env,'/api/admin/settings','PUT',{release_at:'2020-11-08T16:00'},admin);
+  const released=await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:muralToken});
+  assert.equal(released.data.cards.length,1);
+  assert.equal(released.data.cards[0].rich_html.includes('Mensagem privada'),true);
+
+  // Edits after sending remain private and no longer need administrative approval.
+  await call(env,'/api/order/message','PUT',
+    {rich_html:'<p>Nova versão privada</p>',public_message:true},{token});
+  const edited=await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:muralToken});
+  assert.equal(edited.data.cards.length,1);
+  assert.match(edited.data.cards[0].rich_html,/Nova versão privada/);
+  assert.equal((await call(env,'/api/publicas')).status,410);
+
   await call(env,'/api/admin/settings','PUT',{deadline:'2020-11-08T16:00'},admin);
-  assert.equal((await call(env,'/api/order/message','PUT',{rich_html:'<p>tarde</p>'},{token})).status,403);
+  assert.equal((await call(env,'/api/order/message','PUT',
+    {rich_html:'<p>Tarde</p>'},{token})).status,403);
 });
+
 test('convites de mural são individuais, revogáveis e não bastam slugs públicos',async()=>{
   const env=fixture(),{admin,list}=await setup(env),person=list[0];
   assert.equal((await call(env,`/api/mural/${person.slug}`)).status,401);

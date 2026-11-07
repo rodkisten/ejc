@@ -104,44 +104,74 @@ function drawSignature(ctx, author, theme, width, y) {
   ctx.fillText(text + '  ♥', width - 105, y + 53);
 }
 
-function drawStickers(ctx, stickers, limit, width, height) {
+function stickerShape(ctx, shape, width, height) {
+  const w = width / 2, h = height / 2;
+  ctx.beginPath();
+  if (['seal', 'medal', 'oval'].includes(shape)) {
+    ctx.ellipse(0, 0, w, h, 0, 0, Math.PI * 2);
+  } else if (shape === 'burst') {
+    for (let index = 0; index < 32; index++) {
+      const angle = index / 32 * Math.PI * 2 - Math.PI / 2;
+      const radius = index % 2 ? .83 : 1;
+      const x = Math.cos(angle) * w * radius;
+      const y = Math.sin(angle) * h * radius;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  } else if (shape === 'ribbon') {
+    const points = [[-w,-h],[w,-h],[w*.82,0],[w,h],[-w,h],[-w*.82,0]];
+    points.forEach(([x,y],index)=>index?ctx.lineTo(x,y):ctx.moveTo(x,y));
+    ctx.closePath();
+  } else if (shape === 'heart') {
+    ctx.moveTo(0,h);
+    ctx.bezierCurveTo(-w*1.65,h*.15,-w*1.25,-h,0,-h*.44);
+    ctx.bezierCurveTo(w*1.25,-h,w*1.65,h*.15,0,h);
+    ctx.closePath();
+  } else if (shape === 'cloud') {
+    ctx.ellipse(0,0,w,h,0,0,Math.PI*2);
+  } else {
+    ctx.roundRect(-w,-h,width,height,shape === 'tape' ? 4 : 18);
+  }
+}
+function drawStickers(ctx, stickers, limit, width, height, mode) {
   const chosen = stickers.slice(0, limit);
-  const positions = [
-    [width * .21, height * .79, -.06],
-    [width * .53, height * .81, .08],
-    [width * .81, height * .79, -.04],
-  ];
-  chosen.forEach((sticker, index) => {
+  chosen.forEach((sticker) => {
     const preset = STICKERS_BY_ID[sticker.presetId];
     if (!preset) return;
     const colors = STICKER_COLORS[sticker.color] || STICKER_COLORS[preset.colors[0]];
-    const [x, y, angle] = positions[index];
-    const scale = index > 1 ? .87 : 1;
+    const scale = Math.min(1.25,Math.max(.65,sticker.scale || 1)) * .88;
     const sw = (preset.reference ? 240 : 205) * scale;
-    const sh = (preset.reference ? 130 : 111) * scale;
+    const sh = (preset.reference ? 132 : 114) * scale;
+    // The sticker band mirrors its normalized coordinates in the React preview.
+    // Long letters reserve another page if photos + stickers need more room.
+    const x = Math.max(135,Math.min(width - 135,95 + sticker.x / 100 * (width - 190)));
+    const bandTop = mode === 'story' ? height - 510 : height - 480;
+    const y = bandTop + sticker.y / 100 * 180;
+    const angle = (sticker.rotate || 0) * Math.PI / 180;
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle);
     ctx.shadowColor = '#33224240'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 8;
     ctx.fillStyle = '#fffdfa';
-    rounded(ctx, -sw / 2 - 7, -sh / 2 - 7, sw + 14, sh + 14, 20);
+    stickerShape(ctx, preset.shape, sw + 15, sh + 15);
     ctx.fill();
     ctx.shadowColor = 'transparent';
-    ctx.fillStyle = colors.bg; ctx.strokeStyle = colors.edge; ctx.lineWidth = 3;
-    rounded(ctx, -sw / 2, -sh / 2, sw, sh, 16);
+    ctx.fillStyle = colors.bg; ctx.strokeStyle = colors.edge; ctx.lineWidth = 2;
+    stickerShape(ctx, preset.shape, sw, sh);
     ctx.fill(); ctx.stroke();
     ctx.fillStyle = colors.ink;
     ctx.textAlign = 'center';
-    ctx.font = '800 21px "DM Sans",Arial,sans-serif';
+    ctx.font = '800 20px "DM Sans",Arial,sans-serif';
     const icons = {cross:'✝',heart:'♡',marian:'M',sparkle:'✦',stars:'✧',star:'✦',flower:'✿',branch:'❧','sacred-heart':'♥',halo:'✧',arrow:'➜',sun:'☼'};
-    ctx.fillText(icons[preset.icon] || '✦', 0, -sh / 2 + 31);
-    ctx.font = '700 17px "Fraunces",Georgia,serif';
+    ctx.fillText(icons[preset.icon] || '✦', 0, -sh / 2 + 29);
+    ctx.font = '700 15px "Fraunces",Georgia,serif';
     const rows = wrapLines(ctx, preset.text, sw - 22).slice(0, 4);
-    let ty = -((rows.length - 1) * 18) / 2 + 10;
-    for (const row of rows) { ctx.fillText(row, 0, ty); ty += 18; }
+    let ty = -((rows.length - 1) * 17) / 2 + 10;
+    for (const row of rows) { ctx.fillText(row, 0, ty); ty += 17; }
     if (preset.reference) {
-      ctx.font = '700 12px "DM Sans",Arial,sans-serif';
-      ctx.fillText(preset.reference, 0, sh / 2 - 11);
+      ctx.font = '700 11px "DM Sans",Arial,sans-serif';
+      ctx.fillText(preset.reference, 0, sh / 2 - 10);
     }
     ctx.restore();
   });
@@ -201,7 +231,10 @@ export async function renderLetterImages(letter, recipient, mode = 'letter') {
   // Reserve a bottom band for stickers, pictures and the signature.
   // Text on full letters flows onto additional pages rather than being clipped.
   const decorated = photos.length > 0 || composition.stickers.length > 0 || (letter?.media || []).some((m) => m.kind === 'audio');
-  const maxLines = social ? (mode === 'story' ? 23 : 13) : (decorated ? 10 : 17);
+  const maxLines = social
+    ? mode === 'story' ? composition.stickers.length ? 17 : 23
+      : composition.stickers.length ? 9 : 13
+    : decorated ? 10 : 17;
   const maxWidth = social && photos.length ? 590 : width - 210;
   let lines = [];
   if (social) {
@@ -222,6 +255,10 @@ export async function renderLetterImages(letter, recipient, mode = 'letter') {
   }
   const groups = social ? [lines] : Array.from({ length: Math.ceil(lines.length / maxLines) || 1 },
     (_, i) => lines.slice(i * maxLines, (i + 1) * maxLines));
+  if (!social && photos.length && composition.stickers.length && lines.length > 4) {
+    // A decorated photograph deserves a separate art page if body text would overlap it.
+    groups.push([]);
+  }
   const outputs = [];
   for (let page = 0; page < groups.length; page++) {
     const canvas = document.createElement('canvas');
@@ -233,7 +270,8 @@ export async function renderLetterImages(letter, recipient, mode = 'letter') {
     ctx.fillStyle = theme.ink;
     ctx.textAlign = 'left';
     const group = groups[page];
-    const maxBodyHeight = social ? (mode === 'story' ? 1110 : 650) : (decorated ? 520 : 805);
+    const maxBodyHeight = social ? (mode === 'story' ? 1110 : composition.stickers.length ? 500 : 650)
+      : (decorated ? 520 : 805);
     let size = fontSize;
     const fitLines = group;
     const availableLines = Math.max(1, fitLines.length);
@@ -254,16 +292,16 @@ export async function renderLetterImages(letter, recipient, mode = 'letter') {
           const px = width - 355;
           const py = social
             ? mode === 'story' ? height - 660 : 490
-            : composition.stickers.length ? height - 475 : height - 405;
+            : composition.stickers.length ? height - 645 : height - 405;
           drawPhoto(ctx, bitmap, px, py, 220, 170);
           bitmap.close?.();
         }
       }
-      drawStickers(ctx, composition.stickers, 3, width, height);
+      drawStickers(ctx, composition.stickers, social ? 3 : 6, width, height, mode);
       if ((letter?.media || []).some((m) => m.kind === 'audio')) {
         ctx.fillStyle = theme.accent; ctx.textAlign = 'left';
         ctx.font = '700 20px "DM Sans",Arial,sans-serif';
-        ctx.fillText('♫ Áudio especial disponível no mural', 115, height - 238);
+        ctx.fillText('♫ Mensagem de voz incluída', 115, height - 146);
       }
       drawSignature(ctx, author, theme, width, height - 155);
       if (truncated) {

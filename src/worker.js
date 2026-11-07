@@ -420,7 +420,7 @@ async function publicRoute(req,env,path) {
     const fingerprint=await digest((req.headers.get('CF-Connecting-IP')||'local')+':mural:'+env.SESSION_SECRET);
     const seconds=Math.floor(Date.now()/1000);
     const attempts=await env.DB.prepare('SELECT attempts,window_start FROM mural_code_attempts WHERE fingerprint=?').bind(fingerprint).first();
-    if(attempts && attempts.window_start>seconds-900 && attempts.attempts>=6)
+    if(attempts && attempts.window_start>seconds-900 && attempts.attempts>=100)
       bad('Muitas tentativas. Aguarde 15 minutos.',429);
     const person=await env.DB.prepare('SELECT id,slug,mural_code FROM recipients WHERE mural_code=? AND active=1').bind(code).first();
     if(!person) {

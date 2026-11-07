@@ -770,13 +770,15 @@ async function adminRoute(req,env,path) {
     const priorOrder=await env.DB.prepare('SELECT id FROM orders WHERE bank_reference=?').bind(reference).first();
     if(priorCheckout||priorOrder)bad('Esta transferência já foi confirmada.',409);
     const confirmed=now();
-    const changed=await env.DB.prepare(
-      "UPDATE checkouts SET status='paid',bank_reference=?,confirmed_at=? WHERE id=? AND status IN ('pending','claimed')"
-    ).bind(reference,confirmed,order.id).run();
-    if(changed.meta.changes!==1)bad('Compra alterada por outro administrador.',409);
-    await env.DB.prepare(
-      "UPDATE orders SET status='paid',confirmed_at=?,updated_at=? WHERE checkout_id=? AND status IN ('pending','claimed')"
-    ).bind(confirmed,confirmed,order.id).run();
+    const results=await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE checkouts SET status='paid',bank_reference=?,confirmed_at=? WHERE id=? AND status IN ('pending','claimed')"
+      ).bind(reference,confirmed,order.id),
+      env.DB.prepare(
+        "UPDATE orders SET status='paid',confirmed_at=?,updated_at=? WHERE checkout_id=? AND status IN ('pending','claimed')"
+      ).bind(confirmed,confirmed,order.id),
+    ]);
+    if(results[0].meta.changes!==1)bad('Compra alterada por outro administrador.',409);
     const children=(await env.DB.prepare('SELECT id FROM orders WHERE checkout_id=?').bind(order.id).all()).results;
     for(const row of children){await event(env,row.id,'payment_confirmed');await enqueue(env,row.id,'payment_confirmed');}
     return result({ok:true,status:'paid',letters:children.length});

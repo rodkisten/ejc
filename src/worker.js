@@ -128,7 +128,7 @@ async function buyer(req,env) {
   return row;
 }
 async function mediaUrl(env, mediaId, orderId) {
-  const blob=b64url(encode.encode(JSON.stringify({mediaId,orderId,exp:Math.floor(Date.now()/1000)+14400})));
+  const blob=b64url(encode.encode(JSON.stringify({mediaId,orderId,v:2,exp:Math.floor(Date.now()/1000)+14400})));
   const sig=b64url(new Uint8Array(await crypto.subtle.sign('HMAC',await hmacKey(env),encode.encode(blob))));
   return `/api/media/${mediaId}?access=${blob}.${sig}`;
 }
@@ -140,7 +140,7 @@ async function signedMedia(req,env,id,url) {
     if (!await crypto.subtle.verify('HMAC',await hmacKey(env),unb64url(sig),encode.encode(blob))) bad('Assinatura inválida.',403);
     payload=JSON.parse(new TextDecoder().decode(unb64url(blob)));
   } catch { bad('Link de arquivo inválido.',403); }
-  if (payload.mediaId!==id || payload.exp<=Date.now()/1000) bad('Link de arquivo expirado.',403);
+  if (payload.v!==2 || payload.mediaId!==id || payload.exp<=Date.now()/1000) bad('Link de arquivo expirado ou revogado.',403);
   const media=await getMedia(env,id);
   if (media.order_id!==payload.orderId) bad('Acesso negado.',403);
   const order=await env.DB.prepare('SELECT status FROM orders WHERE id=?').bind(media.order_id).first();
@@ -619,12 +619,6 @@ async function adminRoute(req,env,path) {
     await env.DB.prepare('UPDATE recipients SET name=?,active=? WHERE id=?').bind(name,data.active!==false?1:0,recipient[1]).run();
     return result({ok:true});
   }
-  const invite=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/invite$/);
-  if(invite&&req.method==='POST'){
-    const recipient=await env.DB.prepare('SELECT slug FROM recipients WHERE id=?').bind(invite[1]).first();if(!recipient)bad('Encontrista não encontrado.',404);
-    const secret=token();await env.DB.prepare('UPDATE recipients SET mural_token_hash=? WHERE id=?').bind(await digest(secret),invite[1]).run();
-    return result({url:`${new URL(req.url).origin}/mural/${recipient.slug}#token=${secret}`});
-  }
   const detail=path.match(/^\/api\/admin\/orders\/(EJC-[A-F0-9]{12})$/);
   if(detail&&req.method==='GET'){
     const o=await env.DB.prepare(
@@ -705,9 +699,9 @@ async function seedDemo(env){
     const r=await env.DB.prepare('SELECT id,slug FROM recipients WHERE name=?').bind(people[i]).first();
     let id=r?.id; if(!id){id=newId();const slug=`${slugify(people[i])}-demo`;await env.DB.prepare('INSERT INTO recipients(id,name,slug) VALUES(?,?,?)').bind(id,people[i],slug).run();}
     const orderId=`EJC-${randomCode()}`;
-    const state=i===0?'approved':i===1?'pending':i===2?'approved':i===3?'rejected':'draft';
+    const state='approved';
     await env.DB.prepare(`INSERT INTO orders(id,token_hash,recipient_id,sender_name,status,total_cents,pix_payload,txid,rich_html,moderation,moderation_note,public_message,release_override,demo,submitted_at,approved_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(orderId,await digest(token()),id,['Sua mãe','Um amigo','Tia Clara','Seus colegas','Sua família'][i],'paid',1000,'DEMO_NAO_PAGAR',`DEMO${randomCode()}`,`<p><strong>${letters[i]}</strong></p><p>Com carinho 💜</p>`,state,state==='rejected'?'Revisar conteúdo antes de publicar.':'',i===2?1:0,i===0?1:0,1,now(),state==='approved'?now():null).run();
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(orderId,await digest(token()),id,['Sua mãe','Um amigo','Tia Clara','Seus colegas','Sua família'][i],'paid',1000,'DEMO_NAO_PAGAR',`DEMO${randomCode()}`,`<p><strong>${letters[i]}</strong></p><p>Com carinho 💜</p>`,state,'',0,0,1,now(),now()).run();
     const mediaId=newId(),key=`demo/${orderId}/som.wav`;
     const wav=wavTone(250+i*83,2.5);
     await env.MEDIA.put(key,wav,{httpMetadata:{contentType:'audio/wav'}});

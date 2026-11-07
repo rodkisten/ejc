@@ -200,3 +200,21 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .privacy-page .form-card h2{display:flex;align-items:center;gap:10px;font-size:1.2rem}
 .privacy-page .form-card h2 svg{color:#663a85;flex:none}
 .privacy-page .form-card p{line-height:1.7;color:#5a5063;margin:0}
+
+/* Private reading: an envelope is explicitly opened before recording read status. */
+.mural-envelope{min-width:0;margin-bottom:20px}
+.mural-envelope-button{
+  width:100%;min-height:190px;border:2px dashed #c6a4d8;border-radius:24px;
+  background:linear-gradient(128deg,#fff0da,#f9dae8 55%,#eadcfa);
+  display:flex;flex-direction:column;justify-content:center;align-items:center;gap:13px;
+  cursor:pointer;text-align:center;color:#4e286c;padding:24px;
+  box-shadow:0 12px 25px #35254712;
+}
+.mural-envelope-button strong{font:700 clamp(1.4rem,4.5vw,2.3rem)/1.15 'Fraunces',Georgia,serif}
+.mural-envelope-button span{font:700 .86rem 'DM Sans',sans-serif}
+.mural-envelope-button:focus-visible{outline:3px solid #783ab1;outline-offset:4px}
+.mural-envelope-button[disabled]{opacity:.72}
+@media(prefers-reduced-motion:no-preference){
+ .mural-envelope-button{transition:transform .2s ease,box-shadow .2s ease}
+ .mural-envelope-button:hover{transform:translateY(-3px);box-shadow:0 16px 30px #35254722}
+}

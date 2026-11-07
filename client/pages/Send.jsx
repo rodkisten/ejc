@@ -47,99 +47,22 @@ export default function Send() {
     );
   }, [found?.og_url, slug, previewVersion]);
   const { composition, setComposition } = useLetterComposer();
-  const [sender, setSender] = useState(""),
-    [html, setHtml] = useState(""),
-    [assets, setAssets] = useState([]),
-    [ready, setReady] = useState(false),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
-    [preview, setPreview] = useState(false);
-  useEffect(() => {
-    let active = true;
-    draftGet(draftKey(slug))
-      .then((d) => {
-        if (d && active) {
-          setSender(d.sender || "");
-          setHtml(d.html || "");
-          setComposition(d.composition);
-          setAssets(
-            (d.assets || []).map((x) => ({
-              ...x,
-              url: URL.createObjectURL(x.file),
-            })),
-          );
-        }
-        if (active) setReady(true);
-      })
-      .catch(() => setReady(true));
-    return () => {
-      active = false;
-    };
-  }, [slug]);
-  useEffect(() => {
-    if (!ready) return;
-    const id = setTimeout(() => {
-      draftSet(draftKey(slug), {
-        sender,
-        html,
-        composition,
-        assets: assets.map(({ file, kind }) => ({ file, kind })),
-      }).catch(() => {});
-    }, 500);
-    return () => clearTimeout(id);
-  }, [ready, sender, html, composition, assets, slug]);
-  useEffect(
-    () => () => {
-      assets.forEach((x) => {
-        if (x.url) URL.revokeObjectURL(x.url);
-      });
-    },
-    [],
-  );
-  const photos = assets.filter((x) => x.kind === "image"),
-    audios = assets.filter((x) => x.kind === "audio");
-  const letter = {
-    rich_html: html,
-    sender_name: sender,
-    composition,
-    media: assets.map((a, i) => ({
-      ...a,
-      id: i,
-      filename: a.file.name,
-      content_type: a.file.type,
-    })),
-  };
-  const add = (file, kind) =>
-    setAssets((a) => [...a, { file, kind, url: URL.createObjectURL(file) }]);
-  const remove = (index) =>
-    setAssets((a) => {
-      const copy = [...a],
-        item = copy.splice(index, 1)[0];
-      if (item?.url) URL.revokeObjectURL(item.url);
-      return copy;
-    });
-  async function pay() {
-    setBusy(true);
-    setError("");
-    try {
-      await draftSet(draftKey(slug), {
-        sender,
-        html,
-        composition,
-        assets: assets.map(({ file, kind }) => ({ file, kind })),
-      });
-      const data = await api("/api/orders", {
-        method: "POST",
-        data: { recipient_slug: slug, sender_name: sender },
-      });
-      localStorage.setItem("ejc-last-order", data.token);
-      localStorage.setItem(`ejc-order-slug-${data.token}`, slug);
-      track("order_created");
-      navigate(`/pedido/${data.token}`);
-    } catch (e) {
-      setError(e.message);
-      setBusy(false);
-    }
+  const [sender,setSender]=useState(''),[html,setHtml]=useState(''),[assets,setAssets]=useState([]),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[preview,setPreview]=useState(false);
+  const [notifyOnRead,setNotifyOnRead]=useState(false),[receiptEmail,setReceiptEmail]=useState('');
+  useEffect(()=>{let active=true;draftGet(draftKey(slug)).then(d=>{if(d&&active){setSender(d.sender||'');setHtml(d.html||'');setNotifyOnRead(!!d.notifyOnRead);setReceiptEmail(d.receiptEmail||'');setComposition(d.composition);setAssets((d.assets||[]).map(x=>({...x,url:URL.createObjectURL(x.file)})));}if(active)setReady(true);}).catch(()=>setReady(true));return()=>{active=false;};},[slug]);
+  useEffect(()=>{if(!ready)return;const id=setTimeout(()=>{draftSet(draftKey(slug),{sender,html,composition,notifyOnRead,receiptEmail,assets:assets.map(({file,kind})=>({file,kind}))}).catch(()=>{});},500);return()=>clearTimeout(id);},[ready,sender,html,composition,assets,notifyOnRead,receiptEmail,slug]);
+  useEffect(()=>()=>{assets.forEach(x=>{if(x.url)URL.revokeObjectURL(x.url);});},[]);
+  const photos=assets.filter(x=>x.kind==='image'),audios=assets.filter(x=>x.kind==='audio');
+  const letter={rich_html:html,sender_name:sender,composition,media:assets.map((a,i)=>({...a,id:i,filename:a.file.name,content_type:a.file.type}))};
+  const add=(file,kind)=>setAssets(a=>[...a,{file,kind,url:URL.createObjectURL(file)}]);
+  const remove=index=>setAssets(a=>{const copy=[...a],item=copy.splice(index,1)[0];if(item?.url)URL.revokeObjectURL(item.url);return copy;});
+  async function pay(){
+    setBusy(true);setError('');try{
+      await draftSet(draftKey(slug),{sender,html,composition,notifyOnRead,receiptEmail,assets:assets.map(({file,kind})=>({file,kind}))});
+      const data=await api('/api/orders',{method:'POST',data:{recipient_slug:slug,sender_name:sender,notify_on_read:notifyOnRead,read_receipt_email:notifyOnRead?receiptEmail:''}});
+      localStorage.setItem('ejc-last-order',data.token);localStorage.setItem(`ejc-order-slug-${data.token}`,slug);
+      track('order_created');navigate(`/pedido/${data.token}`);
+    }catch(e){setError(e.message);setBusy(false);}
   }
   if (!found)
     return (
@@ -343,26 +266,25 @@ export default function Send() {
           </div>
         )}
       </div>
-      <aside className="compose-side">
-        <div className="side-paper">
-          <div className="letter-stamp">ANTES DE ENVIAR ♡</div>
-          <h3>Você não precisa ter as palavras perfeitas.</h3>
-          <p>
-            Às vezes um “eu te amo”, uma foto antiga ou um áudio espontâneo
-            dizem tudo.
-          </p>
-          <span>✳ &nbsp; XX EJC SIMONÉSIA</span>
-        </div>
-        <div className="sidebar-steps">
-          <CheckCircle2 size={18} /> Criar agora ou depois de pagar
-          <br />
-          <CheckCircle2 size={18} /> Conferência do Pix
-          <br />
-          <CheckCircle2 size={18} /> Envio direto ao mural privado
-          <br />
-          <CheckCircle2 size={18} /> Mural secreto liberado na hora certa
-        </div>
-      </aside>
-    </div>
-  );
+    </section>
+    {config?.read_emails_enabled&&
+      <section className="email-read-field">
+        <label>
+          <input type="checkbox" checked={notifyOnRead} onChange={e=>setNotifyOnRead(e.target.checked)}/>
+          💌 Quero receber um e-mail quando minha cartinha for aberta (opcional)
+        </label>
+        {notifyOnRead&&<>
+          <input type="email" inputMode="email" autoComplete="email" value={receiptEmail}
+            onChange={e=>setReceiptEmail(e.target.value.slice(0,254))}
+            placeholder="seuemail@exemplo.com" aria-label="Seu e-mail para receber aviso de leitura"/>
+          <p>Enviaremos uma confirmação para seu e-mail. Depois, apenas um aviso quando
+            o encontrista abrir esta cartinha. A coordenação não vê seu endereço.</p>
+        </>}
+      </section>}
+    <div className="notice"><Info size={17}/><span>Áudios e fotos gravados antes do pagamento ficam guardados apenas neste navegador. Não limpe os dados do Chrome ou Safari e evite trocar de aparelho até pagar e enviar os arquivos.</span></div>
+    {error && <div className="notice error">{error}</div>}
+    <div className="inline-actions spaced"><button className="btn ghost" type="button" onClick={()=>setPreview(v=>!v)}>{preview?'Fechar prévia':'Ver minha cartinha'}</button><button className="btn" disabled={busy||!ready||!config?.payments_ready||!config?.open||(notifyOnRead&&!receiptEmail.includes('@'))} onClick={pay}><CreditCard size={18}/> {busy?'Gerando Pix...':`Gerar Pix de ${money(config?.amount_cents)}`} <ArrowRight size={17}/></button></div>
+    {!config?.payments_ready && <div className="notice warning">A coordenação ainda precisa configurar a chave Pix.</div>}
+    {preview && <div className="preview-popup"><LetterCard letter={letter} recipient={found.name} editable onCompositionChange={setComposition} actions={false}/></div>}
+  </div><aside className="compose-side"><div className="side-paper"><div className="letter-stamp">ANTES DE ENVIAR ♡</div><h3>Você não precisa ter as palavras perfeitas.</h3><p>Às vezes um “eu te amo”, uma foto antiga ou um áudio espontâneo dizem tudo.</p><span>✳ &nbsp; XX EJC SIMONÉSIA</span></div><div className="sidebar-steps"><CheckCircle2 size={18}/> Criar agora ou depois de pagar<br/><CheckCircle2 size={18}/> Conferência do Pix<br/><CheckCircle2 size={18}/> Envio direto ao mural privado<br/><CheckCircle2 size={18}/> Mural secreto liberado na hora certa</div></aside></div>;
 }

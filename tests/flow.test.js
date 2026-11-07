@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import worker from '../src/worker.js';
+import { dispatch } from '../src/notify.js';
 function fixture(){
   const sql=new DatabaseSync(':memory:');
   sql.exec(fs.readFileSync(new URL('../migrations/0001_initial.sql',import.meta.url),'utf8'));
@@ -12,6 +13,7 @@ function fixture(){
   sql.exec(fs.readFileSync(new URL('../migrations/0005_og_images.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0006_private_letters.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0007_letter_compositions.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0008_read_receipts_notifications.sql',import.meta.url),'utf8'));
 
   const DB={
     prepare(query){const stmt=(...values)=>({first:async()=>sql.prepare(query).get(...values)||null,all:async()=>({results:sql.prepare(query).all(...values)}),run:async()=>({meta:sql.prepare(query).run(...values)})});return {...stmt(),bind:stmt};},
@@ -116,14 +118,18 @@ test('cartinhas são privadas: a coordenação confirma Pix sem ler, ouvir nem m
   await call(env,'/api/admin/settings','PUT',{release_at:'2020-11-08T16:00'},admin);
   const released=await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:muralToken});
   assert.equal(released.data.cards.length,1);
-  assert.equal(released.data.cards[0].rich_html.includes('Mensagem privada'),true);
+  assert.equal('rich_html' in released.data.cards[0],false);
+  const actuallyOpened=await call(env,`/api/mural/${person.slug}/cards/${id}`,'GET',undefined,{token:muralToken});
+  assert.equal(actuallyOpened.status,200);
+  assert.equal(actuallyOpened.data.card.rich_html.includes('Mensagem privada'),true);
 
   // Edits after sending remain private and no longer need administrative approval.
   await call(env,'/api/order/message','PUT',
     {rich_html:'<p>Nova versão privada</p>',public_message:true},{token});
   const edited=await call(env,`/api/mural/${person.slug}`,'GET',undefined,{token:muralToken});
   assert.equal(edited.data.cards.length,1);
-  assert.match(edited.data.cards[0].rich_html,/Nova versão privada/);
+  const reopened=await call(env,`/api/mural/${person.slug}/cards/${id}`,'GET',undefined,{token:muralToken});
+  assert.match(reopened.data.card.rich_html,/Nova versão privada/);
   assert.equal((await call(env,'/api/publicas')).status,410);
 
   await call(env,'/api/admin/settings','PUT',{deadline:'2020-11-08T16:00'},admin);
@@ -339,6 +345,74 @@ test('composição visual é privada, normalizada e entregue somente ao destinat
   await call(env,'/api/admin/settings','PUT',{release_at:'2020-11-08T16:00'},admin);
   const mural=await call(env,`/api/mural/${list[0].slug}`,'GET',undefined,{token:access.data.grant});
   assert.equal(mural.status,200);
-  assert.equal(mural.data.cards[0].composition.stickers[0].presetId,'nossa-senhora');
-  assert.equal(mural.data.cards[0].composition.theme,'marian');
+  const openedCard=await call(env,`/api/mural/${list[0].slug}/cards/${created.data.id}`,'GET',undefined,{token:access.data.grant});
+  assert.equal(openedCard.data.card.composition.stickers[0].presetId,'nossa-senhora');
+  assert.equal(openedCard.data.card.composition.theme,'marian');
+});
+
+test('aviso consentido fica criptografado e sai somente na primeira abertura',async()=>{
+  const env=fixture();
+  env.RESEND_API_KEY='resend-test';
+  env.RESEND_FROM='XX EJC <avisos@ejc.migos.club>';
+  env.RELAY_URL='https://relay.test/send';
+  env.RELAY_TOKEN='relay-secret-test';
+  const {admin,list}=await setup(env);
+  assert.equal((await call(env,'/api/public')).data.config.read_emails_enabled,true);
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:list[0].slug,sender_name:'Remetente privado',
+    notify_on_read:true,read_receipt_email:'exemplo@dominio.com'
+  });
+  assert.equal(created.status,201);
+  const id=created.data.id,token=created.data.token;
+  const stored=await env.DB.prepare('SELECT email_encrypted FROM order_read_receipts WHERE order_id=?').bind(id).first();
+  assert.ok(stored.email_encrypted.startsWith('v1.'));
+  assert.ok(!stored.email_encrypted.includes('exemplo@'));
+  assert.ok(!JSON.stringify((await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data).includes('exemplo@'));
+  const job=await env.DB.prepare("SELECT payload FROM notification_outbox WHERE order_id=? AND event='email_verify'").bind(id).first();
+  const verification=JSON.parse(job.payload).token;
+  const calls=[],oldFetch=globalThis.fetch;
+  globalThis.fetch=async(url,options)=>{
+    calls.push({url:String(url),body:JSON.parse(options.body)});
+    return Response.json({id:'sent'},{status:200});
+  };
+  try {
+    await dispatch(env);
+    assert.ok(calls.some(c=>c.url.includes('api.resend.com/emails')&&c.body.to[0]==='exemplo@dominio.com'));
+    assert.equal((await call(env,'/api/receipt/confirm','POST',{token:verification})).status,200);
+    assert.equal((await call(env,'/api/receipt/confirm','POST',{token:verification})).status,400);
+    await call(env,'/api/order/claim','POST',{}, {token});
+    await call(env,'/api/admin/orders/'+id+'/status','PATCH',
+      {status:'paid',bank_reference:'E2EREAD12345678',bank_checked:true,amount_checked:true},admin);
+    await call(env,'/api/order/message','PUT',{rich_html:'<p>Segredo de uma carta privada!</p>'},{token});
+    await call(env,'/api/order/submit','POST',{}, {token});
+    await call(env,'/api/admin/mural-codes/generate','POST',{regenerate:false},admin);
+    await call(env,'/api/admin/settings','PUT',{release_at:'2020-11-08T16:00'},admin);
+    const adminData=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data;
+    const code=adminData.recipients.find(r=>r.slug===list[0].slug).mural_code;
+    const grant=(await call(env,'/api/mural/redeem','POST',{code})).data.grant;
+    const path='/api/mural/'+list[0].slug;
+    const listMural=await call(env,path,'GET',undefined,{token:grant});
+    assert.equal(listMural.data.cards.length,1);
+    assert.equal('rich_html' in listMural.data.cards[0],false);
+    assert.equal((await env.DB.prepare('SELECT first_read_at FROM orders WHERE id=?').bind(id).first()).first_read_at,null);
+    const opened=await call(env,path+'/cards/'+id,'GET',undefined,{token:grant});
+    assert.match(opened.data.card.rich_html,/Segredo de uma carta privada!/);
+    await call(env,path+'/cards/'+id,'GET',undefined,{token:grant});
+    assert.equal((await env.DB.prepare("SELECT COUNT(*) AS c FROM notification_outbox WHERE order_id=? AND event='email_read'").bind(id).first()).c,1);
+    await dispatch(env);
+    assert.equal(calls.filter(c=>c.url.includes('api.resend.com/emails')&&c.body.subject.includes('aberta')).length,1);
+    assert.ok(calls.every(c=>!JSON.stringify(c).includes('Segredo de uma carta privada!')));
+    assert.ok(calls.filter(c=>c.url.includes('relay.test')).every(c=>!JSON.stringify(c).includes('exemplo@dominio.com')));
+    await dispatch(env);
+    assert.equal(calls.filter(c=>c.url.includes('api.resend.com/emails')&&c.body.subject.includes('aberta')).length,1);
+  } finally {globalThis.fetch=oldFetch;}
+});
+
+test('pedido com e-mail inválido e opt-in não é criado',async()=>{
+  const env=fixture(),{list}=await setup(env);
+  const result=await call(env,'/api/orders','POST',{
+    recipient_slug:list[0].slug,notify_on_read:true,read_receipt_email:'invalido'
+  });
+  assert.equal(result.status,400);
+  assert.equal((await env.DB.prepare('SELECT COUNT(*) AS c FROM orders').first()).c,0);
 });

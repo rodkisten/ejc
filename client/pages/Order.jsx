@@ -39,6 +39,8 @@ export default function Order() {
   const [html, setHtml] = useState(''),
     [assets, setAssets] = useState([]),
     [progress, setProgress] = useState('');
+  const [receiptEmail, setReceiptEmail] = useState('');
+  const [receiptBusy,setReceiptBusy] = useState(false);
   const reload = useCallback(async () => {
     try {
       const o = await api('/api/order', { token });
@@ -135,6 +137,35 @@ export default function Order() {
       setBusy(false);
     }
   }
+  async function requestReadEmail() {
+    setReceiptBusy(true);
+    setError('');
+    try {
+      await api('/api/order/read-notification', {
+        method: 'POST', token, data: { enabled: true, email: receiptEmail },
+      });
+      setProgress('Verifique sua caixa de entrada e confirme o e-mail de leitura.');
+      await reload();
+    } catch (cause) {
+      setError(cause.message);
+    } finally {
+      setReceiptBusy(false);
+    }
+  }
+  async function cancelReadEmail() {
+    setReceiptBusy(true);
+    try {
+      await api('/api/order/read-notification', {
+        method: 'POST', token, data: { enabled: false },
+      });
+      setProgress('Avisos de leitura desativados.');
+      await reload();
+    } catch (cause) {
+      setError(cause.message);
+    } finally {
+      setReceiptBusy(false);
+    }
+  }
   if (error && !order)
     return (
       <div className="empty">
@@ -168,6 +199,30 @@ export default function Order() {
         })[order.status] || 'Aguardando conferência'}
         </span>
       </div>
+      {config?.read_emails_enabled && (
+        <section className="email-read-field" aria-label="Aviso opcional de leitura">
+          <strong>💌 Quer saber quando sua cartinha for aberta?</strong>
+          {order.read_notification?.enabled ? (
+            <>
+              <p>{order.read_notification?.notified ? 'O aviso já foi enviado.' :
+                order.read_notification?.verified ? 'E-mail confirmado. Avisaremos após a primeira abertura.' :
+                  'Confirme o endereço pelo e-mail enviado para ativar o aviso.'}</p>
+              {!order.read_notification?.notified && (
+                <button className="btn ghost" type="button" disabled={receiptBusy}
+                  onClick={cancelReadEmail}>Desativar aviso</button>
+              )}
+            </>
+          ) : (
+            <>
+              <p>É opcional. Enviaremos um aviso somente quando o encontrista abrir esta cartinha, sem mostrar o conteúdo.</p>
+              <input type="email" inputMode="email" autoComplete="email" placeholder="seuemail@exemplo.com"
+                value={receiptEmail} onChange={e=>setReceiptEmail(e.target.value.slice(0,254))} />
+              <button className="btn outline" type="button" disabled={receiptBusy || !receiptEmail.includes('@')}
+                onClick={requestReadEmail}>Receber aviso por e-mail</button>
+            </>
+          )}
+        </section>
+      )}
       {!paid ? (
       <div className="payment-layout">
         <section className="form-card pix-checkout">

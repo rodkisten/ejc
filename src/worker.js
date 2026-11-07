@@ -1,5 +1,6 @@
 import { generatePix } from './pix.js';
 import { normalizeComposition } from '../shared/letter.js';
+import { enqueue, enableReceipt, disableReceipt, confirmReceipt, markRead, queueRelease, dispatch, validateEmail, emailsReady } from './notify.js';
 
 const PART_SIZE = 8 * 1024 * 1024;
 const MIN_PART = 5 * 1024 * 1024;
@@ -153,12 +154,13 @@ async function orderInfo(env,o) {
   const config=await settings(env);
   const rows=(await env.DB.prepare("SELECT id,kind,filename,content_type,bytes,created_at FROM media WHERE order_id=? AND status='ready' ORDER BY created_at").bind(o.id).all()).results;
   const visible=activeOrder(o)?await Promise.all(rows.map(async m=>({...m,url:await mediaUrl(env,m.id,o.id)}))):[];
+  const receipt=await env.DB.prepare('SELECT verified_at,notified_at FROM order_read_receipts WHERE order_id=?').bind(o.id).first();
   return {id:o.id,recipient_name:o.recipient_name,recipient_slug:o.recipient_slug,sender_name:o.sender_name,status:o.status,
     amount_cents:o.total_cents,pix_code:o.pix_payload,txid:o.txid,
     pix_receiver:config.pix_name||'',pix_city:config.pix_city||'',
     rich_html:activeOrder(o)?o.rich_html:'',
     composition:activeOrder(o)?normalizeComposition(JSON.parse(o.composition_json||'{}')):null,
-    submitted:!!o.submitted_at,
+    submitted:!!o.submitted_at,read_notification:{enabled:!!receipt,verified:!!receipt?.verified_at,notified:!!receipt?.notified_at},
     payment_claimed_at:o.payment_claimed_at,created_at:o.created_at,media:visible};
 }
 async function getMedia(env,id) {
@@ -438,7 +440,7 @@ async function publicRoute(req,env,path) {
       open:config.open==='true',store_title:config.store_title,store_subtitle:config.store_subtitle,
       amount_cents:Number(config.message_price_cents||1000),analytics_id:config.analytics_id||'',
       logo_url:logo?`/api/branding/logo?v=${logo.uploaded?.getTime()||0}`:null,
-      payments_ready:!!(config.pix_key && config.pix_name && config.pix_city)}});
+      payments_ready:!!(config.pix_key && config.pix_name && config.pix_city),read_emails_enabled:emailsReady(env)}});
   }
   if(path==='/api/publicas')bad('Todas as cartinhas são privadas.',410);
   if(path==='/api/mural/redeem'&&req.method==='POST') {
@@ -460,23 +462,40 @@ async function publicRoute(req,env,path) {
     await env.DB.prepare('DELETE FROM mural_code_attempts WHERE fingerprint=?').bind(fingerprint).run();
     return result({slug:person.slug,grant:await muralGrant(env,person)});
   }
+  // Loading a mural listing is not a read receipt; opening an envelope is.
+  const cardPath=path.match(/^\/api\/mural\/([a-z0-9-]+)\/cards\/(EJC-[A-F0-9]{12})$/);
   const mural=path.match(/^\/api\/mural\/([a-z0-9-]+)$/);
-  if (mural && req.method==='GET') {
-    const r=await env.DB.prepare('SELECT id,name,slug,mural_code,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1').bind(mural[1]).first();
-    if(!r)bad('Encontrista não encontrado.',404);
-    const access=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
-    const signed=await validMuralGrant(env,access,r);
-    if(!signed)bad('Código de acesso inválido.',403);
-    // O remetente envia quando quiser; o destinatário só vê após a liberação.
-    const locked=!released(config);
-    if(locked)return result({recipient:{name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r)},
-      cards:[],release_at:config.release_at,locked:true});
+  if((mural||cardPath)&&req.method==='GET'){
+    const slug=mural?mural[1]:cardPath[1];
+    const person=await env.DB.prepare('SELECT id,name,slug,mural_code,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1')
+      .bind(slug).first();
+    if(!person)bad('Encontrista não encontrado.',404);
+    const grant=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
+    if(!await validMuralGrant(env,grant,person))bad('Código de acesso inválido.',403);
+    if(!released(config))return result({
+      recipient:{name:person.name,slug:person.slug,photo_url:recipientPhotoUrl(person)},
+      cards:[],release_at:config.release_at,locked:true
+    });
+    if(cardPath){
+      const order=await env.DB.prepare(
+        "SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.id=? AND o.recipient_id=? AND o.submitted_at IS NOT NULL AND o.status IN ('paid','preparing','delivered')"
+      ).bind(cardPath[2],person.id).first();
+      if(!order)bad('Cartinha não encontrada.',404);
+      const card=await cardInfo(env,order);
+      await markRead(env,order.id);
+      return result({card});
+    }
     const rows=(await env.DB.prepare(
-      "SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON o.recipient_id=r.id WHERE o.recipient_id=? AND o.submitted_at IS NOT NULL AND o.status IN ('paid','preparing','delivered') ORDER BY o.submitted_at DESC"
-    ).bind(r.id).all()).results;
-    const cards=await Promise.all(rows.map(o=>cardInfo(env,o)));
-    return result({recipient:{name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r)},
-      cards,release_at:config.release_at,locked:false});
+      "SELECT o.id,o.submitted_at FROM orders o WHERE o.recipient_id=? AND o.submitted_at IS NOT NULL AND o.status IN ('paid','preparing','delivered') ORDER BY o.submitted_at DESC"
+    ).bind(person.id).all()).results;
+    return result({recipient:{name:person.name,slug:person.slug,photo_url:recipientPhotoUrl(person)},
+      cards:rows.map(o=>({id:o.id,submitted_at:o.submitted_at})),
+      release_at:config.release_at,locked:false});
+  }
+  if(path==='/api/receipt/confirm'&&req.method==='POST'){
+    const body=await jsonBody(req,400);
+    if(!await confirmReceipt(env,body.token))bad('Link de confirmação inválido ou expirado.',400);
+    return result({ok:true});
   }
   if (path==='/api/orders' && req.method==='POST') {
     if(config.open!=='true')bad('As homenagens estão temporariamente fechadas.',403);
@@ -486,6 +505,8 @@ async function publicRoute(req,env,path) {
     const recipient=await env.DB.prepare('SELECT id,name,slug FROM recipients WHERE (id=? OR slug=?) AND active=1').bind(String(input.recipient_id||''),String(input.recipient_slug||'')).first();
     if(!recipient)bad('Encontrista inválido.');
     const sender=assertText(input.sender_name||'',100,'Nome de quem envia',false);
+    if(input.notify_on_read===true && (!emailsReady(env)||!validateEmail(input.read_receipt_email)))
+      bad('O aviso de leitura exige um e-mail válido e o serviço de e-mail configurado.');
     const total=Number(config.message_price_cents||1000);
     if(!Number.isSafeInteger(total)||total<100||total>5000000)bad('Configure o valor da mensagem (mínimo R$ 1).',503);
     const ip=await digest((req.headers.get('CF-Connecting-IP')||'local')+':orders:'+env.SESSION_SECRET);
@@ -498,16 +519,28 @@ async function publicRoute(req,env,path) {
       env.DB.prepare('INSERT INTO order_rate(fingerprint,attempts,window_start) VALUES(?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET attempts=excluded.attempts,window_start=excluded.window_start').bind(ip,rate&&rate.window_start>t-3600?rate.attempts+1:1,rate&&rate.window_start>t-3600?rate.window_start:t)
     ]);
     await event(env,id,'created');
+    await enqueue(env,id,'order_created');
+    if(input.notify_on_read===true)await enableReceipt(env,id,input.read_receipt_email);
     return result({id,token:access,txid,pix_code:pix},201);
   }
   if(path.startsWith('/api/order')&&path!=='/api/orders') {
     const o=await buyer(req,env);
     if(path==='/api/order'&&req.method==='GET')return result({...await orderInfo(env,o),deadline:config.deadline,release_at:config.release_at});
+    if(path==='/api/order/read-notification'&&req.method==='POST'){
+      const data=await jsonBody(req,600);
+      if(data.enabled===false){
+        await disableReceipt(env,o.id);
+        return result({enabled:false});
+      }
+      if(data.enabled!==true||!validateEmail(data.email))
+        bad('Informe um e-mail válido para solicitar aviso de leitura.');
+      return result(await enableReceipt(env,o.id,data.email));
+    }
     if(path==='/api/order/claim'&&req.method==='POST') {
       if(activeOrder(o))return result({ok:true,status:o.status});
       if(o.status==='cancelled')bad('Pedido cancelado.',409);
       await env.DB.prepare("UPDATE orders SET status='claimed',payment_claimed_at=?,updated_at=? WHERE id=? AND status IN ('pending','claimed')").bind(now(),now(),o.id).run();
-      await event(env,o.id,'payment_claimed');return result({ok:true,status:'claimed'});
+      await event(env,o.id,'payment_claimed');await enqueue(env,o.id,'payment_claimed');return result({ok:true,status:'claimed'});
     }
     if(path==='/api/order/message'&&req.method==='PUT') {
       if(!activeOrder(o))bad('Pagamento não confirmado.',403);
@@ -526,7 +559,7 @@ async function publicRoute(req,env,path) {
       const count=await env.DB.prepare("SELECT COUNT(*) AS count FROM media WHERE order_id=? AND status='ready'").bind(o.id).first();
       if(!excerpt(o.rich_html)&&!count.count)bad('Escreva uma mensagem ou adicione uma foto ou áudio antes de enviar.');
       await env.DB.prepare("UPDATE orders SET moderation='approved',public_message=0,moderation_note='',submitted_at=?,approved_at=?,release_override=0,updated_at=? WHERE id=?").bind(now(),now(),now(),o.id).run();
-      await event(env,o.id,'letter_sent');return result({ok:true,submitted:true});
+      await event(env,o.id,'letter_sent');await enqueue(env,o.id,'letter_sent');return result({ok:true,submitted:true});
     }
     if(path.startsWith('/api/order/media/')){
       const file=path.match(/^\/api\/order\/media\/([a-f0-9-]{36})\/file$/);
@@ -694,7 +727,7 @@ async function adminRoute(req,env,path) {
       const changed=await env.DB.prepare("UPDATE orders SET status='paid',bank_reference=?,confirmed_at=?,updated_at=? WHERE id=? AND status IN ('pending','claimed')").bind(ref,now(),now(),order.id).run();
       if(changed.meta.changes!==1)bad('Pedido alterado por outro administrador.',409);
     }catch(e){if(String(e).includes('UNIQUE constraint'))bad('Transação já utilizada.',409);throw e;}
-    await event(env,order.id,'payment_confirmed',ref);return result({ok:true,status:'paid'});
+    await event(env,order.id,'payment_confirmed',ref);await enqueue(env,order.id,'payment_confirmed');return result({ok:true,status:'paid'});
   }
   if(path==='/api/admin/demo/seed'&&req.method==='POST')return seedDemo(env);
   if(path==='/api/admin/demo/clear'&&req.method==='DELETE')return clearDemo(env);
@@ -778,15 +811,28 @@ async function clearDemo(env){
   return result({ok:true,deleted:demos.length});
 }
 export default {
-  async fetch(request,env) {
+  async scheduled(_event,env,ctx) {
+    await queueRelease(env,(await settings(env)).release_at);
+    const pending=dispatch(env);
+    if(ctx?.waitUntil)ctx.waitUntil(pending);
+    else await pending;
+  },
+  async fetch(request,env,ctx) {
     try {
       const url=new URL(request.url), path=url.pathname;
       if (path.startsWith('/api/')) {
         allowOrigin(request);
-        if (path.startsWith('/api/admin/')) return await adminRoute(request,env,path);
+        if (path.startsWith('/api/admin/')) {
+          const response=await adminRoute(request,env,path);
+          if(WRITE_METHODS.has(request.method)&&ctx?.waitUntil)ctx.waitUntil(dispatch(env));
+          return response;
+        }
         const stream=path.match(/^\/api\/media\/([a-f0-9-]{36})$/);
         if (stream && request.method==='GET') return await signedMedia(request,env,stream[1],url);
-        return await publicRoute(request,env,path);
+        const response=await publicRoute(request,env,path);
+        if((WRITE_METHODS.has(request.method)||(/^\/api\/mural\/.+\/cards\//.test(path)&&request.method==='GET'))
+          &&ctx?.waitUntil)ctx.waitUntil(dispatch(env));
+        return response;
       }
       // Fetch the SPA shell from / explicitly: crawlers often request deep links
       // without the Accept/Sec-Fetch headers that Cloudflare SPA fallback expects.

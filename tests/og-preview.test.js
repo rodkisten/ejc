@@ -14,6 +14,7 @@ test('fallback PNG is real, correctly sized, and usable without any admin upload
 function browserCanvas() {
   const text = [];
   const photos = [];
+  const frames = [];
   const ctx = {
     font: '20px Arial', textAlign: 'left',
     fillText(value, x, y, maxWidth) { text.push({ value: String(value), x, y, maxWidth }); },
@@ -21,7 +22,7 @@ function browserCanvas() {
       return { width: String(value).length * (Number(this.font.match(/(\d+)px/)?.[1]) || 20) * 0.56 };
     },
     createLinearGradient() { return { addColorStop() {} }; },
-    fillRect() {}, beginPath() {}, roundRect() {}, fill() {}, stroke() {},
+    fillRect() {}, beginPath() {}, roundRect(x, y, width, height) { frames.push({x,y,width,height}); }, fill() {}, stroke() {},
     moveTo() {}, lineTo() {}, closePath() {}, translate() {}, rotate() {},
     save() {}, restore() {}, clip() {},
     drawImage(image, x, y, width, height) { photos.push({ x, y, width, height }); },
@@ -31,7 +32,7 @@ function browserCanvas() {
     getContext: () => ctx,
     toBlob: (callback) => callback(new Blob(['test-png'], { type: 'image/png' })),
   };
-  return { canvas, text, photos };
+  return { canvas, text, photos, frames };
 }
 
 test('personalized OG keeps all essential text inside central WhatsApp crop', async () => {
@@ -66,9 +67,12 @@ test('personalized OG keeps all essential text inside central WhatsApp crop', as
       assert.ok(item.y >= OG_SAFE.top && item.y <= OG_SAFE.bottom, item.value + ' y=' + item.y);
     }
     assert.ok(mock.photos.length > 0);
+    assert.ok(mock.frames.some(frame =>
+      frame.x === 464 && frame.y === 112 &&
+      frame.width === 272 && frame.height === 272
+    ), 'A foto OG deve ser um quadrado 1:1.');
     for (const item of mock.photos) {
-      // Draw bounds can overrun the clipped portrait region, but the photo itself
-      // is clipped by the canvas to x=660..842, safely inside the crop.
+      // The original photo is drawn underneath a clipped 272 × 272 square.
       assert.ok(item.width > 0 && item.height > 0);
     }
   } finally {

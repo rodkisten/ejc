@@ -26,6 +26,7 @@ import './styles/letter-canvas.css';
 import './styles/instagram-export.css';
 import './styles/cart.css';
 import './styles/home.css';
+import './styles/photo-crop.css';
 
 export const AppContext=React.createContext({ config:null, recipients:[], reload:async()=>{} });
 export function useApp(){return React.useContext(AppContext);}

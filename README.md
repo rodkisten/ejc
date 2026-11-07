@@ -473,33 +473,55 @@ Execute npm ci, npm run check, npm run build e bash scripts/deploy.sh. O deploy 
 Não considere commits na branch como publicação em ejc.migos.club. Antes de divulgar, teste um Pix real de valor pequeno, confira o valor total e o txid no banco, confirme o checkout, abra cada cartinha, envie anexos e verifique o compartilhamento no Safari.
 Rascunhos com fotos e áudios ficam no navegador que iniciou a compra; não limpe dados nem troque de aparelho antes de concluir.
 
-## Mural de encontristas na home (responsivo)
+## Layout clássico restaurado e fotos quadradas dos encontristas
 
-A página inicial usa um **mural único e completo** (`#encontristas`):
-os nomes carregados do endpoint público são exibidos de uma vez, sem
-limites artificiais, paginação ou botão "mostrar mais". Há busca instantânea
-por nome que ignora acentos e preserva a ordem alfabética.
+A home voltou ao layout original do XX EJC, com o papel da cartinha
+sobreposto e a paleta **pêssego, rosa e lilás**, respeitando o tema
+`legacy-theme.css`. As regras de `client/styles/home.css` impedem que a
+ilustração ultrapasse os limites no Safari do iPhone.
 
-Cada cartão tem bordas de papel colorido, avatar com foto autorizada
-ou iniciais, e um link direto para o editor da cartinha. Os 12 tons
-de avatar são distribuídos por hash estável do identificador da pessoa;
-assim parecem variados, mas não mudam a cada pesquisa.
+A lista pública continua **com todos os encontristas de uma vez**, sem
+limite de 18, sem segunda listagem e sem paginação. O filtro ignora acentos.
+O avatar de cada participante usa foto autorizada ou iniciais em uma das
+12 cores estáveis, com borda individual.
 
-O arquivo `client/styles/home.css` implementa o layout do hero, da
-ilustração de carta, do mural e das seções de recursos com breakpoints
-para iPhone/Safari. A ilustração fica confinada à sua área para não
-estourar a tela; nomes compridos podem quebrar em várias linhas.
+### Editor de foto quadrada
 
-Validação local após `git pull`:
+Em **Admin → Encontristas → Adicionar foto / Trocar foto**, a foto
+selecionada abre um editor de enquadramento **1:1**. Arraste a imagem
+para posicionar o rosto e use o controle de zoom. **Salvar foto quadrada**
+gera no próprio iPhone/navegador um JPEG de **768 × 768 px**; o arquivo
+original não é enviado ao Worker.
+
+Para ajustar uma foto antiga, use **Reenquadrar** na pessoa correspondente.
+Assim não é necessário remover o cadastro. A autorização para publicar
+fotos, inclusive de menores pelos responsáveis, continua obrigatória.
+
+A API de fotos dos encontristas valida a proporção 1:1 e o JPEG antes
+de atualizar a imagem armazenada no R2. Fotos antigas que não foram
+reprocessadas ainda aparecem enquadradas via `object-fit: cover` até
+o admin reenquadrá-las. As fotos de **cartinhas privadas** não são alteradas.
+
+A mesma foto quadrada aparece na lista, nos cartões de pagamento,
+no editor, no mural, nas etiquetas impressas e no PNG de redes sociais.
+As imagens OG geradas passam a usar área fotográfica quadrada e a
+paleta original; fotos antigas precisam ser reenquadradas ou as OGs
+atualizadas manualmente no admin.
+
+### Verificação antes de publicar
 
 ```bash
+git switch main
+git pull --ff-only
 npm ci
 npm run check
 npm run build
 bash scripts/deploy.sh
 ```
 
-O teste `tests/home-layout.test.js` verifica listagem completa, cores
-estáveis, busca com e sem acentos e a presença dos estilos móveis.
-Para confirmar visualmente, teste 320px, 375px, 390px, 430px e desktop
-no navegador, incluindo busca e nomes grandes.
+Os testes `tests/home-layout.test.js`, `tests/square-photo.test.js`
+e `tests/og-preview.test.js` cobrem o layout restaurado, recorte,
+dimensões JPEG, bordas e área quadrada das prévias.
+
+Teste o Safari em 320px, 375px, 390px e 430px, incluindo gesto de
+arrastar, zoom, publicação e um nome de encontrista longo.

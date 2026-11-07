@@ -192,3 +192,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .unlock-form { padding: 20px 14px; }
   .unlock-form .mural-code-input { font-size: clamp(1.4rem, 8vw, 2rem); }
 }
+
+.privacy-page{max-width:800px;margin:0 auto 60px;display:grid;gap:16px;min-width:0}
+.privacy-page h1{font-size:clamp(2.2rem,7vw,4rem);margin:0}
+.privacy-page>.muted{font-size:1.05rem;line-height:1.7}
+.privacy-page .form-card{display:grid;gap:10px}
+.privacy-page .form-card h2{display:flex;align-items:center;gap:10px;font-size:1.2rem}
+.privacy-page .form-card h2 svg{color:#663a85;flex:none}
+.privacy-page .form-card p{line-height:1.7;color:#5a5063;margin:0}

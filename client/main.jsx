@@ -9,6 +9,7 @@ import Order from './pages/Order';
 import Mural from './pages/Mural';
 import Admin from './pages/Admin';
 import Unlock from './pages/Unlock';
+import Privacy from './pages/Privacy';
 import './styles.css';
 import './legacy-theme.css';
 
@@ -35,7 +36,7 @@ function Shell({children}) {
       <Link to="/abrir" className="header-link">Abrir meu mural</Link>
     </div></header>
     <main className="container page">{children}</main>
-    <footer className="container site-footer"><span>XX EJC Simonésia · 2026</span><span>Feito com amor por <strong>Rod Costa</strong> ♡</span></footer>
+    <footer className="container site-footer"><span>XX EJC Simonésia · 2026</span><span>Feito com amor por <strong>Rod Costa</strong> ♡</span><Link to="/privacidade">Privacidade e segurança</Link></footer>
     {!consent && config?.analytics_id && <aside className="consent-panel" aria-label="Preferências de análise"><div>Usamos estatísticas de navegação somente com seu consentimento. Não enviamos textos, fotos, áudios nem códigos privados ao Analytics.</div><div className="inline-actions"><button onClick={()=>choose(false)} className="btn ghost">Agora não</button><button onClick={()=>choose(true)} className="btn">Permitir métricas</button></div></aside>}
   </div>;
 }
@@ -51,6 +52,7 @@ function App(){
       <Route path="/pedido/:token" element={<Order/>}/>
       <Route path="/mural/:slug" element={<Mural/>}/>
       <Route path="/abrir" element={<Unlock/>}/>
+      <Route path="/privacidade" element={<Privacy/>}/>
       <Route path="/publicas" element={<div className="empty"><h1>As cartinhas são privadas 🔐</h1><p>Não há galeria pública. A leitura exige o código ou link pessoal do encontrista.</p><Link className="btn" to="/abrir">Abrir meu mural</Link></div>}/>
       <Route path="/admin/*" element={<Admin/>}/>
       <Route path="*" element={<div className="empty"><h1>Essa página não existe.</h1><Link className="btn" to="/">Voltar ao início</Link></div>}/>

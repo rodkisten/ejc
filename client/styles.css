@@ -412,7 +412,7 @@ select:focus-visible {
 }
 .paper-front .paper-heart {
   position: absolute;
-  right: 33px;
+  right: 45px;
   bottom: 11px;
   color: #e27e9f;
   font-size: 3.4rem;

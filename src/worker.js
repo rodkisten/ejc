@@ -48,7 +48,7 @@ function editable(config) {
 function activeOrder(order) { return ['paid','preparing','delivered'].includes(order.status); }
 // Private checkout links grant edit access even after the Pix code is displayed.
 function writableLetter(order) {
-  return activeOrder(order) || (order.checkout_id && ['pending','claimed'].includes(order.status));
+  return activeOrder(order) || ['pending','claimed'].includes(order.status);
 }
 async function event(env, id, type, detail='') {
   await env.DB.prepare('INSERT INTO order_events(id,order_id,type,detail) VALUES(?,?,?,?)').bind(newId(),id,type,detail).run();

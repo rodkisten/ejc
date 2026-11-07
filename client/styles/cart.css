@@ -121,3 +121,58 @@
 .mural-envelope-button:hover{transform:translateY(-4px)}
 @media(max-width:700px){.sticker-admin-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(prefers-reduced-motion:reduce){.mural-envelope .letter-card{animation:none}.mural-envelope-button{transition:none}}
+
+/* Purchaser identity is an internal payment lookup field, never a letter signature. */
+.cart-payer-label {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: #4d3560;
+  font-size: .89rem;
+  font-weight: 800;
+}
+.cart-payer-label input {
+  width: 100%;
+  min-width: 0;
+  border: 1.5px solid #d7bee6;
+  border-radius: 13px;
+  padding: 12px 14px;
+  background: #fffefa;
+  font-size: 16px;
+}
+.cart-payer-label small {
+  display: block;
+  color: #7c6b85;
+  font-size: .77rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+.cart-receipt .notice > .btn {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 11px;
+  max-width: 100%;
+  white-space: normal;
+}
+.checkout-code {
+  display: grid;
+  justify-items: start;
+  gap: 9px;
+  margin: 13px 0;
+  overflow-wrap: anywhere;
+}
+.checkout-code small { color: #755b83; font-size: .79rem; }
+.checkout-code .btn { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; }
+.checkout-recipient { min-width: 0; flex-wrap: wrap; }
+.checkout-recipient .btn { white-space: normal; }
+.letter-signature-field {
+  display: grid;
+  gap: 9px;
+  margin-bottom: 22px;
+  font-weight: 800;
+  color: #50396a;
+}
+.letter-signature-field input { width: 100%; min-width: 0; font-size: 16px; }
+@media (max-width: 520px) {
+  .checkout-code .btn { width: 100%; justify-content: center; }
+}

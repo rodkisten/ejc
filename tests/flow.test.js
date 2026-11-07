@@ -8,6 +8,9 @@ function fixture(){
   sql.exec(fs.readFileSync(new URL('../migrations/0001_initial.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0002_homenagens.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0003_recipient_photos.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0004_mural_codes.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0005_og_images.sql',import.meta.url),'utf8'));
+
   const DB={
     prepare(query){const stmt=(...values)=>({first:async()=>sql.prepare(query).get(...values)||null,all:async()=>({results:sql.prepare(query).all(...values)}),run:async()=>({meta:sql.prepare(query).run(...values)})});return {...stmt(),bind:stmt};},
     async batch(queries){sql.exec('BEGIN');try{const results=[];for(const q of queries)results.push(await q.run());sql.exec('COMMIT');return results;}catch(e){sql.exec('ROLLBACK');throw e;}}
@@ -116,4 +119,75 @@ test('health verifica D1 e R2 sem exigir login',async()=>{
   const check=await call(env,'/api/health');
   assert.equal(check.status,200);
   assert.equal(check.data.ok,true);
+});
+
+test('código curto libera o acesso privado, mas não ignora o horário de publicação',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const generation=await call(env,'/api/admin/mural-codes/generate','POST',{regenerate:false},admin);
+  assert.equal(generation.status,200);
+  assert.equal(generation.data.generated,2);
+  const bootstrap=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data;
+  const person=bootstrap.recipients.find(r=>r.slug===list[0].slug);
+  assert.match(person.mural_code,/^[A-HJ-NP-Z2-9]{6}$/);
+  const other=bootstrap.recipients.find(r=>r.slug===list[1].slug);
+  assert.notEqual(person.mural_code,other.mural_code);
+  const publicList=(await call(env,'/api/public')).data.recipients;
+  assert.equal('mural_code' in publicList[0],false);
+  const redeemed=await call(env,'/api/mural/redeem','POST',{code:person.mural_code});
+  assert.equal(redeemed.status,200);
+  assert.equal(redeemed.data.slug,person.slug);
+  assert.equal((await call(env,'/api/mural/'+person.slug,'GET',undefined,{token:redeemed.data.grant})).status,200);
+  assert.equal((await call(env,'/api/mural/'+other.slug,'GET',undefined,{token:redeemed.data.grant})).status,403);
+  const replace=await call(env,'/api/admin/recipients/'+person.id+'/mural-code','POST',{},admin);
+  assert.equal(replace.status,200);
+  assert.notEqual(replace.data.code,person.mural_code);
+  assert.equal((await call(env,'/api/mural/'+person.slug,'GET',undefined,{token:redeemed.data.grant})).status,403);
+  assert.equal((await call(env,'/api/mural/redeem','POST',{code:person.mural_code})).status,404);
+});
+
+test('tentativas incorretas de código curto são limitadas no servidor',async()=>{
+  const env=fixture();
+  for(let i=0;i<6;i++){
+    const r=await call(env,'/api/mural/redeem','POST',{code:'ZZZZZZ'});
+    assert.equal(r.status,404);
+  }
+  const blocked=await call(env,'/api/mural/redeem','POST',{code:'AAAAAA'});
+  assert.equal(blocked.status,429);
+});
+
+test('imagens OG são PNG servidos para robôs sociais e metadados chegam no HTML',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const person=list[0];
+  const png=new Uint8Array(64);
+  png.set([137,80,78,71,13,10,26,10],0);
+  new DataView(png.buffer).setUint32(16,1200);
+  new DataView(png.buffer).setUint32(20,630);
+  const request=new Request('https://ejc.test/api/admin/recipients/'+person.id+'/og',{
+    method:'POST',
+    headers:{
+      Origin:'https://ejc.test',
+      Cookie:admin.cookie,
+      'Content-Type':'image/png'
+    },
+    body:png
+  });
+  const upload=await worker.fetch(request,env);
+  assert.equal(upload.status,200);
+  const image=await worker.fetch(new Request('https://ejc.test/api/og/'+person.slug+'.png'),env);
+  assert.equal(image.status,200);
+  assert.equal(image.headers.get('Content-Type'),'image/png');
+  env.ASSETS.fetch=async()=>new Response(
+    '<!doctype html><html><head><title>Cartinhas</title><meta name="description" content="geral"/></head><body></body></html>',
+    {headers:{'Content-Type':'text/html'}}
+  );
+  const page=await worker.fetch(new Request('https://ejc.test/enviar/'+person.slug),env);
+  const html=await page.text();
+  assert.equal(page.status,200);
+  assert.match(html,/property="og:title"/);
+  assert.match(html,/property="og:image"/);
+  assert.match(html,/name="twitter:card" content="summary_large_image"/);
+  assert.match(html,/Ana Clara|João Pedro/);
+  assert.ok(!html.includes('content="geral"'));
+  const hidden=await worker.fetch(new Request('https://ejc.test/mural/'+person.slug),env);
+  assert.match(hidden.headers.get('X-Robots-Tag'),/noindex/);
 });

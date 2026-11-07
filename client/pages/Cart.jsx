@@ -68,7 +68,8 @@ export default function Cart() {
       // DO NOT clear the IndexedDB index or drafts: the sender can edit every
       // letter, photo, audio and sticker before and after generating the Pix.
       const session = {
-        id: checkout.id, token: checkout.token, itemIds: cart.items.map(item => item.id),
+        id: checkout.id, token: checkout.token, payerName: nameForCheckout,
+        itemIds: cart.items.map(item => item.id),
       };
       localStorage.setItem('ejc-cart-active-checkout', JSON.stringify(session));
       setActiveCheckout(session);
@@ -142,13 +143,15 @@ export default function Cart() {
                 <label className="cart-payer-label" htmlFor="payer-name">
                   Nome para conferência do Pix
                   <input id="payer-name" type="text" autoComplete="name"
-                    maxLength={100} value={payerName} placeholder="Seu nome completo"
+                    maxLength={100} value={alreadyLinked ? (activeCheckout?.payerName || payerName) : payerName}
+                    disabled={alreadyLinked} placeholder="Seu nome completo"
                     onChange={(event) => {
                       setPayerName(event.target.value);
                       localStorage.setItem('ejc-payer-name', event.target.value);
                     }} />
                   <small>Usado somente pela coordenação para localizar o pagamento.
-                    Não aparece na cartinha, na assinatura nem no mural.</small>
+                    Não aparece na cartinha, na assinatura nem no mural.
+                    {alreadyLinked && ' O nome fica fixo depois de gerar o Pix.'}</small>
                 </label>
                 {alreadyLinked && (
                   <div className="notice">

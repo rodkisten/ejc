@@ -229,8 +229,8 @@ export default function Order() {
         <section className="form-card">
           <h2>Esta cartinha faz parte de um Pix com várias homenagens.</h2>
           <p>O QR Code correto contém a soma de todas as cartinhas do carrinho. Por segurança, o pagamento não é gerado individualmente nesta página.</p>
-          {localStorage.getItem('ejc-last-checkout') &&
-            <Link className="btn" to={'/checkout/' + localStorage.getItem('ejc-last-checkout')}>Ver o Pix do carrinho</Link>}
+          {localStorage.getItem('ejc-checkout-' + order.checkout_id) &&
+            <Link className="btn" to={'/checkout/' + localStorage.getItem('ejc-checkout-' + order.checkout_id)}>Ver o Pix deste carrinho</Link>}
           <button className="btn ghost" type="button" onClick={reload}>Atualizar pagamento</button>
         </section>
       ) : !paid ? (

@@ -13,8 +13,10 @@ const copy=t=>navigator.clipboard.writeText(t);
 // O painel não renderiza nem solicita texto, áudio, fotos ou nome do remetente.
 function AdminDashboard({ info, reload }) {
   const navigate = useNavigate();
-  const pending = info.orders.filter((order) => ['pending', 'claimed'].includes(order.status));
-  const paid = info.orders.filter((order) => ['paid', 'preparing', 'delivered'].includes(order.status));
+  const pending = new Set(info.orders.filter((order) => ['pending', 'claimed'].includes(order.status))
+    .map(order => order.checkout_id || order.id));
+  const paid = new Set(info.orders.filter((order) => ['paid', 'preparing', 'delivered'].includes(order.status))
+    .map(order => order.checkout_id || order.id));
   const sent = info.orders.filter((order) => order.submitted);
   return (
     <>
@@ -27,8 +29,8 @@ function AdminDashboard({ info, reload }) {
         <button className="btn ghost" onClick={reload}><RefreshCw size={17} /> Atualizar</button>
       </div>
       <div className="stats-grid">
-        <div><span>Pix a conferir</span><strong>{pending.length}</strong></div>
-        <div><span>Pagamentos confirmados</span><strong>{paid.length}</strong></div>
+        <div><span>Pix a conferir</span><strong>{pending.size}</strong></div>
+        <div><span>Pagamentos confirmados</span><strong>{paid.size}</strong></div>
         <div><span>Cartinhas enviadas</span><strong>{sent.length}</strong></div>
         <div><span>Total de pedidos</span><strong>{info.orders.length}</strong></div>
       </div>
@@ -36,13 +38,13 @@ function AdminDashboard({ info, reload }) {
         <ShieldCheck size={19} />
         A coordenação acessa apenas dados operacionais de pagamento e envio. Mensagens, fotos e áudios não são exibidos.
       </div>
-      <CheckoutList reloadOrders={reload} />
+      <CheckoutList orders={info.orders} reloadOrders={reload} />
       <OrderList orders={info.orders} navigate={navigate} />
     </>
   );
 }
 
-function CheckoutList({ reloadOrders }) {
+function CheckoutList({ orders, reloadOrders }) {
   const [checkouts,setCheckouts]=useState([]);
   const [selected,setSelected]=useState(null);
   const [reference,setReference]=useState('');
@@ -88,6 +90,11 @@ function CheckoutList({ reloadOrders }) {
       </div>}
     {selected&&<div className="form-card admin-checkout-confirm">
       <h3>{selected.id} · {money(selected.total_cents)}</h3>
+      <div className="admin-group-letters">
+        {orders.filter(row=>row.checkout_id===selected.id).map(row=><p key={row.id}>
+          <strong>{row.recipient_name}</strong><span className="muted small">
+          {row.submitted?'Cartinha enviada':'Cartinha ainda não enviada'}</span></p>)}
+      </div>
       <p className="muted">Confirme um único crédito do valor total para liberar {selected.item_count} cartinha(s). Não compartilhe comprovantes ou conteúdo das mensagens.</p>
       {selected.status==='paid'?<p className="notice">Este Pix já foi confirmado.</p>:<>
         <label htmlFor="checkout-reference">Identificador bancário (E2E)</label>
@@ -109,6 +116,7 @@ function OrderList({ orders, navigate }) {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
   const rows = orders.filter((order) => {
+    if(order.checkout_id) return false;
     const matches = `${order.id} ${order.recipient_name}`.toLocaleLowerCase('pt-BR').includes(q.toLocaleLowerCase('pt-BR'));
     if (filter === 'pix') return matches && ['pending', 'claimed'].includes(order.status);
     if (filter === 'paid') return matches && ['paid', 'preparing', 'delivered'].includes(order.status);
@@ -129,7 +137,7 @@ function OrderList({ orders, navigate }) {
       </div>
       <div className="admin-order-list">
         {rows.map((order) => (
-          <button key={order.id} className="admin-order" onClick={() => navigate(order.checkout_id ? '/admin' : `/admin/pedidos/${order.id}`)}>
+          <button key={order.id} className="admin-order" onClick={() => navigate(`/admin/pedidos/${order.id}`)}>
             <span><strong>{order.recipient_name}</strong><small>{order.id}</small></span>
             <span className="order-tags">
               <b>{money(order.total_cents)}</b>

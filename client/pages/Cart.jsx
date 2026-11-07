@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Copy, Heart, Plus, ShoppingBag, Trash2 } from 'lucide-react';
 import { useApp } from '../main';
-import { useCart } from '../lib/cart';
+import { useCart, cartDraftKey } from '../lib/cart';
+import { draftGet } from '../lib/drafts';
 import { api, money, track } from '../lib/api';
 
 export default function Cart() {
@@ -30,12 +31,15 @@ export default function Cart() {
     setError('');
     try {
       if (!cart.items.length) throw new Error('Seu carrinho está vazio.');
+      const drafts = await Promise.all(cart.items.map((item) => draftGet(cartDraftKey(item.id))));
+      if (drafts.some((draft) => !draft)) throw new Error('Uma cartinha perdeu seu rascunho local. Edite-a antes de pagar.');
       const checkout = await api('/api/checkouts', {
         method: 'POST',
-        data: { items: cart.items.map((item) => ({
+        data: { items: cart.items.map((item, index) => ({
           recipient_slug: item.recipient_slug,
           sender_name: item.sender_name,
-          // Stored in the local letter; any read notification is configured per child after payment.
+          notify_on_read: !!drafts[index].notifyOnRead,
+          read_receipt_email: drafts[index].notifyOnRead ? drafts[index].receiptEmail : '',
         })) },
       });
       checkout.items.forEach((order, index) => {

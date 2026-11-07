@@ -9,7 +9,6 @@ export default function StickerPicker({ count = 0, onAdd, onSurprise }) {
   const [available, setAvailable] = useState(null);
   const [loadError, setLoadError] = useState('');
   useEffect(() => {
-    if (!open) return;
     let cancelled = false;
     setAvailable(null); setLoadError('');
     fetch('/api/stickers').then(async response => {
@@ -21,7 +20,7 @@ export default function StickerPicker({ count = 0, onAdd, onSurprise }) {
       if(!cancelled){ setAvailable(new Set()); setLoadError(error.message); }
     });
     const escape = (event) => { if (event.key === 'Escape') setOpen(false); };
-    document.addEventListener('keydown', escape);
+    if(open) document.addEventListener('keydown', escape);
     return () => { cancelled = true; document.removeEventListener('keydown', escape); };
   }, [open]);
   const full = count >= MAX_STICKERS;

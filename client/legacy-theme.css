@@ -97,3 +97,44 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .send-recipient img{width:60px;height:60px;border-radius:18px;object-fit:cover}
 
 .mural-portrait{width:104px;height:104px;object-fit:cover;border-radius:28px;display:block;margin:0 auto 18px;border:5px solid white;box-shadow:0 14px 30px #271b4030}
+
+/* Contain every checkout panel inside the iPhone/Safari viewport. */
+.order-wrap,.order-wrap .section-head,.payment-layout,.pix-checkout,.pix-access,
+.pix-ticket,.pix-qr-frame,.pix-details,.pix-raw,.pix-gift-target,.pix-headline {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.payment-layout {
+  width: 100%;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  align-items: start;
+}
+.payment-layout > * { min-width: 0; }
+.pix-checkout { width: 100%; overflow: hidden; text-align: left !important; }
+.pix-checkout .pix-headline { width: 100%; }
+.pix-checkout .pix-headline h2 { overflow-wrap: anywhere; }
+.pix-ticket { overflow: hidden; }
+.pix-ticket .pix-amount { margin: 12px 0 18px; white-space: normal; overflow-wrap: anywhere; }
+.pix-gift-target { min-width: 0; }
+.pix-gift-target > span { min-width: 0; overflow-wrap: anywhere; }
+.pix-qr-frame { width: 100%; overflow: hidden; }
+.pix-qr-frame .qr-code { display: flex; justify-content: center; margin: 8px auto; width: 100%; min-width: 0; }
+.pix-qr-frame canvas { max-width: 100% !important; height: auto !important; }
+.pix-details strong,.pix-raw code { overflow-wrap: anywhere; word-break: break-word; }
+.pix-checkout .btn { max-width: 100%; white-space: normal; min-height: 48px; }
+@media (max-width: 900px) {
+  .payment-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .order-wrap .section-head { display: grid; align-items: start; gap: 12px; margin-bottom: 18px; }
+  .order-wrap .section-head h1 { font-size: clamp(1.9rem, 8vw, 3rem); overflow-wrap: anywhere; }
+  .order-wrap .section-head .status-pill { justify-self: start; }
+  .pix-checkout { padding: 18px 14px; border-radius: 20px; }
+  .pix-ticket { padding: 16px; border-radius: 18px; }
+  .pix-ticket .pix-amount { font-size: clamp(2.5rem, 12vw, 3.25rem); }
+  .pix-qr-frame { padding: 17px 10px; }
+  .pix-qr-frame canvas { width: min(100%, 248px) !important; }
+  .pix-access { padding: 20px; }
+  .pix-qr-frame .pix-scanner-label { font-size: .64rem; }
+}

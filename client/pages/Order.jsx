@@ -172,7 +172,7 @@ export default function Order() {
 
           <div className="pix-ticket">
             <div className="pix-ticket-top">
-              <span>CONTRIBUIÇÃO PARA UMA CARTINHA</span>
+              <span>VALOR DA HOMENAGEM</span>
               <span className="pix-ticket-heart" aria-hidden="true">♡</span>
             </div>
             <strong className="pix-amount">{money(order.amount_cents)}</strong>

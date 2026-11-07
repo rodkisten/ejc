@@ -9,6 +9,8 @@ import Order from './pages/Order';
 import Mural from './pages/Mural';
 import Admin from './pages/Admin';
 import Unlock from './pages/Unlock';
+import ConfirmEmail from './pages/ConfirmEmail';
+import './styles/email-read.css';
 import Privacy from './pages/Privacy';
 import './styles.css';
 import './legacy-theme.css';
@@ -58,6 +60,7 @@ function App(){
       <Route path="/pedido/:token" element={<Order/>}/>
       <Route path="/mural/:slug" element={<Mural/>}/>
       <Route path="/abrir" element={<Unlock/>}/>
+      <Route path="/confirmar-email" element={<ConfirmEmail/>}/>
       <Route path="/privacidade" element={<Privacy/>}/>
       <Route path="/publicas" element={<div className="empty"><h1>As cartinhas são privadas 🔐</h1><p>Não há galeria pública. A leitura exige o código ou link pessoal do encontrista.</p><Link className="btn" to="/abrir">Abrir meu mural</Link></div>}/>
       <Route path="/admin/*" element={<Admin/>}/>

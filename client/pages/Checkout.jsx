@@ -69,6 +69,15 @@ export default function Checkout() {
                 <div className="checkout-recipient" key={item.id}>
                   <span className="checkout-recipient-index">{index + 1}</span>
                   <strong>{item.recipient_name}</strong>
+                  {(() => {
+                    const draftId = localStorage.getItem('ejc-cart-order-' + item.token);
+                    return draftId ? (
+                      <Link className="btn ghost" to={'/enviar/' + item.recipient_slug +
+                        '?edit=' + encodeURIComponent(draftId)}>
+                        Editar rascunho
+                      </Link>
+                    ) : null;
+                  })()}
                   {paid ? <Link className="btn ghost" to={'/pedido/' + item.token}>
                     {item.status === 'paid' ? 'Escrever e enviar' : 'Abrir cartinha'} <ArrowRight size={16} />
                   </Link> : <span className="muted small">Aguardando Pix</span>}
@@ -76,7 +85,20 @@ export default function Checkout() {
               ))}
             </div>
             <div className="checkout-total"><span>Total</span><strong>{money(order.amount_cents)}</strong></div>
-            <p className="muted small">Identificador da compra: {order.id}</p>
+            <div className="notice checkout-code">
+              <strong>Código para conferir o Pix: {order.id}</strong>
+              <small>Informe este código à coordenação para localizar todas as cartinhas deste pagamento.</small>
+              <button type="button" className="btn ghost" onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(order.id);
+                  setMessage('Código do Pix copiado!');
+                } catch {
+                  setError('Não foi possível copiar o código.');
+                }
+              }}><Copy size={15} /> Copiar código</button>
+            </div>
+            <p className="muted small">TXID da transação: {order.txid}</p>
+            <p className="muted small">As cartinhas continuam salvas neste aparelho e podem ser editadas mesmo depois de gerar o Pix. Para concluir o envio, aguarde a confirmação do pagamento.</p>
             <button className="btn ghost" type="button" onClick={async()=>{
               try{
                 await navigator.clipboard.writeText(window.location.href);

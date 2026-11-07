@@ -4,6 +4,7 @@ import {ShieldCheck,ClipboardList,UsersRound,Settings2,QrCode as QrIcon,Eye,Chec
 import { api, money, btime, track,download } from '../lib/api';
 import QrCode from '../components/QrCode';
 import Labels from './Labels';
+import { publishOgImage } from '../lib/og';
 import {LetterCard} from '../components/LetterCard';
 function useAdmin(){const [info,setInfo]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const reload=useCallback(async()=>{try{setInfo(await api('/api/admin/bootstrap'));setError('');}catch(e){setError(e.message);setInfo(null);}finally{setLoading(false);}},[]);
@@ -24,7 +25,7 @@ function OrderDetail({reload}){const {id}=useParams(),navigate=useNavigate(),[or
     <section className="form-card"><h2>Histórico do pedido</h2><div className="timeline">{(order.history||[]).map((ev,i)=><div key={i}><strong>{ev.type}</strong> <span className="muted">{new Date(ev.created_at).toLocaleString('pt-BR')}</span><p className="small">{ev.detail}</p></div>)}</div></section>
   </div>;
 }
-function People({info,reload}){const [names,setNames]=useState(''),[notice,setNotice]=useState(''),[error,setError]=useState(''),[invite,setInvite]=useState(null),[uploading,setUploading]=useState('');
+function People({info,reload}){const [names,setNames]=useState(''),[notice,setNotice]=useState(''),[error,setError]=useState(''),[invite,setInvite]=useState(null),[uploading,setUploading]=useState(''),[ogProgress,setOgProgress]=useState('');
   async function photoUpload(r,file) {
     if(!file)return;
     if(!window.confirm(`Confirmo que tenho autorização para divulgar a foto de ${r.name}, inclusive dos responsáveis se menor de idade.`))return;
@@ -36,17 +37,56 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
       });
       const data=await response.json().catch(()=>({}));
       if(!response.ok)throw Error(data.error||'Falha ao enviar foto.');
-      setNotice(`Foto de ${r.name} atualizada.`);await reload();
+      await publishOgImage({...r,photo_url:data.photo_url});
+      setNotice(`Foto de ${r.name} atualizada, com imagem de compartilhamento pronta.`);
+      await reload();
     }catch(cause){setError(cause.message);}finally{setUploading('');}
   }
   async function photoRemove(r) {
     if(!window.confirm(`Remover a foto de ${r.name}?`))return;
-    try{await api(`/api/admin/recipients/${r.id}/photo`,{method:'DELETE'});await reload();}
+    try{
+      await api(`/api/admin/recipients/${r.id}/photo`,{method:'DELETE'});
+      await publishOgImage({...r,photo_url:null});
+      await reload();
+    }
     catch(cause){setError(cause.message);}
+  }
+  async function makeOg(person) {
+    setOgProgress('Gerando imagem para '+person.name+'...');
+    try {
+      await publishOgImage(person);
+      await reload();
+      setNotice('Imagem de compartilhamento de '+person.name+' atualizada.');
+    } catch (cause) { setError(cause.message); }
+    finally { setOgProgress(''); }
+  }
+  async function makeAllOg(){
+    setOgProgress('Preparando imagens...');
+    setError('');
+    let complete=0;
+    let failed=0;
+    try{
+      for(const person of info.recipients.filter(p=>p.active!==0)){
+        setOgProgress('Gerando '+(complete+failed+1)+' de '+info.recipients.length+' · '+person.name);
+        try { await publishOgImage(person); complete++; }
+        catch (cause) { failed++; setError('Não foi possível gerar uma ou mais imagens: '+cause.message); }
+      }
+      await reload();
+      setNotice(complete+' imagens prontas para WhatsApp e redes sociais.'+(failed?' '+failed+' falharam.':''));
+    } finally { setOgProgress(''); }
   }
   const add=async()=>{try{const r=await api('/api/admin/recipients/import',{method:'POST',data:{names:names.split(/\r?\n/).filter(Boolean)}});setNotice(`${r.inserted} nomes importados.`);setNames('');await reload();}catch(e){setError(e.message);}};
   const createInvite=async r=>{if(!confirm(`Gerar novo link privado de ${r.name}? Isso invalida o anterior.`))return;try{const data=await api(`/api/admin/recipients/${r.id}/invite`,{method:'POST',data:{}});setInvite({name:r.name,url:data.url});}catch(e){setError(e.message);}};
-  return <><div className="section-head"><div><span className="eyebrow">ENCONTRISTAS</span><h1>Nomes, fotos e links exclusivos</h1><p>O link para enviar é público. O link de leitura do mural é privado e precisa ser entregue pessoalmente.</p></div></div><section className="form-card"><label>Importar nomes (um por linha)</label><textarea rows={4} value={names} onChange={e=>setNames(e.target.value)} placeholder={'Maria Eduarda\nJoão Pedro\nAna Clara'}/><button className="btn" onClick={add}>Adicionar encontristas</button></section>{error&&<div className="notice error">{error}</div>}{notice&&<div className="notice success">{notice}</div>}{invite&&<div className="notice success"><strong>Link privado de {invite.name}</strong><p className="small">Este link é mostrado apenas agora. Guarde-o com segurança.</p><div className="inline-actions"><button className="btn ghost" onClick={()=>copy(invite.url)}><Copy size={16}/> Copiar link privado</button></div></div>}
+  return <><div className="section-head"><div><span className="eyebrow">ENCONTRISTAS</span><h1>Nomes, fotos e links exclusivos</h1><p>O link para enviar é público. O link de leitura do mural é privado e precisa ser entregue pessoalmente.</p></div></div><section className="form-card"><label>Importar nomes (um por linha)</label><textarea rows={4} value={names} onChange={e=>setNames(e.target.value)} placeholder={'Maria Eduarda\nJoão Pedro\nAna Clara'}/><button className="btn" onClick={add}>Adicionar encontristas</button></section>
+    <section className="form-card">
+      <h2>Imagens para redes sociais</h2>
+      <p className="muted small">Gere prévias PNG com nome e foto autorizada para WhatsApp, Instagram, X, Facebook e Telegram.</p>
+      <button className="btn outline" disabled={!!ogProgress} onClick={makeAllOg}>
+        <ImagePlus size={16}/> Gerar imagens de todos os encontristas
+      </button>
+      {ogProgress&&<p className="notice">{ogProgress}</p>}
+    </section>
+    {error&&<div className="notice error">{error}</div>}{notice&&<div className="notice success">{notice}</div>}{invite&&<div className="notice success"><strong>Link privado de {invite.name}</strong><p className="small">Este link é mostrado apenas agora. Guarde-o com segurança.</p><div className="inline-actions"><button className="btn ghost" onClick={()=>copy(invite.url)}><Copy size={16}/> Copiar link privado</button></div></div>}
     <div className="people-list">{info.recipients.map(r=><div className="form-card person-row" key={r.id}>
       <div className="person-with-photo">
         <div className="recipient-avatar lavender">
@@ -60,6 +100,10 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
             onChange={event=>{photoUpload(r,event.target.files?.[0]);event.target.value='';}}/>
         </label>
         {r.photo_url&&<button className="btn outline" onClick={()=>photoRemove(r)}><Trash2 size={15}/> Remover foto</button>}
+        <button className="btn outline" disabled={!!ogProgress} onClick={()=>makeOg(r)}>
+          <ImagePlus size={15}/> Atualizar imagem
+        </button>
+        {r.og_url&&<a className="btn ghost" href={r.og_url} target="_blank" rel="noreferrer">Ver prévia</a>}
         <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}`)}><Copy size={15}/> Link de envio</button><button className="btn outline" onClick={()=>createInvite(r)}><Eye size={16}/> Link secreto</button></div></div>)}</div></>;
 }
 function BrandLogo({ info, reload }) {

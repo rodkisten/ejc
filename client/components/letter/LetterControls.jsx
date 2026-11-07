@@ -20,15 +20,17 @@ export default function LetterControls({ composition = DEFAULT_COMPOSITION, onCh
       color: STICKERS.find((sticker) => sticker.id === presetId).colors[0],
     }] });
   };
-  function surprise() {
+  function surprise(installed = []) {
     const pool = value.theme === 'marian'
       ? ['nossa-senhora', 'coragem', 'joao-15-9']
       : value.theme === 'peach'
         ? ['ejc-parabens', 'floresca', 'filipenses-4-13']
         : ['ejc-parabens', 'jesus-ama', 'firme-na-fe'];
     const available = Math.min(2, MAX_STICKERS - value.stickers.length);
-    if (!available) return;
-    const next = pool.slice(0, available).map((presetId, offset) => {
+    if (!available || !installed.length) return;
+    const choices = [...pool.filter(id=>installed.includes(id)),
+      ...installed.filter(id=>!pool.includes(id))];
+    const next = choices.slice(0,available).map((presetId,offset) => {
       const [x, y, rotate] = places[value.stickers.length + offset];
       return { id: crypto.randomUUID(), presetId, x, y, rotate, scale: 1,
         color: STICKERS.find((item) => item.id === presetId).colors[0] };

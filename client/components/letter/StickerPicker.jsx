@@ -6,11 +6,23 @@ import { Sticker } from './Sticker';
 export default function StickerPicker({ count = 0, onAdd, onSurprise }) {
   const [open, setOpen] = useState(false);
   const [category, setCategory] = useState('encontro');
+  const [available, setAvailable] = useState(null);
+  const [loadError, setLoadError] = useState('');
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
+    setAvailable(null); setLoadError('');
+    fetch('/api/stickers').then(async response => {
+      if(!response.ok) throw new Error('Não foi possível carregar as artes PNG.');
+      return response.json();
+    }).then(data => {
+      if(!cancelled) setAvailable(new Set(data.stickers||[]));
+    }).catch(error => {
+      if(!cancelled){ setAvailable(new Set()); setLoadError(error.message); }
+    });
     const escape = (event) => { if (event.key === 'Escape') setOpen(false); };
     document.addEventListener('keydown', escape);
-    return () => document.removeEventListener('keydown', escape);
+    return () => { cancelled = true; document.removeEventListener('keydown', escape); };
   }, [open]);
   const full = count >= MAX_STICKERS;
   return (
@@ -19,7 +31,8 @@ export default function StickerPicker({ count = 0, onAdd, onSurprise }) {
         <button className="btn outline" type="button" onClick={() => setOpen(true)}>
           <Heart size={16} /> Adesivos ({count}/{MAX_STICKERS})
         </button>
-        <button className="btn ghost" type="button" onClick={onSurprise} disabled={full}>
+        <button className="btn ghost" type="button" onClick={() => onSurprise?.([...(available || [])])}
+          disabled={full || !available?.size}>
           <Sparkles size={16} /> Surpreenda-me
         </button>
       </div>
@@ -44,8 +57,11 @@ export default function StickerPicker({ count = 0, onAdd, onSurprise }) {
                 >{item.label}</button>
               ))}
             </div>
+            {loadError&&<p role="alert" className="notice error">{loadError}</p>}
+            {available===null&&<p className="muted small">Carregando adesivos originais...</p>}
+            {available?.size===0&&<p className="notice">As artes PNG originais ainda não foram instaladas pela coordenação. Volte em breve.</p>}
             <div className="sticker-picker-grid">
-              {STICKERS.filter((sticker) => sticker.category === category).map((preset) => (
+              {STICKERS.filter((sticker) => sticker.category === category && available?.has(sticker.id)).map((preset) => (
                 <button
                   key={preset.id} type="button" className="ejc-sticker-preview"
                   disabled={full} aria-label={`Colar adesivo: ${preset.text}`}
@@ -55,6 +71,8 @@ export default function StickerPicker({ count = 0, onAdd, onSurprise }) {
                 </button>
               ))}
             </div>
+            {available?.size>0&&!STICKERS.some(sticker=>sticker.category===category&&available.has(sticker.id))&&
+              <p className="muted small">Nenhum PNG desta categoria foi instalado ainda.</p>}
             <p className="sticker-picker-limit">
               {full ? 'Sua cartinha já tem seis adesivos. Remova um para trocar.' :
                 `Você pode adicionar mais ${MAX_STICKERS - count} adesivo(s).`}

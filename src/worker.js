@@ -670,8 +670,11 @@ async function publicRoute(req,env,path) {
       const composition=JSON.stringify(normalizeComposition(data.composition===undefined
         ? JSON.parse(o.composition_json||'{}') : data.composition));
       if(composition.length>7000)bad('Decoração excede o limite permitido.',413);
-      await env.DB.prepare("UPDATE orders SET rich_html=?,composition_json=?,public_message=0,updated_at=? WHERE id=?")
-        .bind(html,composition,now(),o.id).run();
+      const signature=data.sender_name===undefined
+        ? (o.sender_name||'')
+        : assertText(data.sender_name||'',100,'Assinatura da cartinha',false);
+      await env.DB.prepare("UPDATE orders SET rich_html=?,composition_json=?,sender_name=?,public_message=0,updated_at=? WHERE id=?")
+        .bind(html,composition,signature,now(),o.id).run();
       await event(env,o.id,'message_saved');return result({ok:true});
     }
     if(path==='/api/order/submit'&&req.method==='POST') {
@@ -832,7 +835,7 @@ async function adminRoute(req,env,path) {
       FROM matched m JOIN orders o ON COALESCE(o.checkout_id,o.id)=m.payment_id
       JOIN recipients r ON r.id=o.recipient_id
       LEFT JOIN checkouts c ON c.id=o.checkout_id
-      ORDER BY m.payment_created DESC,o.checkout_item_index,o.created_at DESC LIMIT 2000
+      ORDER BY m.payment_created DESC,m.payment_id,o.checkout_item_index,o.created_at DESC LIMIT 2000
     `;
     const rows=(await env.DB.prepare(sql).bind(...args).all()).results;
     const payments=[];

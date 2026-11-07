@@ -1,4 +1,5 @@
 import { generatePix } from './pix.js';
+import { isSquareRecipientJpeg } from './photo.js';
 import { normalizeComposition, STICKERS_BY_ID } from '../shared/letter.js';
 import { enqueue, enableReceipt, disableReceipt, confirmReceipt, markRead, queueRelease, dispatch, validateEmail, emailsReady } from './notify.js';
 
@@ -762,6 +763,8 @@ async function adminRoute(req,env,path) {
     }
     if(req.headers.get('X-Photo-Consent')!=='confirmed')bad('Confirme a autorização para divulgação da foto.',403);
     const image=await receiveSafeImage(req,5*1024*1024);
+    if(image.type!=='image/jpeg')bad('Abra o editor de fotos para salvar o recorte quadrado em JPEG.',415);
+    if(!isSquareRecipientJpeg(image.bytes))bad('A foto precisa estar recortada em quadrado (1:1). Use o editor de fotos.',422);
     const key=`recipients/${r.id}/${newId()}`;
     await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:image.type}});
     await env.DB.prepare('UPDATE recipients SET photo_key=?,photo_consent=1,og_key=NULL WHERE id=?').bind(key,r.id).run();

@@ -103,3 +103,21 @@
 @media(max-width:780px){.ejc-new-hero{grid-template-columns:1fr;padding:32px 23px;gap:0}.ejc-hero-copy{max-width:100%}.ejc-hero-copy h1{font-size:clamp(46px,10vw,72px)}.ejc-hero-letters{height:465px;margin-top:30px}.ejc-how-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.checkout-columns{grid-template-columns:1fr}.cart-bottom{grid-template-columns:1fr}.cart-bottom>.btn{width:100%}}
 @media(max-width:520px){.header-actions{gap:6px}.header-cart{font-size:12px;padding:10px}.header-cart span{display:none}.header-actions .header-link{font-size:11px;padding:10px 9px}.ejc-new-hero{border-radius:18px}.ejc-hero-copy h1{font-size:clamp(43px,11vw,59px)}.ejc-hero-copy .hero-kicker{font-size:10px}.ejc-hero-paper{width:min(83vw,320px);min-height:390px;padding:22px}.ejc-hero-paper-main strong{font-size:31px}.ejc-hero-letters{height:440px}.ejc-hero-sticker-a{right:-28px;bottom:-30px}.ejc-hero-sticker-b{right:-42px}.ejc-feature-ribbon{gap:8px;margin-bottom:45px}.ejc-feature-ribbon span{padding:8px 10px;font-size:11px}.ejc-portrait-wall{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:21px}.ejc-polaroid strong{font-size:13px;max-width:80%}.ejc-how-grid{grid-template-columns:1fr}.cart-item{flex-wrap:wrap;gap:10px;padding:14px}.cart-item-avatar{flex-basis:62px;width:62px;height:76px}.cart-item-info>strong{font-size:16px}.cart-item-price{font-size:14px}.cart-duplicate{margin-right:-15px}.cart-duplicate select{min-width:120px}.cart-receipt{padding:18px}}
 @media(prefers-reduced-motion:reduce){.ejc-hero-paper-main,.ejc-hero-copy,.letter-reveal{animation:none!important}.ejc-polaroid,.ejc-how-grid article,.header-cart,.ejc-polaroid-photo img{transition:none!important}html{scroll-behavior:auto}}
+
+
+.ejc-sticker-not-ready{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:5px;width:100%;height:100%;padding:12px;background:#fff9d9;border:2px dashed #d1a0b6;color:#7f4d62;border-radius:25% 30% 26% 33%;font:800 13px/1.2 "DM Sans",sans-serif;transform:rotate(-4deg)}
+.ejc-sticker-not-ready>span{font-size:23px;color:#b15d91}
+.sticker-upload-form{display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+.sticker-upload-form select,.sticker-upload-form input[type=file]{width:100%;max-width:580px;background:#fff;border:1px solid #dcc5d2;border-radius:12px;padding:12px}
+.sticker-admin-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.sticker-admin-card{display:flex;flex-direction:column;gap:8px;min-width:0;border:1px solid #e8d9dd;background:#fffcf8;border-radius:15px;padding:12px}
+.sticker-admin-image{display:grid;place-items:center;min-height:125px;aspect-ratio:1;background:linear-gradient(135deg,#fbe6ef,#d9eeff);border-radius:10px;overflow:hidden;text-align:center}
+.sticker-admin-image img{width:100%;height:100%;object-fit:contain}
+.sticker-admin-card strong{font-size:12px;line-height:1.32}
+.sticker-admin-card .text-button{font-size:12px;align-self:flex-start}
+.mural-envelope .letter-card{animation:ejc-open-letter .6s cubic-bezier(.15,.85,.25,1) both}
+@keyframes ejc-open-letter{0%{opacity:0;transform:translateY(21px) rotate(-1deg) scale(.97)}100%{opacity:1;transform:translateY(0) rotate(0) scale(1)}}
+.mural-envelope-button{transition:transform .3s ease,box-shadow .3s ease}
+.mural-envelope-button:hover{transform:translateY(-4px)}
+@media(max-width:700px){.sticker-admin-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:reduce){.mural-envelope .letter-card{animation:none}.mural-envelope-button{transition:none}}

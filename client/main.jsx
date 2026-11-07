@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { Heart, ArrowLeft, Instagram, ShieldCheck } from 'lucide-react';
+import { Heart, ArrowLeft, Instagram, ShieldCheck, ShoppingBag } from 'lucide-react';
+import { CartProvider, useCart } from './lib/cart';
+import Cart from './pages/Cart';
+import Checkout from './pages/Checkout';
+import './styles/cart.css';
 import { api, enableAnalytics, track } from './lib/api';
 import Home from './pages/Home';
 import Send from './pages/Send';
@@ -27,6 +31,7 @@ function Shell({children}) {
   const path=useLocation().pathname;
   const [consent,setConsent]=useState(localStorage.getItem('ejc-consent'));
   const {config}=useApp();
+  const cart=useCart();
   const navigate=useNavigate();
   useEffect(()=>{
     // Nunca encaminhar códigos, tokens ou caminhos privados ao Google Analytics.
@@ -41,7 +46,7 @@ function Shell({children}) {
     <header className="site-header"><div className="container header-inner">
       {path !== '/' ? <button className="icon-button" aria-label="Voltar" onClick={()=>navigate(-1)}><ArrowLeft size={20}/></button> : <Heart size={23} className="header-heart"/>}
       <Link to="/" className="brand">cartinhas<span className="brand-spark">💌</span><small>XX EJC · SIMONÉSIA</small></Link>
-      <Link to="/abrir" className="header-link">Abrir meu mural</Link>
+      <div className="header-actions"><Link to="/abrir" className="header-link">Abrir meu mural</Link><Link to="/carrinho" className="header-cart" aria-label={"Meu carrinho com " + cart.items.length + " cartinhas"}><ShoppingBag size={19}/><span>Carrinho</span>{cart.items.length>0&&<b>{cart.items.length}</b>}</Link></div>
     </div></header>
     <main className="container page">{children}</main>
     <footer className="container site-footer"><span>XX EJC Simonésia · 2026</span><span>Feito com amor pela <strong>equipe do Mini Mercado</strong> e arquitetado por Rodolfo Costa</span><Link to="/privacidade">Privacidade e segurança</Link></footer>
@@ -57,6 +62,8 @@ function App(){
     <Routes>
       <Route index element={<Home/>}/>
       <Route path="/enviar/:slug" element={<Send/>}/>
+      <Route path="/carrinho" element={<Cart/>}/>
+      <Route path="/checkout/:token" element={<Checkout/>}/>
       <Route path="/pedido/:token" element={<Order/>}/>
       <Route path="/mural/:slug" element={<Mural/>}/>
       <Route path="/abrir" element={<Unlock/>}/>
@@ -68,4 +75,4 @@ function App(){
     </Routes>
   </Shell></AppContext.Provider>;
 }
-createRoot(document.getElementById('root')).render(<BrowserRouter><App/></BrowserRouter>);
+createRoot(document.getElementById('root')).render(<BrowserRouter><CartProvider><App/></CartProvider></BrowserRouter>);

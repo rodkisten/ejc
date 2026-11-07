@@ -830,7 +830,8 @@ export default {
         const stream=path.match(/^\/api\/media\/([a-f0-9-]{36})$/);
         if (stream && request.method==='GET') return await signedMedia(request,env,stream[1],url);
         const response=await publicRoute(request,env,path);
-        if(WRITE_METHODS.has(request.method)&&ctx?.waitUntil)ctx.waitUntil(dispatch(env));
+        if((WRITE_METHODS.has(request.method)||(/^\/api\/mural\/.+\/cards\//.test(path)&&request.method==='GET'))
+          &&ctx?.waitUntil)ctx.waitUntil(dispatch(env));
         return response;
       }
       // Fetch the SPA shell from / explicitly: crawlers often request deep links

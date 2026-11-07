@@ -39,8 +39,9 @@ export async function enableReceipt(env,orderId,email){
   const verify=b64(crypto.getRandomValues(new Uint8Array(32)));
   const encrypted=await encryptEmail(env,address);
   const expires=new Date(Date.now()+48*3600000).toISOString();
-  await env.DB.prepare('INSERT INTO order_read_receipts(order_id,email_encrypted,verify_hash,verify_expires_at,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(order_id) DO UPDATE SET email_encrypted=excluded.email_encrypted,verify_hash=excluded.verify_hash,verify_expires_at=excluded.verify_expires_at,verified_at=NULL,notified_at=NULL,updated_at=excluded.updated_at')
-    .bind(orderId,encrypted,await hash(verify),expires,timestamp()).run();
+  const opened=await env.DB.prepare('SELECT first_read_at FROM orders WHERE id=?').bind(orderId).first();
+  await env.DB.prepare('INSERT INTO order_read_receipts(order_id,email_encrypted,verify_hash,verify_expires_at,first_read_at,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(order_id) DO UPDATE SET email_encrypted=excluded.email_encrypted,verify_hash=excluded.verify_hash,verify_expires_at=excluded.verify_expires_at,verified_at=NULL,notified_at=NULL,first_read_at=excluded.first_read_at,updated_at=excluded.updated_at')
+    .bind(orderId,encrypted,await hash(verify),expires,opened?.first_read_at||null,timestamp()).run();
   await env.DB.prepare("DELETE FROM notification_outbox WHERE order_id=? AND event IN ('email_verify','email_read')")
     .bind(orderId).run();
   await enqueue(env,orderId,'email_verify',JSON.stringify({token:verify}));

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Copy,
@@ -42,20 +42,34 @@ export default function Order() {
   const [html, setHtml] = useState(''),
     [assets, setAssets] = useState([]),
     [progress, setProgress] = useState('');
+  const activeToken = useRef(token);
+  activeToken.current = token;
   const [receiptEmail, setReceiptEmail] = useState('');
   const [receiptBusy,setReceiptBusy] = useState(false);
   const reload = useCallback(async () => {
     try {
       const o = await api('/api/order', { token });
-      setOrder(o);
-      setError('');
+      if (activeToken.current === token) {
+        setOrder(o);
+        setError('');
+      }
       return o;
     } catch (e) {
-      setError(e.message);
+      if (activeToken.current === token) setError(e.message);
       return null;
     }
   }, [token]);
   useEffect(() => {
+    setOrder(null);
+    setSaved(false);
+    setError('');
+    setProgress('');
+    setHtml('');
+    setSender('');
+    setAssets((previous) => {
+      previous.forEach(asset => URL.revokeObjectURL(asset.url));
+      return [];
+    });
     reload();
     const t = setInterval(reload, 15_000);
     return () => clearInterval(t);

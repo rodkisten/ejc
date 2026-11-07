@@ -259,6 +259,13 @@ export async function renderLetterImages(letter, recipient, mode = 'letter') {
     // A decorated photograph deserves a separate art page if body text would overlap it.
     groups.push([]);
   }
+  const contentPages = groups.length;
+  // Every photo is retained in the full-letter PNG export, not only in the ZIP.
+  if (!social) {
+    for (let index = 1; index < photos.length; index += 4) {
+      groups.push({ gallery: photos.slice(index, index + 4) });
+    }
+  }
   const outputs = [];
   for (let page = 0; page < groups.length; page++) {
     const canvas = document.createElement('canvas');
@@ -269,6 +276,23 @@ export async function renderLetterImages(letter, recipient, mode = 'letter') {
     drawHeading(ctx, recipient || letter?.recipient_name, theme, width, social ? 193 : 188);
     ctx.fillStyle = theme.ink;
     ctx.textAlign = 'left';
+    const gallery = !Array.isArray(groups[page]) ? groups[page].gallery : null;
+    if (gallery) {
+      ctx.textAlign = 'center';
+      ctx.fillStyle = theme.accent;
+      ctx.font = '700 35px "Fraunces",Georgia,serif';
+      ctx.fillText('Outras lembranças ♡', width / 2, 265);
+      for (const [index, photo] of gallery.entries()) {
+        const bitmap = await imageBitmap(photo.url);
+        if (!bitmap) continue;
+        const x = index % 2 === 0 ? 135 : 555;
+        const y = index < 2 ? 330 : 760;
+        drawPhoto(ctx, bitmap, x, y, 360, 345);
+        bitmap.close?.();
+      }
+      outputs.push(await toBlob(canvas));
+      continue;
+    }
     const group = groups[page];
     const maxBodyHeight = social ? (mode === 'story' ? 1110 : composition.stickers.length ? 500 : 650)
       : (decorated ? 520 : 805);
@@ -283,7 +307,7 @@ export async function renderLetterImages(letter, recipient, mode = 'letter') {
     const firstY = social ? 355 : 330;
     const textY = firstY + Math.max(0, Math.min(130, (maxBodyHeight - textHeight) / 4));
     for (let index = 0; index < group.length; index++) ctx.fillText(group[index], 108, textY + index * lineHeight);
-    const isLast = page === groups.length - 1;
+    const isLast = page === contentPages - 1;
     if (isLast) {
       const hasMedia = photos.length > 0;
       if (hasMedia) {

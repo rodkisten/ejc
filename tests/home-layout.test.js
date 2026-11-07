@@ -52,7 +52,7 @@ test('CSS mantém a identidade anterior e evita transbordar no Safari móvel', (
   const css = fs.readFileSync(new URL('../client/styles/home.css', import.meta.url), 'utf8');
   const main = fs.readFileSync(new URL('../client/main.jsx', import.meta.url), 'utf8');
   const theme = fs.readFileSync(new URL('../client/legacy-theme.css', import.meta.url), 'utf8');
-  assert.match(main, /import '\\.\\/styles\\/home\\.css'/);
+  assert.ok(main.includes("import './styles/home.css';"));
   for (const selector of [
     '.classic-ejc-home .hero',
     '.classic-ejc-home .hero-art',
@@ -61,9 +61,9 @@ test('CSS mantém a identidade anterior e evita transbordar no Safari móvel', (
     '.classic-recipient-avatar',
     '.classic-search-box',
   ]) assert.ok(css.includes(selector), selector + ' não tem estilo');
-  assert.match(css, /@media \\(max-width: 640px\\)/);
-  assert.match(css, /overflow:\\s*hidden/);
-  assert.match(css, /aspect-ratio:\\s*1 \\/ 1/);
-  assert.match(css, /border:\\s*2px solid var\\(--recipient-border/);
+  assert.ok(css.includes('@media (max-width: 640px)'));
+  assert.ok(css.includes('overflow: hidden'));
+  assert.ok(css.includes('aspect-ratio: 1 / 1'));
+  assert.ok(css.includes('border: 2px solid var(--recipient-border'));
   assert.ok(theme.includes('#ffefdc') && theme.includes('#f9d3de') && theme.includes('#e5dcfb'));
 });

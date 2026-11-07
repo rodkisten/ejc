@@ -421,13 +421,11 @@ async function publicRoute(req,env,path) {
   }
   const mural=path.match(/^\/api\/mural\/([a-z0-9-]+)$/);
   if (mural && req.method==='GET') {
-    const r=await env.DB.prepare('SELECT id,name,slug,mural_token_hash,mural_code,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1').bind(mural[1]).first();
+    const r=await env.DB.prepare('SELECT id,name,slug,mural_code,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1').bind(mural[1]).first();
     if(!r)bad('Encontrista não encontrado.',404);
     const access=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
     const signed=await validMuralGrant(env,access,r);
-    const legacy=/^[A-Za-z0-9_-]{40,100}$/.test(access) &&
-      r.mural_token_hash===await digest(access);
-    if(!signed&&!legacy)bad('Convite ou código de acesso inválido.',403);
+    if(!signed)bad('Código de acesso inválido.',403);
     // O remetente envia quando quiser; o destinatário só vê após a liberação.
     const locked=!released(config);
     if(locked)return result({recipient:{name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r)},

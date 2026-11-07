@@ -775,6 +775,85 @@ async function adminRoute(req,env,path) {
     if(r.og_key)await env.MEDIA.delete(r.og_key);
     return result({ok:true,photo_url:`/api/recipients/${r.id}/photo?v=${key.split('/').pop()}`});
   }
+  // One Pix may pay many private letters. Match payment IDs and then
+  // include all recipient names linked to the payment, never message content.
+  if(path==='/api/admin/payments/search'&&req.method==='POST'){
+    const input=await jsonBody(req,1800);
+    const query=normalizePaymentLookup(input.query||'');
+    const recipient=String(input.recipient||'').trim().slice(0,100);
+    const payer=String(input.payer||'').trim().slice(0,100);
+    const status=maskedStatus(input.status||'');
+    const where=[],args=[];
+    if(query){
+      const term=likeTerm(query.toUpperCase());
+      where.push(`(
+        UPPER(REPLACE(COALESCE(c.id,o.id),'-','')) LIKE ? ESCAPE char(92)
+        OR UPPER(REPLACE(COALESCE(c.txid,o.txid),'-','')) LIKE ? ESCAPE char(92)
+        OR UPPER(COALESCE(c.bank_reference,o.bank_reference,'')) LIKE ? ESCAPE char(92)
+        OR UPPER(COALESCE(c.payer_name,o.payer_name,'')) LIKE ? ESCAPE char(92)
+        OR UPPER(r.name) LIKE ? ESCAPE char(92)
+      )`);
+      args.push(term,term,term,term,term);
+    }
+    if(recipient){
+      where.push('UPPER(r.name) LIKE ? ESCAPE char(92)');
+      args.push(likeTerm(recipient.toUpperCase()));
+    }
+    if(payer){
+      where.push('UPPER(COALESCE(c.payer_name,o.payer_name)) LIKE ? ESCAPE char(92)');
+      args.push(likeTerm(payer.toUpperCase()));
+    }
+    if(status){
+      where.push('COALESCE(c.status,o.status)=?');
+      args.push(status);
+    }
+    if(input.only_sent===true)where.push('o.submitted_at IS NOT NULL');
+    const condition=where.length?'WHERE '+where.join(' AND '):'';
+    const sql=`
+      WITH matched AS (
+        SELECT COALESCE(o.checkout_id,o.id) AS payment_id,
+          MAX(COALESCE(c.created_at,o.created_at)) AS payment_created
+        FROM orders o
+        JOIN recipients r ON r.id=o.recipient_id
+        LEFT JOIN checkouts c ON c.id=o.checkout_id
+        ${condition}
+        GROUP BY COALESCE(o.checkout_id,o.id)
+        ORDER BY payment_created DESC LIMIT 100
+      )
+      SELECT m.payment_id,
+        COALESCE(c.status,o.status) AS payment_status,
+        COALESCE(c.total_cents,o.total_cents) AS payment_cents,
+        COALESCE(c.txid,o.txid) AS payment_txid,
+        COALESCE(c.bank_reference,o.bank_reference) AS bank_reference,
+        COALESCE(c.payer_name,o.payer_name) AS payer_name,
+        m.payment_created, o.checkout_id,o.id AS order_id,o.status AS order_status,
+        r.name AS recipient_name,
+        CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted
+      FROM matched m JOIN orders o ON COALESCE(o.checkout_id,o.id)=m.payment_id
+      JOIN recipients r ON r.id=o.recipient_id
+      LEFT JOIN checkouts c ON c.id=o.checkout_id
+      ORDER BY m.payment_created DESC,o.checkout_item_index,o.created_at DESC LIMIT 2000
+    `;
+    const rows=(await env.DB.prepare(sql).bind(...args).all()).results;
+    const payments=[];
+    for(const row of rows){
+      let payment=payments[payments.length-1];
+      if(!payment || payment.id!==row.payment_id){
+        payment={
+          id:row.payment_id,checkout_id:row.checkout_id,
+          status:row.payment_status,total_cents:row.payment_cents,
+          txid:row.payment_txid,bank_reference:row.bank_reference,
+          payer_name:row.payer_name||'',created_at:row.payment_created,items:[]
+        };
+        payments.push(payment);
+      }
+      payment.items.push({
+        id:row.order_id,recipient_name:row.recipient_name,
+        status:row.order_status,submitted:!!row.submitted
+      });
+    }
+    return result({payments,limit:100});
+  }
   if(path==='/api/admin/checkouts'&&req.method==='GET'){
     const checkouts=(await env.DB.prepare(
       "SELECT c.id,c.status,c.total_cents,c.txid,c.payer_name,c.created_at,c.claimed_at,c.confirmed_at,c.bank_reference,COUNT(o.id) AS item_count FROM checkouts c JOIN orders o ON o.checkout_id=c.id GROUP BY c.id ORDER BY c.created_at DESC LIMIT 500"

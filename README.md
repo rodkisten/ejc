@@ -43,6 +43,7 @@ As rotas `/enviar/:slug` e `/mural/:slug` recebem metatags OG injetadas no HTML 
 - Migration **`0009_checkout_cart.sql`** cria `checkouts` e adiciona `orders.checkout_id` e `checkout_item_index`, preservando pedidos anteriores.
 - O painel administrativo mostra Pix agrupados e identifica a situação operacional de cada destinatário, sem expor texto, áudio, fotos, composição ou nome do remetente.
 - Os valores não podem ser alterados no browser depois da criação do checkout, nem é possível confirmar individualmente um pedido vinculado a Pix agrupado.
+- Para reduzir abuso de armazenamento em compras não confirmadas, o pré-envio aceita até 12 anexos e 48 MiB por cartinha, além de 160 MiB no total de um Pix agrupado. Após a confirmação bancária aplicam-se os limites normais da infraestrutura.
 - O texto e a decoração passam a estar disponíveis pelo **link privado de checkout mesmo em outro dispositivo**. Fotos e áudios originais saem do IndexedDB para o R2 ao abrir o checkout; acompanhe a sincronização antes de trocar de dispositivo. Quem possui o link secreto pode editar o conteúdo até o prazo, mas a coordenação continua sem endpoints de leitura.
 - Antes de publicar: `npm ci && npm run check && npm run build && npm run db:remote`, faça backup do D1, teste Pix real em valor pequeno, revisite a página após pagar, exporte fotos/áudios no Safari e confira OG no WhatsApp.
 

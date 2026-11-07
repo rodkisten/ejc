@@ -339,7 +339,7 @@ function escapeMeta(value){
 // in Worker-rendered HTML, even when the admin has not generated a portrait PNG.
 const DEFAULT_OG_PATH = '/og-ejc-default.png';
 const DEFAULT_OG_VERSION = '20261107c';
-function socialImage(recipient) {
+function socialImage(recipient, defaultOg=null) {
   const personalized = recipient?.og_key && (!recipient.photo_key || recipient.photo_consent);
   if (personalized) {
     const version = recipient.og_key.split('/').pop();
@@ -348,12 +348,13 @@ function socialImage(recipient) {
       version, width: 1200, height: 630,
     };
   }
+  const fallbackVersion=defaultOg?.version||DEFAULT_OG_VERSION;
   return {
-    path: DEFAULT_OG_PATH + '?v=' + DEFAULT_OG_VERSION,
-    version: DEFAULT_OG_VERSION, width: 600, height: 315,
+    path: DEFAULT_OG_PATH + '?v=' + encodeURIComponent(fallbackVersion),
+    version: fallbackVersion, width: defaultOg?.ready?1200:600, height:defaultOg?.ready?630:315,
   };
 }
-function buildSocialMeta(origin, recipient, kind = 'enviar') {
+function buildSocialMeta(origin, recipient, kind = 'enviar', defaultOg=null) {
   const person = recipient?.name;
   const title = person
     ? (kind === 'mural' ? 'Mural secreto de ' : 'Envie uma cartinha para ') + person + ' · XX EJC Simonésia'
@@ -363,7 +364,7 @@ function buildSocialMeta(origin, recipient, kind = 'enviar') {
       ? 'Um cantinho privado para guardar mensagens, fotos e áudios. Acesso somente com código pessoal.'
       : 'Envie fotos, áudios e palavras especiais para ' + person + ' no XX EJC de Simonésia.'
     : 'Uma homenagem especial para guardar no coração. Cartinhas do XX EJC Simonésia.';
-  const image = socialImage(recipient);
+  const image = socialImage(recipient,defaultOg);
   const imageUrl = origin + image.path;
   const canonicalPath = person
     ? '/' + kind + '/' + encodeURIComponent(recipient.slug)
@@ -724,6 +725,15 @@ async function adminRoute(req,env,path) {
     })));
     return result({stickers:entries});
   }
+  if(path==='/api/admin/og/default'&&req.method==='POST'){
+    const image=await receiveSafeImage(req,5*1024*1024);
+    if(image.type!=='image/png')bad('Prévia social deve ser PNG.',415);
+    const view=new DataView(image.bytes.buffer,image.bytes.byteOffset,image.bytes.byteLength);
+    if(image.bytes.byteLength<24||view.getUint32(16)!==1200||view.getUint32(20)!==630)
+      bad('A imagem social da home deve medir 1200 x 630 pixels.',400);
+    await env.MEDIA.put('og/default-v3.png',image.bytes,{httpMetadata:{contentType:'image/png'}});
+    return result({ok:true,url:'/og-ejc-default.png?v='+Date.now()});
+  }
   const ogUpload=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/og$/);
   if(ogUpload&&req.method==='POST'){
     const r=await env.DB.prepare('SELECT id,slug,og_key,photo_key,photo_consent FROM recipients WHERE id=? AND active=1').bind(ogUpload[1]).first();
@@ -1012,6 +1022,13 @@ export default {
       const socialRecipient=social?await env.DB.prepare(
         'SELECT name,slug,og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
       ).bind(social[2]).first():null;
+      if(path==='/og-ejc-default.png'&&(request.method==='GET'||request.method==='HEAD')){
+        const image=await env.MEDIA.get('og/default-v3.png');
+        if(image)return new Response(request.method==='HEAD'?null:image.body,{headers:{
+          'Content-Type':'image/png','Content-Length':String(image.size),
+          'Cache-Control':'public, max-age=300','X-Content-Type-Options':'nosniff'
+        }});
+      }
       const sharePage=!!social || path==='/' || path==='/abrir';
       const assetRequest=sharePage && path!=='/'
         ?new Request(new URL('/',url.origin),request)
@@ -1031,7 +1048,9 @@ export default {
       }
       if(sharePage && response.ok && (headers.get('Content-Type')||'').includes('text/html')){
         const publicOrigin=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
-        const meta=buildSocialMeta(publicOrigin,socialRecipient,social?.[1]||'enviar');
+        const ogDefault=await env.MEDIA.head('og/default-v3.png');
+        const meta=buildSocialMeta(publicOrigin,socialRecipient,social?.[1]||'enviar',
+          ogDefault?{ready:true,version:String(ogDefault.uploaded?.getTime()||'v3')} : null);
         const html=(await response.text())
           .replace(/<!-- EJC-OG-START:[\s\S]*?<!-- EJC-OG-END -->/i,'')
           .replace(/<title>[\s\S]*?<\/title>/i,'<title>'+escapeMeta(meta.title)+'</title>')

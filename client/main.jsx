@@ -25,6 +25,7 @@ import './styles/letter-controls.css';
 import './styles/letter-canvas.css';
 import './styles/instagram-export.css';
 import './styles/cart.css';
+import './styles/home.css';
 
 export const AppContext=React.createContext({ config:null, recipients:[], reload:async()=>{} });
 export function useApp(){return React.useContext(AppContext);}

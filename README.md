@@ -472,3 +472,34 @@ antes de habilitar a campanha.
 Execute npm ci, npm run check, npm run build e bash scripts/deploy.sh. O deploy aplica migrations remotas e publica o Worker junto ao frontend.
 Não considere commits na branch como publicação em ejc.migos.club. Antes de divulgar, teste um Pix real de valor pequeno, confira o valor total e o txid no banco, confirme o checkout, abra cada cartinha, envie anexos e verifique o compartilhamento no Safari.
 Rascunhos com fotos e áudios ficam no navegador que iniciou a compra; não limpe dados nem troque de aparelho antes de concluir.
+
+## Mural de encontristas na home (responsivo)
+
+A página inicial usa um **mural único e completo** (`#encontristas`):
+os nomes carregados do endpoint público são exibidos de uma vez, sem
+limites artificiais, paginação ou botão "mostrar mais". Há busca instantânea
+por nome que ignora acentos e preserva a ordem alfabética.
+
+Cada cartão tem bordas de papel colorido, avatar com foto autorizada
+ou iniciais, e um link direto para o editor da cartinha. Os 12 tons
+de avatar são distribuídos por hash estável do identificador da pessoa;
+assim parecem variados, mas não mudam a cada pesquisa.
+
+O arquivo `client/styles/home.css` implementa o layout do hero, da
+ilustração de carta, do mural e das seções de recursos com breakpoints
+para iPhone/Safari. A ilustração fica confinada à sua área para não
+estourar a tela; nomes compridos podem quebrar em várias linhas.
+
+Validação local após `git pull`:
+
+```bash
+npm ci
+npm run check
+npm run build
+bash scripts/deploy.sh
+```
+
+O teste `tests/home-layout.test.js` verifica listagem completa, cores
+estáveis, busca com e sem acentos e a presença dos estilos móveis.
+Para confirmar visualmente, teste 320px, 375px, 390px, 430px e desktop
+no navegador, incluindo busca e nomes grandes.

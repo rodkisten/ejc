@@ -1,4 +1,5 @@
 import { generatePix } from './pix.js';
+import { normalizeComposition } from '../shared/letter.js';
 
 const PART_SIZE = 8 * 1024 * 1024;
 const MIN_PART = 5 * 1024 * 1024;
@@ -80,6 +81,7 @@ function released(config) { return Date.now()>=brazilTimeEnd(config.release_at);
 async function cardInfo(env,o) {
   const assets=(await env.DB.prepare("SELECT id,kind,filename,content_type,bytes FROM media WHERE order_id=? AND status='ready' ORDER BY created_at").bind(o.id).all()).results;
   return {id:o.id,recipient_name:o.recipient_name,sender_name:o.sender_name||'Uma pessoa especial',rich_html:o.rich_html,
+    composition:normalizeComposition(JSON.parse(o.composition_json||'{}')),
     media:await Promise.all(assets.map(async m=>({...m,url:await mediaUrl(env,m.id,o.id)}))),created_at:o.created_at};
 }
 async function orderWithRecipient(env,id) { return env.DB.prepare('SELECT o.*,r.name AS recipient_name,r.slug AS recipient_slug FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.id=?').bind(id).first(); }
@@ -155,6 +157,7 @@ async function orderInfo(env,o) {
     amount_cents:o.total_cents,pix_code:o.pix_payload,txid:o.txid,
     pix_receiver:config.pix_name||'',pix_city:config.pix_city||'',
     rich_html:activeOrder(o)?o.rich_html:'',
+    composition:activeOrder(o)?normalizeComposition(JSON.parse(o.composition_json||'{}')):null,
     submitted:!!o.submitted_at,
     payment_claimed_at:o.payment_claimed_at,created_at:o.created_at,media:visible};
 }
@@ -472,7 +475,11 @@ async function publicRoute(req,env,path) {
       if(!activeOrder(o))bad('Pagamento não confirmado.',403);
       editable(config);
       const data=await jsonBody(req,40000),html=safeRich(data.rich_html||'');
-      await env.DB.prepare("UPDATE orders SET rich_html=?,public_message=0,updated_at=? WHERE id=?").bind(html,now(),o.id).run();
+      const composition=JSON.stringify(normalizeComposition(data.composition===undefined
+        ? JSON.parse(o.composition_json||'{}') : data.composition));
+      if(composition.length>7000)bad('Decoração excede o limite permitido.',413);
+      await env.DB.prepare("UPDATE orders SET rich_html=?,composition_json=?,public_message=0,updated_at=? WHERE id=?")
+        .bind(html,composition,now(),o.id).run();
       await event(env,o.id,'message_saved');return result({ok:true});
     }
     if(path==='/api/order/submit'&&req.method==='POST') {

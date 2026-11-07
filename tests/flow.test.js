@@ -11,6 +11,7 @@ function fixture(){
   sql.exec(fs.readFileSync(new URL('../migrations/0004_mural_codes.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0005_og_images.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0006_private_letters.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0007_letter_compositions.sql',import.meta.url),'utf8'));
 
   const DB={
     prepare(query){const stmt=(...values)=>({first:async()=>sql.prepare(query).get(...values)||null,all:async()=>({results:sql.prepare(query).all(...values)}),run:async()=>({meta:sql.prepare(query).run(...values)})});return {...stmt(),bind:stmt};},
@@ -236,4 +237,40 @@ test('imagens OG são PNG servidos para robôs sociais e metadados chegam no HTM
   assert.ok(!html.includes('content="geral"'));
   const hidden=await worker.fetch(new Request('https://ejc.test/mural/'+person.slug),env);
   assert.match(hidden.headers.get('X-Robots-Tag'),/noindex/);
+});
+
+test('composição visual é privada, normalizada e entregue somente ao destinatário',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const created=await call(env,'/api/orders','POST',{recipient_slug:list[0].slug,sender_name:'Quem te admira'});
+  assert.equal(created.status,201);
+  const token=created.data.token;
+  await call(env,'/api/order/claim','POST',{}, {token});
+  assert.equal((await call(env,`/api/admin/orders/${created.data.id}/status`,'PATCH',
+    {status:'paid',bank_reference:'E2EDESIGN123456789',bank_checked:true,amount_checked:true},admin)).status,200);
+  const draft={
+    theme:'marian',font:'handwritten',authorName:'Com amor de casa',anonymous:false,
+    stickers:[{id:'st-1',presetId:'nossa-senhora',x:20,y:65,scale:1,rotate:-6}],
+  };
+  const saved=await call(env,'/api/order/message','PUT',
+    {rich_html:'<p>Uma bênção para você.</p>',composition:draft},{token});
+  assert.equal(saved.status,200);
+  const buyer=(await call(env,'/api/order','GET',undefined,{token})).data;
+  assert.equal(buyer.composition.theme,'marian');
+  assert.equal(buyer.composition.stickers.length,1);
+  assert.equal(buyer.composition.authorName,'Com amor de casa');
+  const detail=(await call(env,`/api/admin/orders/${created.data.id}`,'GET',undefined,admin)).data;
+  assert.equal('composition' in detail,false);
+  assert.equal('composition_json' in detail,false);
+  const bootstrap=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data;
+  assert.ok(!JSON.stringify(bootstrap).includes('Com amor de casa'));
+  assert.equal((await call(env,'/api/order/submit','POST',{}, {token})).status,200);
+  await call(env,'/api/admin/mural-codes/generate','POST',{regenerate:false},admin);
+  const code=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data
+    .recipients.find(p=>p.slug===list[0].slug).mural_code;
+  const access=await call(env,'/api/mural/redeem','POST',{code});
+  await call(env,'/api/admin/settings','PUT',{release_at:'2020-11-08T16:00'},admin);
+  const mural=await call(env,`/api/mural/${list[0].slug}`,'GET',undefined,{token:access.data.grant});
+  assert.equal(mural.status,200);
+  assert.equal(mural.data.cards[0].composition.stickers[0].presetId,'nossa-senhora');
+  assert.equal(mural.data.cards[0].composition.theme,'marian');
 });

@@ -12,6 +12,12 @@ import Unlock from './pages/Unlock';
 import Privacy from './pages/Privacy';
 import './styles.css';
 import './legacy-theme.css';
+import './styles/stickers.css';
+import './styles/sticker-picker.css';
+import './styles/sticker-layer.css';
+import './styles/letter-controls.css';
+import './styles/letter-canvas.css';
+import './styles/instagram-export.css';
 
 export const AppContext=React.createContext({ config:null, recipients:[], reload:async()=>{} });
 export function useApp(){return React.useContext(AppContext);}

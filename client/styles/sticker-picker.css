@@ -1,0 +1,16 @@
+.sticker-picker-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.sticker-picker-scrim { position: fixed; z-index: 5000; inset: 0; background: rgba(30, 20, 38, .55); display: flex; align-items: flex-end; justify-content: center; }
+.sticker-picker-sheet { width: min(100%, 760px); max-height: min(84dvh, 850px); overflow: hidden; display: flex; flex-direction: column; background: #fffaf7; padding: 24px 20px calc(12px + env(safe-area-inset-bottom)); border-radius: 28px 28px 0 0; box-shadow: 0 -25px 60px rgba(20,10,24,.25); }
+.sticker-picker-heading { display: flex; justify-content: space-between; align-items: start; gap: 14px; }
+.sticker-picker-heading h3 { font: 700 clamp(1.5rem,4vw,2rem)/1.1 'Fraunces',Georgia,serif; margin: 4px 0; }
+.sticker-picker-heading p { margin: 0 0 16px; }
+.sticker-picker-tabs { display: flex; gap: 7px; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 10px; }
+.sticker-picker-tabs button { min-width: max-content; font: 800 13px 'DM Sans',sans-serif; border: 1px solid #e3d6e8; padding: 9px 13px; border-radius: 99px; background: white; color: #5b4668; }
+.sticker-picker-tabs button.active { background: #62388b; color: white; border-color: #62388b; }
+.sticker-picker-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; overflow: auto; padding: 14px 4px 22px; overscroll-behavior: contain; }
+.ejc-sticker-preview { background: #fff; border: 1px solid #eee5ed; border-radius: 17px; padding: 16px 8px; min-height: 158px; display: grid; place-items: center; transition: background .2s ease; cursor: pointer; }
+.ejc-sticker-preview:hover,.ejc-sticker-preview:focus-visible { background: #f6effa; }
+.ejc-sticker-preview:disabled { opacity: .5; }
+.sticker-picker-limit { font: 500 12px 'DM Sans',sans-serif; color: #6a596e; text-align: center; margin: 0; padding: 10px; }
+@media(min-width:560px){.sticker-picker-grid{grid-template-columns:repeat(3,minmax(0,1fr));}}
+@media(min-width:800px){.sticker-picker-scrim{align-items:center}.sticker-picker-sheet{border-radius:28px;max-height:82vh}.sticker-picker-grid{grid-template-columns:repeat(4,minmax(0,1fr));}}

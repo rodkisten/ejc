@@ -1,0 +1,25 @@
+.letter-paper--designed{--letter-paper:#fffaf4;--letter-ink:#2d2339;--letter-accent:#6e3d93;--letter-tint:#f0e3f9;--letter-edge:#ceb6e4;position:relative;color:var(--letter-ink)!important;background:var(--letter-paper)!important;min-height:440px;max-width:100%;min-width:0;overflow:hidden;padding:clamp(25px,6vw,65px)!important;border:1px solid var(--letter-edge)!important;border-radius:13px;box-shadow:0 3px 0 #ffffffc9,0 18px 32px #32203b17}
+.letter-paper--designed::before{content:'';position:absolute;inset:12px;border:1px solid var(--letter-edge);border-radius:4px;pointer-events:none;opacity:.65}
+.letter-paper-stamp{text-align:center;color:var(--letter-accent);font:800 11px/1.3 'DM Sans',sans-serif;letter-spacing:.22em}
+.letter-paper-heading{margin:26px 0 9px!important;font:700 clamp(27px,5.5vw,52px)/1.16 var(--letter-display-font)!important;letter-spacing:-.04em;color:var(--letter-ink)!important;text-align:center;overflow-wrap:anywhere;text-wrap:balance}
+.letter-paper-heading span{color:var(--letter-accent)}
+.letter-paper-rule{height:1px;background:linear-gradient(90deg,transparent,var(--letter-edge),transparent);margin:18px 0 28px}
+.letter-paper--designed .letter-content{color:var(--letter-ink)!important;max-width:100%;min-height:135px;overflow-wrap:anywhere;white-space:normal}
+.letter-paper--designed .letter-content p{margin:0 0 .85em}
+.letter-paper--designed .letter-content p:last-child{margin-bottom:0}
+.letter-paper--designed .letter-content h2{font-family:var(--letter-display-font)!important;font-size:1.15em}
+.letter-paper--designed .letter-content blockquote{border-left:3px solid var(--letter-edge);padding-left:14px}
+.letter-paper--designed .letter-photos{display:grid;gap:9px;grid-template-columns:repeat(2,minmax(0,1fr));margin:20px 0 10px}
+.letter-paper--designed .letter-photos--single{grid-template-columns:minmax(0,1fr);max-width:310px;margin:25px auto}
+.letter-photo-frame{background:#fffdfb;padding:7px 7px 17px;box-shadow:0 5px 13px #2d22302a;transform:rotate(-1.5deg);min-width:0}
+.letter-photo-frame:nth-child(even){transform:rotate(2deg)}
+.letter-photo-frame img{display:block;width:100%;height:clamp(100px,21vw,190px);object-fit:cover!important;border-radius:0!important}
+.letter-photos--single img{height:220px}
+.letter-more-photos{font-size:12px;color:var(--letter-accent);align-self:center}
+.letter-audio-mark{margin:22px auto 5px;padding:11px 18px;width:fit-content;max-width:100%;border-radius:100px;background:var(--letter-tint);color:var(--letter-accent);font:700 12px/1.3 'DM Sans',sans-serif;text-align:center}
+.letter-audio-mark span{font-size:19px;vertical-align:middle}
+.letter-paper-author{display:grid;justify-items:end;gap:3px;text-align:right;margin:24px 2px 15px;font:italic 19px Georgia,serif;color:var(--letter-accent)}
+.letter-paper-author strong{font:italic 700 clamp(25px,5vw,38px)/1.2 var(--letter-display-font);overflow-wrap:anywhere}
+.letter-paper-author span:last-child{font-size:16px}
+.letter-paper-bottom{text-align:center;color:var(--letter-accent);font:700 10px 'DM Sans',sans-serif;letter-spacing:.1em;opacity:.76;margin-top:20px}
+@media(max-width:540px){.letter-paper--designed{padding:25px 18px!important;min-height:390px}.letter-paper--designed::before{inset:8px}.letter-paper-heading{margin-top:18px!important}.letter-paper-rule{margin:13px 0 19px}.letter-paper--designed .letter-photos{gap:6px}}

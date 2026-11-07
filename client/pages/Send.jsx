@@ -8,20 +8,23 @@ import RichEditor from '../components/RichEditor';
 import Recorder from '../components/Recorder';
 import VoicePlayer from '../components/VoicePlayer';
 import { LetterCard } from '../components/LetterCard';
+import LetterControls from '../components/letter/LetterControls';
+import { useLetterComposer } from '../hooks/useLetterComposer';
 export default function Send(){
   const {slug}=useParams(),navigate=useNavigate(),{recipients,config}=useApp();
   const found=recipients.find(r=>r.slug===slug);
+  const { composition, setComposition } = useLetterComposer();
   const [sender,setSender]=useState(''),[html,setHtml]=useState(''),[assets,setAssets]=useState([]),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[preview,setPreview]=useState(false);
-  useEffect(()=>{let active=true;draftGet(draftKey(slug)).then(d=>{if(d&&active){setSender(d.sender||'');setHtml(d.html||'');setAssets((d.assets||[]).map(x=>({...x,url:URL.createObjectURL(x.file)})));}if(active)setReady(true);}).catch(()=>setReady(true));return()=>{active=false;};},[slug]);
-  useEffect(()=>{if(!ready)return;const id=setTimeout(()=>{draftSet(draftKey(slug),{sender,html,assets:assets.map(({file,kind})=>({file,kind}))}).catch(()=>{});},500);return()=>clearTimeout(id);},[ready,sender,html,assets,slug]);
+  useEffect(()=>{let active=true;draftGet(draftKey(slug)).then(d=>{if(d&&active){setSender(d.sender||'');setHtml(d.html||'');setComposition(d.composition);setAssets((d.assets||[]).map(x=>({...x,url:URL.createObjectURL(x.file)})));}if(active)setReady(true);}).catch(()=>setReady(true));return()=>{active=false;};},[slug]);
+  useEffect(()=>{if(!ready)return;const id=setTimeout(()=>{draftSet(draftKey(slug),{sender,html,composition,assets:assets.map(({file,kind})=>({file,kind}))}).catch(()=>{});},500);return()=>clearTimeout(id);},[ready,sender,html,composition,assets,slug]);
   useEffect(()=>()=>{assets.forEach(x=>{if(x.url)URL.revokeObjectURL(x.url);});},[]);
   const photos=assets.filter(x=>x.kind==='image'),audios=assets.filter(x=>x.kind==='audio');
-  const letter={rich_html:html,sender_name:sender,media:assets.map((a,i)=>({...a,id:i,filename:a.file.name,content_type:a.file.type}))};
+  const letter={rich_html:html,sender_name:sender,composition,media:assets.map((a,i)=>({...a,id:i,filename:a.file.name,content_type:a.file.type}))};
   const add=(file,kind)=>setAssets(a=>[...a,{file,kind,url:URL.createObjectURL(file)}]);
   const remove=index=>setAssets(a=>{const copy=[...a],item=copy.splice(index,1)[0];if(item?.url)URL.revokeObjectURL(item.url);return copy;});
   async function pay(){
     setBusy(true);setError('');try{
-      await draftSet(draftKey(slug),{sender,html,assets:assets.map(({file,kind})=>({file,kind}))});
+      await draftSet(draftKey(slug),{sender,html,composition,assets:assets.map(({file,kind})=>({file,kind}))});
       const data=await api('/api/orders',{method:'POST',data:{recipient_slug:slug,sender_name:sender}});
       localStorage.setItem('ejc-last-order',data.token);localStorage.setItem(`ejc-order-slug-${data.token}`,slug);
       track('order_created');navigate(`/pedido/${data.token}`);
@@ -58,6 +61,7 @@ export default function Send(){
     <section className="form-card"><h2>03. Suas fotos 📷</h2><p className="muted small">Adicione quantas imagens quiser para acompanhar a cartinha.</p><label className="upload-label"><ImagePlus size={20}/> Adicionar fotos<input type="file" accept="image/*,.heic,.heif" multiple onChange={e=>{[...e.target.files].forEach(f=>add(f,'image'));e.target.value='';track('photo_selected');}}/></label>
       {!!photos.length && <div className="photos-grid">{photos.map(a=><div key={a.url} className="photo-item"><img src={a.url} alt="Prévia de foto"/><button type="button" onClick={()=>remove(assets.indexOf(a))} aria-label="Excluir foto"><Trash2 size={17}/></button></div>)}</div>}
     </section>
+    <LetterControls composition={composition} onChange={setComposition} senderName={sender}/>
     <section className="form-card">
       <div className="row between">
         <div>
@@ -79,6 +83,6 @@ export default function Send(){
     {error && <div className="notice error">{error}</div>}
     <div className="inline-actions spaced"><button className="btn ghost" type="button" onClick={()=>setPreview(v=>!v)}>{preview?'Fechar prévia':'Ver minha cartinha'}</button><button className="btn" disabled={busy||!ready||!config?.payments_ready||!config?.open} onClick={pay}><CreditCard size={18}/> {busy?'Gerando Pix...':`Gerar Pix de ${money(config?.amount_cents)}`} <ArrowRight size={17}/></button></div>
     {!config?.payments_ready && <div className="notice warning">A coordenação ainda precisa configurar a chave Pix.</div>}
-    {preview && <div className="preview-popup"><LetterCard letter={letter} recipient={found.name} actions={false}/></div>}
+    {preview && <div className="preview-popup"><LetterCard letter={letter} recipient={found.name} editable onCompositionChange={setComposition} actions={false}/></div>}
   </div><aside className="compose-side"><div className="side-paper"><div className="letter-stamp">ANTES DE ENVIAR ♡</div><h3>Você não precisa ter as palavras perfeitas.</h3><p>Às vezes um “eu te amo”, uma foto antiga ou um áudio espontâneo dizem tudo.</p><span>✳ &nbsp; XX EJC SIMONÉSIA</span></div><div className="sidebar-steps"><CheckCircle2 size={18}/> Criar agora ou depois de pagar<br/><CheckCircle2 size={18}/> Conferência do Pix<br/><CheckCircle2 size={18}/> Envio direto ao mural privado<br/><CheckCircle2 size={18}/> Mural secreto liberado na hora certa</div></aside></div>;
 }

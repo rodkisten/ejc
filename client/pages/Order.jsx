@@ -22,11 +22,15 @@ import VoicePlayer from '../components/VoicePlayer';
 import QrCode from '../components/QrCode';
 import { useApp } from '../main';
 import { LetterCard } from '../components/LetterCard';
+import LetterControls from '../components/letter/LetterControls';
+import InstagramExportPanel from '../components/social/InstagramExportPanel';
+import { useLetterComposer } from '../hooks/useLetterComposer';
 function sameDraft(a, b) {
   return a === b;
 }
 export default function Order() {
   const { recipients, config } = useApp();
+  const { composition, setComposition } = useLetterComposer();
   const { token } = useParams(),
     [order, setOrder] = useState(null),
     [error, setError] = useState(''),
@@ -54,6 +58,7 @@ export default function Order() {
   useEffect(() => {
     if (!order || saved) return;
     setHtml(order.rich_html || '');
+    setComposition(order.composition);
     setSaved(true);
   }, [order, saved]);
   useEffect(() => {
@@ -64,6 +69,7 @@ export default function Order() {
       .then((d) => {
         if (!d) return;
         setHtml((h) => h || d.html || '');
+        if (d.composition) setComposition(d.composition);
         setAssets((current) =>
           current.length
             ? current
@@ -106,7 +112,7 @@ export default function Order() {
       await api('/api/order/message', {
         method: 'PUT',
         token,
-        data: { rich_html: html },
+        data: { rich_html: html, composition },
       });
       for (const a of assets) {
         setProgress(`Enviando ${a.file.name}...`);
@@ -352,6 +358,7 @@ export default function Order() {
                   ))}
               </div>
             </div>
+            {!ended && <LetterControls composition={composition} onChange={setComposition} senderName={order.sender_name || ''} />}
             <div className="notice">
               <LockKeyhole size={18} />
               Sua cartinha é privada: não aparece em uma galeria pública nem passa por leitura ou escuta da coordenação.
@@ -375,12 +382,19 @@ export default function Order() {
             <h2 className="spaced">Prévia da cartinha</h2>
             <LetterCard
               actions={false}
+              editable={!ended}
+              onCompositionChange={setComposition}
               recipient={order.recipient_name}
               letter={{
                 ...order,
                 rich_html: html,
+                composition,
                 media: [...(order.media || []), ...assets],
               }}
+            />
+            <InstagramExportPanel
+              letter={{ ...order, rich_html: html, composition, media: [...(order.media || []), ...assets] }}
+              recipient={order.recipient_name}
             />
           </div>
           <aside className="compose-side">

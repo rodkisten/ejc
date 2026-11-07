@@ -9,7 +9,7 @@ function mockCanvas() {
     for (const method of [
       'fillRect', 'stroke', 'roundRect', 'beginPath', 'moveTo',
       'lineTo', 'fillText', 'save', 'restore', 'translate', 'rotate', 'fill',
-      'ellipse', 'bezierCurveTo', 'closePath',
+      'ellipse', 'bezierCurveTo', 'closePath', 'drawImage',
     ]) ctx[method] = () => {};
     ctx.measureText = (value) => {
       const size = Number(ctx.font.match(/(\d+)px/)?.[1] || 30);
@@ -85,5 +85,27 @@ test('cartas longas geram várias páginas ao invés de perder conteúdo', async
     assert.equal(story.length, 1);
   } finally {
     globalThis.document = original;
+  }
+});
+
+test('exportação completa distribui todas as fotos em páginas adicionais', async () => {
+  const originalDocument = globalThis.document;
+  const originalFetch = globalThis.fetch;
+  const originalBitmap = globalThis.createImageBitmap;
+  const mock = mockCanvas();
+  globalThis.document = mock.document;
+  globalThis.fetch = async () => ({ ok: true, blob: async () => new Blob(['imagem'], { type: 'image/png' }) });
+  globalThis.createImageBitmap = async () => ({ width: 400, height: 300, close() {} });
+  try {
+    const media = Array.from({ length: 6 }, (_, i) => ({
+      id: String(i), kind: 'image', url: 'https://ejc.test/media/' + i,
+    }));
+    const pages = await renderLetterImages({ ...letter, media }, 'Ana Clara', 'letter');
+    assert.equal(pages.length, 3); // Uma carta e dois conjuntos de fotos extras.
+    assert.ok(mock.sizes.every(([width, height]) => width === 1080 && height === 1350));
+  } finally {
+    globalThis.document = originalDocument;
+    globalThis.fetch = originalFetch;
+    globalThis.createImageBitmap = originalBitmap;
   }
 });

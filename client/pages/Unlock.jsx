@@ -39,7 +39,10 @@ export default function Unlock() {
   useEffect(() => {
     if (initialised.current) return;
     initialised.current = true;
-    const incoming = new URLSearchParams(window.location.search).get('codigo');
+    // O fragmento (#codigo=...) nunca é transmitido na requisição HTTP da página.
+    // Mantemos suporte a etiquetas antigas com ?codigo= para não quebrar impressos.
+    const incoming = new URLSearchParams(window.location.hash.slice(1)).get('codigo')
+      || new URLSearchParams(window.location.search).get('codigo');
     if (!incoming) return;
     // Remove the printed code from history before analytics or further requests.
     window.history.replaceState(window.history.state, '', '/abrir');

@@ -114,7 +114,7 @@ export default function Labels({ info, reload }) {
       {pages.map((group, pageIndex) => (
         <section className="labels-sheet" key={pageIndex} aria-label={`Folha ${pageIndex + 1}`}>
           {group.map((person) => {
-            const link = `${location.origin}/abrir?codigo=${encodeURIComponent(person.mural_code)}`;
+            const link = `${location.origin}/abrir#codigo=${encodeURIComponent(person.mural_code)}`;
             return (
               <article className="mural-print-label" key={person.id}>
                 <div className="label-topline">✳ XX EJC SIMONÉSIA <span>♡</span></div>

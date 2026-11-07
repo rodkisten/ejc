@@ -1,12 +1,24 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { unzipSync } from 'fflate';
 import { ImagePlus, RefreshCw, Trash2 } from 'lucide-react';
 import { STICKERS, STICKER_CATEGORIES } from '../../shared/letter.js';
 import { api } from '../lib/api.js';
 
+
+const ORIGINAL_PACK = Object.freeze({
+  '01_nossa_senhora.png':'nossa-senhora',
+  '02_jesus.png':'jesus-ama',
+  '03_cruz.png':'firme-na-fe',
+  '04_sao_carlo_acutis.png':'carlo-acutis',
+  '05_todos_juntos_azul_amarelo.png':'ejc-parabens',
+  '06_todos_juntos_colagem_rosa.png':'encontro-abencoado',
+});
 export default function StickerAdmin() {
   const [assets,setAssets]=useState({});
   const [selected,setSelected]=useState(STICKERS[0]?.id||'');
   const [file,setFile]=useState(null);
+  const [packageFiles,setPackageFiles]=useState([]);
+  const [packageProgress,setPackageProgress]=useState('');
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
@@ -38,6 +50,43 @@ export default function StickerAdmin() {
     }catch(cause){setError(cause.message);}
     finally{setBusy(false);}
   }
+
+  async function uploadPackage(event){
+    event.preventDefault();
+    if(!packageFiles.length)return setError('Escolha um ZIP ou as imagens PNG originais.');
+    setBusy(true);setError('');setNotice('');setPackageProgress('Lendo artes originais...');
+    try{
+      const toImport=[];
+      for(const picked of packageFiles){
+        if(/\.zip$/i.test(picked.name)){
+          const archive=unzipSync(new Uint8Array(await picked.arrayBuffer()));
+          for(const [name,bytes] of Object.entries(archive)){
+            const base=name.split('/').pop();
+            if(ORIGINAL_PACK[base])toImport.push({id:ORIGINAL_PACK[base],name:base,blob:new Blob([bytes],{type:'image/png'})});
+          }
+        }else if(/\.png$/i.test(picked.name)){
+          const base=picked.name;
+          if(ORIGINAL_PACK[base])toImport.push({id:ORIGINAL_PACK[base],name:base,blob:picked});
+        }
+      }
+      const unique=[...new Map(toImport.map(item=>[item.id,item])).values()];
+      if(!unique.length)throw new Error('O arquivo não contém os seis PNGs originais reconhecidos. Use o pacote de artes XX EJC.');
+      for(let index=0;index<unique.length;index++){
+        const item=unique[index];
+        setPackageProgress('Instalando '+(index+1)+' de '+unique.length+' · '+item.name);
+        const response=await fetch('/api/admin/stickers/'+encodeURIComponent(item.id)+'.png',{
+          method:'POST',headers:{'Content-Type':'image/png'},credentials:'same-origin',body:item.blob
+        });
+        const result=await response.json().catch(()=>({}));
+        if(!response.ok)throw new Error(item.name+': '+(result.error||'Falha no envio.'));
+      }
+      setPackageFiles([]);
+      setPackageProgress('');
+      await reload();
+      setNotice(unique.length+' artes PNG originais instaladas no editor.');
+    }catch(cause){setError(cause.message);}
+    finally{setBusy(false);setPackageProgress('');}
+  }
   async function remove(id){
     if(!window.confirm('Remover a arte PNG de "'+STICKERS.find(s=>s.id===id)?.text+'"?'))return;
     setBusy(true);setError('');
@@ -54,6 +103,19 @@ export default function StickerAdmin() {
       <p>Use aqui as imagens PNG que criamos para o XX EJC. O editor, a prévia e a exportação usarão exatamente a mesma arte. Não há conversão automática em sticker genérico.</p>
     </div></div>
     <section className="form-card">
+      <h2>Importar as artes originais de uma vez</h2>
+      <p className="muted">Selecione o ZIP XX_EJC_Artes_Originais_PNG.zip ou os seis PNGs individuais. As artes serão preservadas, sem conversão, e usadas no editor e no download da carta.</p>
+      <form className="sticker-upload-form" onSubmit={uploadPackage}>
+        <label htmlFor="ejc-original-package">Pacote ZIP ou arquivos PNG</label>
+        <input id="ejc-original-package" type="file" accept=".zip,application/zip,image/png,.png"
+          multiple onChange={event=>setPackageFiles([...event.target.files])}/>
+        <button type="submit" className="btn" disabled={busy||!packageFiles.length}>
+          <ImagePlus size={18}/> {busy?'Instalando...':'Importar artes PNG originais'}
+        </button>
+      </form>
+      {packageProgress&&<p className="notice" role="status">{packageProgress}</p>}
+    </section>
+    <section className="form-card">
       <h2>Substituir um adesivo</h2>
       <form onSubmit={upload} className="sticker-upload-form">
         <label htmlFor="sticker-id">Adesivo</label>
@@ -63,7 +125,7 @@ export default function StickerAdmin() {
               {s.text}</option>)}
           </optgroup>)}
         </select>
-        <label htmlFor="sticker-file">Arquivo original .png (até 10 MB)</label>
+        <label htmlFor="sticker-file">Arquivo original .png (até 16 MB)</label>
         <input id="sticker-file" type="file" accept="image/png,.png"
           onChange={e=>setFile(e.target.files?.[0]||null)}/>
         <button className="btn" type="submit" disabled={busy||!file}>

@@ -37,7 +37,8 @@ function Shell({children}) {
   const navigate=useNavigate();
   useEffect(()=>{
     // Nunca encaminhar códigos, tokens ou caminhos privados ao Google Analytics.
-    const safePath=path.startsWith('/pedido/')?'/pedido/:privado':
+    const safePath=path.startsWith('/checkout/')?'/checkout/:privado':
+      path.startsWith('/pedido/')?'/pedido/:privado':
       path.startsWith('/mural/')?'/mural/:privado':
       path.startsWith('/enviar/')?'/enviar/:encontrista':path;
     track('page_view',{page_path:safePath});

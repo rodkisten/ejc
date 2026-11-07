@@ -39,7 +39,7 @@ export default function StickerLayer({ composition, editable = false, onUpdate, 
   }
 
   const current = stickers.find((s) => s.id === selected);
-  if (!stickers.length && !editable) return null;
+  if (!stickers.length) return null;
   return (
     <div className="letter-sticker-area">
       <div className="letter-sticker-board" ref={stageRef} aria-label="Adesivos da cartinha">
@@ -65,9 +65,6 @@ export default function StickerLayer({ composition, editable = false, onUpdate, 
             <Sticker presetId={sticker.presetId} color={sticker.color} small />
           </div>
         ))}
-        {!stickers.length && editable && (
-          <p className="letter-sticker-empty">Escolha um adesivo para decorar este cantinho ♡</p>
-        )}
       </div>
       {editable && current && (
         <div className="letter-sticker-edit-controls" aria-label="Editar adesivo selecionado">

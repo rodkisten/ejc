@@ -194,7 +194,11 @@ function OrderDetail({ reload }) {
     <div className="admin-detail">
       <button className="text-button" onClick={() => navigate('/admin')}>← Voltar aos pedidos</button>
       <div className="section-head">
-        <div><span className="eyebrow">{order.id}</span><h1>{order.recipient_name}</h1><p>{money(order.total_cents)}</p></div>
+        <div><span className="eyebrow">{order.id}</span><h1>{order.recipient_name}</h1>
+          <p>{money(order.total_cents)}</p>
+          <p className="muted">Nome para conferência: <strong>{order.payer_name || 'Não informado'}</strong></p>
+          <p className="muted small">TXID: {order.txid}</p>
+        </div>
         <span className={`status-pill ${paid ? 'success' : 'pending'}`}>
           {paid ? 'Pagamento confirmado' : 'Aguardando Pix'}
         </span>
@@ -204,7 +208,13 @@ function OrderDetail({ reload }) {
         Conteúdo privado. A coordenação não visualiza o texto, as imagens ou os áudios da cartinha.
       </div>
       {error && <div className="notice error">{error}</div>}
-      {!paid && (
+      {order.checkout_id && !paid && (
+        <div className="notice">
+          Esta cartinha pertence a um Pix agrupado ({order.checkout_id}).
+          Para confirmar o recebimento, volte à busca de Pix e confirme o valor total.
+        </div>
+      )}
+      {!paid && !order.checkout_id && (
         <section className="form-card">
           <h2>Conferir Pix no extrato</h2>
           <p className="muted">Confira a entrada do dinheiro no banco. Não libere apenas com um comprovante enviado pelo comprador.</p>

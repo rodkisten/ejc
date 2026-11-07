@@ -29,7 +29,8 @@ import './styles/cart.css';
 export const AppContext=React.createContext({ config:null, recipients:[], reload:async()=>{} });
 export function useApp(){return React.useContext(AppContext);}
 function Shell({children}) {
-  const path=useLocation().pathname;
+  const route=useLocation();
+  const path=route.pathname;
   const [consent,setConsent]=useState(localStorage.getItem('ejc-consent'));
   const {config}=useApp();
   const cart=useCart();
@@ -40,8 +41,10 @@ function Shell({children}) {
       path.startsWith('/mural/')?'/mural/:privado':
       path.startsWith('/enviar/')?'/enviar/:encontrista':path;
     track('page_view',{page_path:safePath});
-    window.scrollTo(0,0);
-  },[path]);
+    if(route.hash){
+      requestAnimationFrame(()=>document.getElementById(route.hash.slice(1))?.scrollIntoView({behavior:'smooth',block:'start'}));
+    } else window.scrollTo(0,0);
+  },[path,route.hash]);
   const choose = accepted => { const value=accepted?'yes':'no';localStorage.setItem('ejc-consent',value);setConsent(value);if(accepted)enableAnalytics(config?.analytics_id); };
   return <div className="app-shell">
     <header className="site-header"><div className="container header-inner">

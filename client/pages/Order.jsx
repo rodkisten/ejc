@@ -200,7 +200,7 @@ export default function Order() {
 
           <div className="pix-qr-frame">
             <span className="pix-scanner-label">ESCANEIE COM SEU APP BANCÁRIO</span>
-            <QrCode value={order.pix_code} size={248} variant="pix" logoUrl={config?.logo_url} />
+            <QrCode value={order.pix_code} size={350} variant="pix" logoUrl={config?.logo_url} />
             <p>Ou use o botão Pix Copia e Cola abaixo</p>
           </div>
 

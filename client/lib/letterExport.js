@@ -134,9 +134,9 @@ function stickerShape(ctx, shape, width, height) {
     ctx.roundRect(-w,-h,width,height,shape === 'tape' ? 4 : 18);
   }
 }
-function drawStickers(ctx, stickers, limit, width, height, mode) {
+async function drawStickers(ctx, stickers, limit, width, height, mode) {
   const chosen = stickers.slice(0, limit);
-  chosen.forEach((sticker) => {
+  for (const sticker of chosen) {
     const preset = STICKERS_BY_ID[sticker.presetId];
     if (!preset) return;
     const colors = STICKER_COLORS[sticker.color] || STICKER_COLORS[preset.colors[0]];
@@ -149,9 +149,17 @@ function drawStickers(ctx, stickers, limit, width, height, mode) {
     const bandTop = mode === 'story' ? height - 510 : height - 480;
     const y = bandTop + sticker.y / 100 * 180;
     const angle = (sticker.rotate || 0) * Math.PI / 180;
+    const artwork=await imageBitmap('/stickers/'+encodeURIComponent(preset.id)+'.svg');
     ctx.save();
-    ctx.translate(x, y);
+    ctx.translate(x,y);
     ctx.rotate(angle);
+    if(artwork){
+      const side=Math.max(sw,sh)*1.38;
+      ctx.drawImage(artwork,-side/2,-side/2,side,side);
+      artwork.close?.();
+      ctx.restore();
+      continue;
+    }
     ctx.shadowColor = '#33224240'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 8;
     ctx.fillStyle = '#fffdfa';
     stickerShape(ctx, preset.shape, sw + 15, sh + 15);
@@ -174,7 +182,7 @@ function drawStickers(ctx, stickers, limit, width, height, mode) {
       ctx.fillText(preset.reference, 0, sh / 2 - 10);
     }
     ctx.restore();
-  });
+  }
 }
 
 async function imageBitmap(url) {
@@ -183,7 +191,7 @@ async function imageBitmap(url) {
     const response = await fetch(url, { credentials: 'same-origin' });
     if (!response.ok) return null;
     const blob = await response.blob();
-    if (typeof createImageBitmap === 'function') return await createImageBitmap(blob);
+    if (typeof createImageBitmap === 'function') { try { return await createImageBitmap(blob); } catch { /* SVG Safari fallback */ } }
     return await new Promise((resolve) => {
       const image = new Image();
       const src = URL.createObjectURL(blob);
@@ -321,7 +329,7 @@ export async function renderLetterImages(letter, recipient, mode = 'letter') {
           bitmap.close?.();
         }
       }
-      drawStickers(ctx, composition.stickers, social ? 3 : 6, width, height, mode);
+      await drawStickers(ctx, composition.stickers, social ? 3 : 6, width, height, mode);
       if ((letter?.media || []).some((m) => m.kind === 'audio')) {
         ctx.fillStyle = theme.accent; ctx.textAlign = 'left';
         ctx.font = '700 20px "DM Sans",Arial,sans-serif';

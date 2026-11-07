@@ -92,8 +92,8 @@ export default function Home() {
 
         <label className="search-box ejc-mural-search">
           <Search size={20} aria-hidden="true" />
-          <span className="sr-only">Buscar encontrista pelo nome</span>
-          <input type="search" placeholder="Buscar pelo nome do encontrista..."
+          <input type="search" aria-label="Buscar encontrista pelo nome"
+            placeholder="Buscar pelo nome do encontrista..."
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);

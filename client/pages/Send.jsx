@@ -86,14 +86,13 @@ export default function Send(){
             e da organização dos pedidos.
           </p>
           <p className="muted small">
-            O conteúdo fica armazenado na nuvem e esta versão ainda não usa
-            criptografia de ponta a ponta. O código do mural deve ser mantido privado.
+            O conteúdo fica armazenado na nuvem até o dia 31/12/2026. Depois dessa data, todos os arquivos serão permanentemente apagados. 
           </p>
         </div>
         <LockKeyhole size={21}/>
       </div>
     </section>
-    <div className="notice"><Info size={17}/><span>Áudios e fotos gravados antes do pagamento ficam guardados apenas neste navegador. Não limpe os dados do Safari e evite trocar de aparelho até pagar e enviar os arquivos.</span></div>
+    <div className="notice"><Info size={17}/><span>Áudios e fotos gravados antes do pagamento ficam guardados apenas neste navegador. Não limpe os dados do Chrome ou Safari e evite trocar de aparelho até pagar e enviar os arquivos.</span></div>
     {error && <div className="notice error">{error}</div>}
     <div className="inline-actions spaced"><button className="btn ghost" type="button" onClick={()=>setPreview(v=>!v)}>{preview?'Fechar prévia':'Ver minha cartinha'}</button><button className="btn" disabled={busy||!ready||!config?.payments_ready||!config?.open} onClick={pay}><CreditCard size={18}/> {busy?'Gerando Pix...':`Gerar Pix de ${money(config?.amount_cents)}`} <ArrowRight size={17}/></button></div>
     {!config?.payments_ready && <div className="notice warning">A coordenação ainda precisa configurar a chave Pix.</div>}

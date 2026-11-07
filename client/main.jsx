@@ -32,11 +32,11 @@ function Shell({children}) {
   return <div className="app-shell">
     <header className="site-header"><div className="container header-inner">
       {path !== '/' ? <button className="icon-button" aria-label="Voltar" onClick={()=>navigate(-1)}><ArrowLeft size={20}/></button> : <Heart size={23} className="header-heart"/>}
-      <Link to="/" className="brand">cartinhas<span className="brand-spark">✳</span><small>XX EJC · SIMONÉSIA</small></Link>
+      <Link to="/" className="brand">cartinhas<span className="brand-spark">💌</span><small>XX EJC · SIMONÉSIA</small></Link>
       <Link to="/abrir" className="header-link">Abrir meu mural</Link>
     </div></header>
     <main className="container page">{children}</main>
-    <footer className="container site-footer"><span>XX EJC Simonésia · 2026</span><span>Feito com amor por <strong>Rod Costa</strong> ♡</span><Link to="/privacidade">Privacidade e segurança</Link></footer>
+    <footer className="container site-footer"><span>XX EJC Simonésia · 2026</span><span>Feito com amor pela <strong>equipe do Mini Mercado</strong> e arquitetado por Rodolfo Costa</span><Link to="/privacidade">Privacidade e segurança</Link></footer>
     {!consent && config?.analytics_id && <aside className="consent-panel" aria-label="Preferências de análise"><div>Usamos estatísticas de navegação somente com seu consentimento. Não enviamos textos, fotos, áudios nem códigos privados ao Analytics.</div><div className="inline-actions"><button onClick={()=>choose(false)} className="btn ghost">Agora não</button><button onClick={()=>choose(true)} className="btn">Permitir métricas</button></div></aside>}
   </div>;
 }

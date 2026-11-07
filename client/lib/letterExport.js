@@ -155,8 +155,13 @@ async function drawStickers(ctx, stickers, limit, width, height, mode) {
     ctx.translate(x,y);
     ctx.rotate(angle);
     if(artwork){
-      const side=Math.max(sw,sh)*1.38;
-      ctx.drawImage(artwork,-side/2,-side/2,side,side);
+      const iw=artwork.width||artwork.naturalWidth||1;
+      const ih=artwork.height||artwork.naturalHeight||1;
+      const maxW=Math.max(sw,sh)*1.5;
+      const maxH=Math.max(sw,sh)*1.25;
+      const fit=Math.min(maxW/iw,maxH/ih);
+      const renderW=iw*fit,renderH=ih*fit;
+      ctx.drawImage(artwork,-renderW/2,-renderH/2,renderW,renderH);
       artwork.close?.();
       ctx.restore();
       continue;

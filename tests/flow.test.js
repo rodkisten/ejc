@@ -498,3 +498,48 @@ test('carrinho: valida itens e recusa associação manual de pagamento individua
     status:'paid',bank_reference:'E2EUNICO777777',bank_checked:false,amount_checked:true,
   },admin)).status,400);
 });
+
+
+test('PNG originais: coordenação publica, público só vê IDs instalados',async()=>{
+  const env=fixture(),{admin}=await setup(env);
+  const before=await call(env,'/api/stickers');
+  assert.equal(before.status,200);
+  assert.deepEqual(before.data.stickers,[]);
+  const png=new Uint8Array(128);
+  png.set([137,80,78,71,13,10,26,10]);
+  const uploaded=await worker.fetch(new Request('https://ejc.test/api/admin/stickers/nossa-senhora.png',{
+    method:'POST',headers:{Origin:'https://ejc.test',Cookie:admin.cookie,'Content-Type':'image/png'},body:png,
+  }),env);
+  assert.equal(uploaded.status,200);
+  assert.deepEqual((await call(env,'/api/stickers')).data.stickers,['nossa-senhora']);
+  const publicImage=await worker.fetch(new Request('https://ejc.test/api/stickers/nossa-senhora.png'),env);
+  assert.equal(publicImage.status,200);
+  assert.equal(publicImage.headers.get('Content-Type'),'image/png');
+  assert.deepEqual([...new Uint8Array(await publicImage.arrayBuffer())].slice(0,8),
+    [137,80,78,71,13,10,26,10]);
+  const unknown=await call(env,'/api/admin/stickers/desconhecido.png','DELETE',undefined,admin);
+  assert.equal(unknown.status,404);
+});
+
+test('prévia social da home usa PNG 1200x630 gerado e publicado no R2',async()=>{
+  const env=fixture(),{admin}=await setup(env);
+  const png=new Uint8Array(128);
+  png.set([137,80,78,71,13,10,26,10]);
+  new DataView(png.buffer).setUint32(16,1200);
+  new DataView(png.buffer).setUint32(20,630);
+  const uploaded=await worker.fetch(new Request('https://ejc.test/api/admin/og/default',{
+    method:'POST',headers:{Origin:'https://ejc.test',Cookie:admin.cookie,'Content-Type':'image/png'},body:png
+  }),env);
+  assert.equal(uploaded.status,200);
+  env.ASSETS.fetch=async()=>new Response('<!doctype html><html><head><title>XX EJC</title></head><body></body></html>',{
+    headers:{'Content-Type':'text/html'},
+  });
+  const page=await worker.fetch(new Request('https://ejc.test/'),env);
+  const html=await page.text();
+  assert.match(html,/property="og:image:width" content="1200"/);
+  assert.match(html,/property="og:image:height" content="630"/);
+  const image=await worker.fetch(new Request('https://ejc.test/og-ejc-default.png'),env);
+  assert.equal(image.status,200);
+  assert.match(image.headers.get('Content-Type'),/image\/png/);
+  assert.equal((await image.arrayBuffer()).byteLength,128);
+});

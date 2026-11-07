@@ -381,8 +381,9 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
       onCancel={()=>setPhotoSelection(null)}
       onSave={async file=>{
         const success=await photoUpload(photoSelection.person,file);
-        if(success)setPhotoSelection(null);
-        return success;
+        if(!success)throw new Error('Não foi possível concluir o envio. Verifique a autorização e tente novamente.');
+        setPhotoSelection(null);
+        return true;
       }}
     />}
     </>;

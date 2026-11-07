@@ -79,7 +79,7 @@ function drawHeading(ctx, recipient, theme, width, y) {
     size -= 2;
     ctx.font = `700 ${size}px "Fraunces",Georgia,serif`;
   }
-  ctx.fillText(name, width / 2, y);
+  ctx.fillText(name, width / 2, y, width - 185);
   ctx.fillStyle = theme.accent;
   ctx.font = '30px Georgia,serif';
   ctx.fillText('♡', width / 2, y + 45);
@@ -101,7 +101,7 @@ function drawSignature(ctx, author, theme, width, y) {
   while (ctx.measureText(text).width > width - 215 && size > 24) {
     size -= 2; ctx.font = `italic 700 ${size}px "Fraunces",Georgia,serif`;
   }
-  ctx.fillText(text + '  ♥', width - 105, y + 53);
+  ctx.fillText(text + '  ♥', width - 105, y + 53, width - 200);
 }
 
 function stickerShape(ctx, shape, width, height) {

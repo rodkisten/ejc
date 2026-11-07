@@ -156,7 +156,7 @@ async function orderInfo(env,o) {
   const visible=activeOrder(o)?await Promise.all(rows.map(async m=>({...m,url:await mediaUrl(env,m.id,o.id)}))):[];
   const receipt=await env.DB.prepare('SELECT verified_at,notified_at FROM order_read_receipts WHERE order_id=?').bind(o.id).first();
   return {id:o.id,recipient_name:o.recipient_name,recipient_slug:o.recipient_slug,sender_name:o.sender_name,status:o.status,checkout_id:o.checkout_id,
-    amount_cents:o.total_cents,pix_code:o.pix_payload,txid:o.txid,
+    amount_cents:o.total_cents,pix_code:o.checkout_id?null:o.pix_payload,txid:o.checkout_id?null:o.txid,
     pix_receiver:config.pix_name||'',pix_city:config.pix_city||'',
     rich_html:activeOrder(o)?o.rich_html:'',
     composition:activeOrder(o)?normalizeComposition(JSON.parse(o.composition_json||'{}')):null,

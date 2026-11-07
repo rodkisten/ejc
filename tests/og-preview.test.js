@@ -115,6 +115,7 @@ test('OG da home é PNG real com título e chamadas dentro do corte seguro',asyn
       item.value.includes('CARTINHAS') ||
       item.value.includes('DE AMOR') ||
       item.value.includes('Crie. Decore.') ||
+      item.value.includes('Cartas com fotos') ||
       item.value.includes('Uma surpresa'.toUpperCase())
     ).filter(item=>item.x===600);
     assert.ok(center.length>=4);

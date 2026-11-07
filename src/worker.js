@@ -333,45 +333,83 @@ function escapeMeta(value){
   return String(value||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')
     .replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');
 }
-function buildSocialMeta(origin,recipient,kind){
-  const title=(kind==='mural'?'Mural secreto de ':'Envie uma cartinha para ')+recipient.name+' · XX EJC Simonésia';
-  const description=kind==='mural'
-    ?'Suas cartinhas, fotos e áudios, guardados em um mural privado e liberados no horário do encontro.'
-    :'Grave um áudio e envie fotos e palavras especiais para '+recipient.name+' no XX EJC Simonésia.';
-  const canonical=origin+'/'+kind+'/'+encodeURIComponent(recipient.slug);
-  const image=recipient.og_key && (!recipient.photo_key||recipient.photo_consent)
-    ?origin+'/api/og/'+recipient.slug+'.png?v='+encodeURIComponent(recipient.og_key.split('/').pop())
-    :null;
-  const fields=[
-    ['property','og:type','website'],['property','og:locale','pt_BR'],
-    ['property','og:site_name','Cartinhas do XX EJC Simonésia'],
-    ['property','og:title',title],['property','og:description',description],
-    ['property','og:url',canonical],
-    ['name','twitter:card',image?'summary_large_image':'summary'],
-    ['name','twitter:title',title],['name','twitter:description',description],
+// Social crawlers do not execute React. Always publish complete OG metadata
+// in Worker-rendered HTML, even when the admin has not generated a portrait PNG.
+const DEFAULT_OG_PATH = '/og-ejc-default.png';
+const DEFAULT_OG_VERSION = '20261107b';
+function socialImage(recipient) {
+  const personalized = recipient?.og_key && (!recipient.photo_key || recipient.photo_consent);
+  if (personalized) {
+    const version = recipient.og_key.split('/').pop();
+    return {
+      path: '/api/og/' + encodeURIComponent(recipient.slug) + '.png?v=' + encodeURIComponent(version),
+      version, width: 1200, height: 630,
+    };
+  }
+  return {
+    path: DEFAULT_OG_PATH + '?v=' + DEFAULT_OG_VERSION,
+    version: DEFAULT_OG_VERSION, width: 600, height: 315,
+  };
+}
+function buildSocialMeta(origin, recipient, kind = 'enviar') {
+  const person = recipient?.name;
+  const title = person
+    ? (kind === 'mural' ? 'Mural secreto de ' : 'Envie uma cartinha para ') + person + ' · XX EJC Simonésia'
+    : 'Cartinhas do XX EJC Simonésia';
+  const description = person
+    ? kind === 'mural'
+      ? 'Um cantinho privado para guardar mensagens, fotos e áudios. Acesso somente com código pessoal.'
+      : 'Envie fotos, áudios e palavras especiais para ' + person + ' no XX EJC de Simonésia.'
+    : 'Uma homenagem especial para guardar no coração. Cartinhas do XX EJC Simonésia.';
+  const image = socialImage(recipient);
+  const imageUrl = origin + image.path;
+  const canonicalPath = person
+    ? '/' + kind + '/' + encodeURIComponent(recipient.slug)
+    : '/';
+  // Version both the shared page and the image URL to bypass stale WhatsApp previews.
+  const canonical = origin + canonicalPath +
+    (person ? '?og=' + encodeURIComponent(image.version) : '');
+  const fields = [
+    ['property', 'og:type', 'website'],
+    ['property', 'og:locale', 'pt_BR'],
+    ['property', 'og:site_name', 'Cartinhas · XX EJC Simonésia'],
+    ['property', 'og:title', title],
+    ['property', 'og:description', description],
+    ['property', 'og:url', canonical],
+    ['property', 'og:image', imageUrl],
+    ['property', 'og:image:secure_url', imageUrl],
+    ['property', 'og:image:type', 'image/png'],
+    ['property', 'og:image:width', String(image.width)],
+    ['property', 'og:image:height', String(image.height)],
+    ['property', 'og:image:alt', person
+      ? 'Arte da cartinha dedicada a ' + person + ', XX EJC Simonésia'
+      : 'Cartinhas do XX EJC Simonésia'],
+    ['name', 'twitter:card', 'summary_large_image'],
+    ['name', 'twitter:title', title],
+    ['name', 'twitter:description', description],
+    ['name', 'twitter:image', imageUrl],
+    ['name', 'twitter:image:alt', 'Cartinhas do XX EJC Simonésia'],
   ];
-  if(image)fields.push(
-    ['property','og:image',image],['property','og:image:secure_url',image],
-    ['property','og:image:type','image/png'],
-    ['property','og:image:width','1200'],['property','og:image:height','630'],
-    ['property','og:image:alt','Cartinhas para '+recipient.name+' no XX EJC Simonésia'],
-    ['name','twitter:image',image]
-  );
-  return {title,description,tags:fields.map(([attr,key,value])=>
-    '<meta '+attr+'="'+escapeMeta(key)+'" content="'+escapeMeta(value)+'" />').join('\n')};
+  return {
+    title, description,
+    tags: fields.map(([attr,key,value]) =>
+      '<meta '+attr+'="'+escapeMeta(key)+'" content="'+escapeMeta(value)+'" />').join('\n'),
+  };
 }
 
 async function publicRoute(req,env,path) {
   const ogImage=path.match(/^\/api\/og\/([a-z0-9-]+)\.png$/);
-  if(ogImage&&req.method==='GET'){
+  if(ogImage&&(req.method==='GET'||req.method==='HEAD')){
     const r=await env.DB.prepare(
       'SELECT og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
     ).bind(ogImage[1]).first();
     if(!r||!r.og_key||(r.photo_key&&!r.photo_consent))bad('Imagem não disponível.',404);
     const object=await env.MEDIA.get(r.og_key);
     if(!object)bad('Imagem não disponível.',404);
-    return new Response(object.body,{headers:{
-      ...BASE_HEADERS,'Content-Type':'image/png','Cache-Control':'public, max-age=300'
+    return new Response(req.method==='HEAD'?null:object.body,{headers:{
+      ...BASE_HEADERS,'Content-Type':'image/png',
+      'Content-Length':String(object.size),
+      'Cache-Control':'public, max-age=300'
     }});
   }
   if(path==='/api/health' && req.method==='GET') {
@@ -394,7 +432,7 @@ async function publicRoute(req,env,path) {
   }
   const config=await settings(env);
   if (path==='/api/public' && req.method==='GET') {
-    const recipients=(await env.DB.prepare('SELECT id,name,slug,photo_key,photo_consent,og_key FROM recipients WHERE active=1 ORDER BY name COLLATE NOCASE').all()).results.map(r=>({id:r.id,name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r),og_url:r.og_key?'/api/og/'+r.slug+'.png':null}));
+    const recipients=(await env.DB.prepare('SELECT id,name,slug,photo_key,photo_consent,og_key FROM recipients WHERE active=1 ORDER BY name COLLATE NOCASE').all()).results.map(r=>({id:r.id,name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r),og_url:socialImage(r).path}));
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({recipients,config:{deadline:config.deadline,release_at:config.release_at,
       open:config.open==='true',store_title:config.store_title,store_subtitle:config.store_subtitle,
@@ -525,7 +563,7 @@ async function adminRoute(req,env,path) {
     const dimensions=new DataView(image.bytes.buffer,image.bytes.byteOffset,image.bytes.byteLength);
     if(image.bytes.byteLength<24||dimensions.getUint32(16)!==1200||dimensions.getUint32(20)!==630)
       bad('A imagem deve ter 1200 x 630 pixels.',400);
-    const key='og/'+r.id+'/'+newId()+'.png';
+    const key='og/v2/'+r.id+'/'+newId()+'.png';
     await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:'image/png'}});
     await env.DB.prepare('UPDATE recipients SET og_key=? WHERE id=?').bind(key,r.id).run();
     if(r.og_key)await env.MEDIA.delete(r.og_key);
@@ -561,7 +599,12 @@ async function adminRoute(req,env,path) {
     ]);
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({config:{...config,logo_url:logo?`/api/branding/logo?v=${logo.uploaded?.getTime()||0}`:null},
-      recipients:recipients.results.map(r=>({...r,photo_url:recipientPhotoUrl(r),og_url:r.og_key?'/api/og/'+r.slug+'.png':null})),orders:orders.results});
+      recipients:recipients.results.map(r=>({
+        ...r,
+        photo_url:recipientPhotoUrl(r),
+        og_url:socialImage(r).path,
+        og_safe:typeof r.og_key==='string'&&r.og_key.startsWith('og/v2/')
+      })),orders:orders.results});
   }
 
   if(path==='/api/admin/mural-codes/generate'&&req.method==='POST'){
@@ -745,13 +788,18 @@ export default {
         if (stream && request.method==='GET') return await signedMedia(request,env,stream[1],url);
         return await publicRoute(request,env,path);
       }
-      // OG tags must be in the server's HTML so social bots can read them without JS.
+      // Fetch the SPA shell from / explicitly: crawlers often request deep links
+      // without the Accept/Sec-Fetch headers that Cloudflare SPA fallback expects.
       const social=path.match(/^\/(enviar|mural)\/([a-z0-9-]+)$/);
       const socialRecipient=social?await env.DB.prepare(
         'SELECT name,slug,og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
       ).bind(social[2]).first():null;
-      // Static files, hosted in the same Worker.
-      const response=await env.ASSETS.fetch(request);
+      const sharePage=!!social || path==='/' || path==='/abrir';
+      const assetRequest=sharePage && path!=='/'
+        ?new Request(new URL('/',url.origin),request)
+        :request;
+      // Static files are always fetched through the Assets binding.
+      const response=await env.ASSETS.fetch(assetRequest);
       const headers=new Headers(response.headers);
       headers.set('Referrer-Policy','no-referrer');
       headers.set('X-Content-Type-Options','nosniff');
@@ -763,13 +811,21 @@ export default {
       if(path==='/abrir'||path.startsWith('/mural/')||path.startsWith('/pedido/')||path.startsWith('/admin')){
         headers.set('X-Robots-Tag','noindex, nofollow, noarchive');
       }
-      if(socialRecipient && (headers.get('Content-Type')||'').includes('text/html')){
-        const meta=buildSocialMeta(url.origin,socialRecipient,social[1]);
+      if(sharePage && response.ok && (headers.get('Content-Type')||'').includes('text/html')){
+        const publicOrigin=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
+        const meta=buildSocialMeta(publicOrigin,socialRecipient,social?.[1]||'enviar');
         const html=(await response.text())
+          .replace(/<!-- EJC-OG-START:[\s\S]*?<!-- EJC-OG-END -->/i,'')
           .replace(/<title>[\s\S]*?<\/title>/i,'<title>'+escapeMeta(meta.title)+'</title>')
           .replace(/<meta\s+name="description"[^>]*>/i,'')
           .replace('</head>','<meta name="description" content="'+escapeMeta(meta.description)+'" />'+meta.tags+'</head>');
-        headers.set('Cache-Control','public, max-age=120');
+        // These headers describe the old index.html bytes and can truncate/misdecode
+        // the injected OG tags in link-preview crawlers.
+        headers.delete('Content-Length');
+        headers.delete('Content-Encoding');
+        headers.delete('ETag');
+        headers.set('Content-Type','text/html; charset=utf-8');
+        headers.set('Cache-Control','public, max-age=60, must-revalidate');
         return new Response(html,{status:response.status,headers});
       }
       return new Response(response.body,{status:response.status,headers});

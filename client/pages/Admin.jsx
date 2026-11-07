@@ -219,9 +219,15 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
   return <><div className="section-head"><div><span className="eyebrow">ENCONTRISTAS</span><h1>Nomes, fotos e links exclusivos</h1><p>A coordenação gerencia os nomes, fotos e QR Codes, mas não lê nem escuta as cartinhas. Entregue os códigos dos murais individualmente.</p></div></div><section className="form-card"><label>Importar nomes (um por linha)</label><textarea rows={4} value={names} onChange={e=>setNames(e.target.value)} placeholder={'Maria Eduarda\nJoão Pedro\nAna Clara'}/><button className="btn" onClick={add}>Adicionar encontristas</button></section>
     <section className="form-card">
       <h2>Imagens para redes sociais</h2>
-      <p className="muted small">Gere prévias PNG com nome e foto autorizada para WhatsApp, Instagram, X, Facebook e Telegram.</p>
+      <p className="muted small">Os nomes e as fotos devem ficar dentro da área central visível mesmo quando o WhatsApp recortar a miniatura.</p>
+      {info.recipients.filter(p=>p.active!==0&&!p.og_safe).length>0&&
+        <div className="notice warning">
+          {info.recipients.filter(p=>p.active!==0&&!p.og_safe).length} imagens ainda precisam ser
+          geradas ou atualizadas para o novo enquadramento. Use o botão abaixo
+          depois do deploy para renovar as prévias antigas.
+        </div>}
       <button className="btn outline" disabled={!!ogProgress} onClick={makeAllOg}>
-        <ImagePlus size={16}/> Gerar imagens de todos os encontristas
+        <ImagePlus size={16}/> Gerar/atualizar prévias para WhatsApp
       </button>
       {ogProgress&&<p className="notice">{ogProgress}</p>}
     </section>
@@ -242,8 +248,14 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
         <button className="btn outline" disabled={!!ogProgress} onClick={()=>makeOg(r)}>
           <ImagePlus size={15}/> Atualizar imagem
         </button>
-        {r.og_url&&<a className="btn ghost" href={r.og_url} target="_blank" rel="noreferrer">Ver prévia</a>}
-        <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}`)}><Copy size={15}/> Link de envio</button></div></div>)}</div></>;
+        {r.og_url&&<a className="btn ghost" href={r.og_url} target="_blank" rel="noreferrer">Ver PNG</a>}
+        {r.og_url&&<span title="Simulação do recorte quadrado do WhatsApp"
+          style={{display:'block',width:72,height:72,borderRadius:12,overflow:'hidden',
+            border:'2px solid #d9c5e5',flexShrink:0}}>
+          <img src={r.og_url} alt={`Miniatura WhatsApp de ${r.name}`}
+            style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
+        </span>}
+        <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}?og=${encodeURIComponent(new URL(r.og_url,location.origin).searchParams.get('v')||'20261107b')}`)}><Copy size={15}/> Link de envio</button></div></div>)}</div></>;
 }
 function BrandLogo({ info, reload }) {
   const [busy,setBusy]=useState(false),[message,setMessage]=useState('');
@@ -287,7 +299,9 @@ function DecorQr({value,title,subtitle,color='rose',logoUrl,photoUrl}){
   };
   return <div className={`decorated-qr ${color}`} ref={el}><div className="qr-kicker">✳ XX EJC SIMONÉSIA ✳</div>{photoUrl&&<img className="poster-recipient-photo" src={photoUrl} alt="Encontrista"/>}<h3>{title}</h3><p>{subtitle}</p><QrCode value={value} size={212} variant="decorated" logoUrl={logoUrl}/><div className="qr-under">ESCANEIE &amp; ENVIE UM CARINHO ♡</div><div className="qr-tools no-print"><button className="btn ghost" onClick={savePng}><Download size={15}/> Baixar QR PNG</button></div></div>;
 }
-function QrPrint({info}){const [person,setPerson]=useState(''),[color,setColor]=useState('rose');const selected=info.recipients.find(r=>r.id===person),url=selected?`${location.origin}/enviar/${selected.slug}`:location.origin;
+function QrPrint({info}){const [person,setPerson]=useState(''),[color,setColor]=useState('rose');const selected=info.recipients.find(r=>r.id===person);
+  const version=selected?.og_url?new URL(selected.og_url,location.origin).searchParams.get('v')||'20261107b':'20261107b';
+  const url=selected?`${location.origin}/enviar/${selected.slug}?og=${encodeURIComponent(version)}`:`${location.origin}/?og=20261107b`;
   return <><div className="section-head no-print"><div><span className="eyebrow">MATERIAL IMPRESSO</span><h1>QR Codes decorados</h1><p>Para plaquinhas, cartazes e distribuição nas ruas.</p></div><button className="btn" onClick={()=>window.print()}><Printer size={16}/> Imprimir A4</button></div><div className="form-card no-print"><div className="row filters"><select value={person} onChange={e=>setPerson(e.target.value)}><option value="">QR geral: lista de encontristas</option>{info.recipients.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select><select value={color} onChange={e=>setColor(e.target.value)}><option value="rose">Rosa</option><option value="blue">Azul</option><option value="mint">Verde</option><option value="orange">Laranja</option></select></div><p className="muted small">Os QR Codes são links para o formulário, não para o Pix bancário nem para o mural secreto.</p></div><div className="qr-print-grid"><DecorQr value={url} title={selected?`Para ${selected.name}`:'Cartinhas do XX EJC'} subtitle="Suas palavras. Sua voz. Um encontro especial." color={color} logoUrl={info.config.logo_url} photoUrl={selected?.photo_url}/><DecorQr value={url} title={selected?`Um carinho para ${selected.name}`:'Uma mensagem de coração'} subtitle="Grave sua voz, adicione fotos, mande uma cartinha." color={color} logoUrl={info.config.logo_url} photoUrl={selected?.photo_url}/></div></>;
 }
 function Demo({reload}){const [message,setMessage]=useState(''),[busy,setBusy]=useState(false);async function run(action){if(action==='clear'&&!confirm('Apagar todos os pedidos de DEMONSTRAÇÃO?'))return;setBusy(true);try{const data=await api(`/api/admin/demo/${action}`,{method:action==='seed'?'POST':'DELETE',data:action==='seed'?{}:undefined});setMessage(`Concluído: ${data.inserted??data.deleted} demonstrações.`);await reload();}catch(e){setMessage(e.message);}finally{setBusy(false);}}

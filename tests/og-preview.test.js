@@ -22,7 +22,8 @@ function browserCanvas() {
     },
     createLinearGradient() { return { addColorStop() {} }; },
     fillRect() {}, beginPath() {}, roundRect() {}, fill() {}, stroke() {},
-    moveTo() {}, lineTo() {}, save() {}, restore() {}, clip() {},
+    moveTo() {}, lineTo() {}, closePath() {}, translate() {}, rotate() {},
+    save() {}, restore() {}, clip() {},
     drawImage(image, x, y, width, height) { photos.push({ x, y, width, height }); },
   };
   const canvas = {

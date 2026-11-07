@@ -975,7 +975,7 @@ async function adminRoute(req,env,path) {
   const detail=path.match(/^\/api\/admin\/orders\/(EJC-[A-F0-9]{12})$/);
   if(detail&&req.method==='GET'){
     const o=await env.DB.prepare(
-      "SELECT o.id,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,o.payer_name,o.txid,CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted,r.name AS recipient_name FROM orders o JOIN recipients r ON o.recipient_id=r.id WHERE o.id=?"
+      "SELECT o.id,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,COALESCE(c.bank_reference,o.bank_reference) AS bank_reference,COALESCE(c.payer_name,o.payer_name) AS payer_name,COALESCE(c.txid,o.txid) AS txid,o.checkout_id,CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted,r.name AS recipient_name FROM orders o JOIN recipients r ON o.recipient_id=r.id LEFT JOIN checkouts c ON c.id=o.checkout_id WHERE o.id=?"
     ).bind(detail[1]).first();
     if(!o)bad('Pedido inexistente.',404);
     // Sem texto, identidade do remetente, lista de anexos ou links de mídia.

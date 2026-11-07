@@ -4,17 +4,17 @@
 
 Aplicação de homenagens digitais: **React 19 + React Router 7 + Vite 7** no frontend; **Cloudflare Worker com API HTTP nativa**, banco **D1** e mídia privada **R2**. O objetivo é vender **uma cartinha, nunca produtos**, com um único encontrista por pedido. Não depende de ações GitHub para publicar.
 
-> **Estado:** frontend e API implementados em código e os testes automatizados do Worker passaram. Não foi possível executar o build completo Vite neste ambiente offline (dependências npm não estão instaladas). Publicar e validar no Safari real e fazer um Pix de teste **antes** de distribuir os QR Codes.
+> **Estado:** alterações de privacidade implementadas. Execute os testes e o build antes de publicar; a nova versão ainda não foi validada no navegador em produção. Não foi possível executar o build completo Vite neste ambiente offline (dependências npm não estão instaladas). Publicar e validar no Safari real e fazer um Pix de teste **antes** de distribuir os QR Codes.
 
 ## Jornada
 
 1. A pessoa escaneia a plaquinha de divulgação, encontra o nome em `/` ou abre `/enviar/:slug`.
 2. Prepara a mensagem no editor rico (títulos, negrito, itálico, listas, citações e sublinhado), seleciona **quantas fotos quiser** e grava/regrava um ou mais áudios, com player de ondas e velocidade. Pode pagar sem ter terminado de escrever.
 3. Antes de pagar, o rascunho (inclusive arquivos) vive no **IndexedDB** daquele navegador. Não limpe os dados do celular nem troque de dispositivo antes de transferir o rascunho para o servidor.
-4. É gerado um **Pix BR Code estático** com valor configurável por mensagem e `txid` específico. O administrador compara valor e identificador da transferência no **extrato real do banco**. Apenas uma confirmação manual válida libera o upload e o envio para moderação.
-5. A pessoa continua pelo link privado `/pedido/:token`, salva o conteúdo no R2 e submete à moderação. Qualquer edição após uma aprovação invalida a aprovação, exigindo nova revisão.
-6. Apenas cartinhas aprovadas aparecem no mural privado `/mural/:slug#token=...` depois do horário configurado. O administrador pode antecipar individualmente a liberação. O link de **envio** com slug jamais dá acesso ao mural.
-7. O remetente pode marcar uma mensagem como pública, **desativado por padrão**. Só mensagens aprovadas e liberadas aparecem em `/publicas`.
+4. É gerado um **Pix BR Code estático** com valor configurável por mensagem e `txid` específico. O administrador compara valor e identificador da transferência no **extrato real do banco**. A confirmação manual do Pix libera o envio da cartinha privada, sem moderação.
+5. A pessoa continua pelo link privado `/pedido/:token`, salva o conteúdo no R2 e envia diretamente para o mural privado. Pode editar até o prazo configurado, sem revisão pela equipe.
+6. Somente cartinhas enviadas aparecem no mural do encontrista após o horário configurado. O código privado de seis caracteres é inserido em `/abrir`. Administradores não podem entrar no mural usando apenas a sessão administrativa.
+7. Não existe galeria pública, opção de publicação ou moderação. A antiga API `/api/publicas` retorna 410 e os dados de visibilidade pública anteriores são desativados na migração.
 8. No mural, o encontrista baixa cartinha PNG caligráfica, áudios, fotos ou ZIP único com todas as cartinhas e anexos. No celular, o compartilhamento Instagram/WhatsApp usa **Web Share API**; não existe publicação direta por API Meta sem OAuth e permissões correspondentes.
 
 ## React Router
@@ -23,12 +23,12 @@ Aplicação de homenagens digitais: **React 19 + React Router 7 + Vite 7** no fr
 | --- | --- | --- |
 | `/` | Lista pesquisável de encontristas | Público |
 | `/enviar/:slug` | Editor, gravação, fotos e checkout inicial | Público |
-| `/pedido/:token` | Pix, status, rascunho e envio para moderação | Link privado |
-| `/mural/:slug` | Mural secreto | Convite `#token` ou admin |
-| `/publicas` | Cartinhas explicitamente públicas | Público |
-| `/admin` | Pedidos e moderação | Administrador |
-| `/admin/pedidos/:id` | Conferência do Pix e aprovação | Administrador |
-| `/admin/encontristas` | Importação, links individuais e mural secreto | Administrador |
+| `/pedido/:token` | Pix, status, rascunho e envio ao mural | Link privado |
+| `/mural/:slug` | Mural secreto | Somente acesso assinado derivado do código pessoal |
+| `/abrir` | Digitar código pessoal do mural | Destinatário |
+| `/admin` | Conferência Pix e situação operacional, sem conteúdo | Administrador |
+| `/admin/pedidos/:id` | Conferência do Pix e metadados do pedido | Administrador |
+| `/admin/encontristas` | Importação e fotos, sem acesso a cartas | Administrador |
 | `/admin/configuracoes` | Pix, valor, horários, GA4 | Administrador |
 | `/admin/qrcodes` | Cartazes QR coloridos e impressão A4 | Administrador |
 | `/admin/demo` | Criar/apagar exemplos fictícios | Administrador |
@@ -60,7 +60,7 @@ O deploy cria/vincula D1 e R2, aplica ambas as migrations, **compila Vite para `
 
 Para desenvolvimento local execute `npm run dev:worker` para a API com D1/R2 local na porta 8787. Em outra sessão execute `npm run dev` para o Vite na porta 5173. `vite.config.js` já encaminha `/api` para o Worker local. O script de produção serve frontend e API na mesma origem.
 
-Depois de publicar, configure em `/admin/configuracoes` a **chave Pix, titular, cidade, valor único, prazo de edição, horário de abertura do mural** e opcionalmente Measurement ID `G-...`. Importe os encontristas, gere os links privados e faça um Pix real de baixo valor, conferência, moderação, teste de áudio e foto no Safari, QR impresso e ZIP.
+Depois de publicar, configure em `/admin/configuracoes` a **chave Pix, titular, cidade, valor único, prazo de edição, horário de abertura do mural** e opcionalmente Measurement ID `G-...`. Importe os encontristas, gere os códigos das etiquetas e faça um Pix real de baixo valor, conferência, envio privado e testes de áudio e foto no Safari, QR impresso e ZIP.
 
 > As migrations mantêm tabelas legadas de produtos da versão anterior para preservar dados existentes, mas **elas não aparecem no checkout nem são usadas pelas novas rotas**. Faça backup do D1 antes de migrar uma base existente.
 
@@ -70,14 +70,14 @@ Depois de publicar, configure em `/admin/configuracoes` a **chave Pix, titular, 
 index.html                    Entrada Vite
 client/
   main.jsx                   React Router, layout e analytics
-  pages/                     Home, Send, Order, Mural, PublicLetters, Admin
+  pages/                     Home, Send, Order, Mural, Unlock, Privacy, Admin, Labels
   components/                RichEditor, Recorder, VoicePlayer, LetterCard, QrCode
   lib/                       API, IndexedDB, gerador QR
   styles.css                 Design mobile e estilos de impressão
 src/
-  worker.js                  API D1/R2, Pix, moderação, mural e demo
+  worker.js                  API D1/R2, Pix, mural privado e demo
   pix.js                     Geração Pix BR Code
-migrations/                  0001 e 0002
+migrations/                  0001 a 0006
 scripts/deploy.sh            Build e deploy sem GitHub Actions
 tests/                       Testes de fluxo, privacidade e Pix
 wrangler.jsonc               Worker e SPA assets em dist/
@@ -149,9 +149,9 @@ O QR leva a `/abrir?codigo=XXXXXX`. O encontrista também pode abrir
 endereços após a leitura.
 
 Ao trocar um código, QR Codes antigos e acessos concedidos com aquele código
-deixam de funcionar. Os links privados longos existentes continuam separados.
+deixam de funcionar. Os antigos links privados longos são invalidados na migração 0006; reimprima as etiquetas de acesso quando necessário.
 Há limitação de tentativas erradas por IP para proteger os códigos de 6
-caracteres. Os murais exibem as mensagens aprovadas **somente após o horário
+caracteres. Os murais exibem cartinhas enviadas **somente após o horário
 de liberação configurado**, respeitando a exceção de liberação administrativa.
 
 **Compartilhamento social:** o Worker injeta OpenGraph e Twitter Card diretamente
@@ -194,3 +194,15 @@ significa que o site em produção já mudou.
 **Importante:** não coloque tokens privados em Analytics, OG tags ou links
 públicos. As prévias do mural mostram apenas dados autorizados (nome e foto),
 nunca textos, áudios, mensagens ou códigos secretos.
+
+## Privacidade das cartinhas (versão atual)
+
+- **Sem moderação**: a coordenação não aprova, rejeita, altera, lê nem escuta as cartinhas pelo painel. Os endpoints de moderação, leitura de carta e mídia pela administração foram desativados no servidor, não apenas escondidos na interface.
+- **Sem galeria pública**: toda carta é privada, inclusive as que anteriormente tinham a opção de publicação ativada. A migração `0006_private_letters.sql` desliga essa opção e revoga links longos de mural que podiam ser emitidos pelo administrador.
+- **Pagamentos separados de conteúdo**: administradores visualizam apenas código do pedido, destinatário, valor, situação do Pix e se a homenagem foi enviada. O nome do remetente, texto, anexos e áudio não constam dos endpoints administrativos.
+- **Entrega pelo horário**: o envio é direto para o mural do encontrista, sem aprovação; a leitura começa depois do horário de liberação estabelecido nas configurações.
+- **Segredo do mural**: os códigos de seis caracteres são gerados e impressos pela coordenação. Qualquer pessoa que tenha uma cópia do QR ou do código pode acessar o mural. Guarde as etiquetas e entregue a cada destinatário sem exposição pública.
+- **Limite técnico**: os dados ainda são armazenados em formato legível no D1/R2; **não há criptografia ponta a ponta**. O bloqueio do painel não impede que um operador com acesso privilegiado à infraestrutura examine os dados. Não divulgar promessa de impossibilidade absoluta de acesso até implementar criptografia ponta a ponta e gestão de chaves exclusivamente pelos participantes.
+- **Analytics**: somente rotas genéricas (sem tokens e códigos) são enviadas como visualizações de página, após consentimento. Não enviar conteúdo das cartas, voz, fotos, códigos privados ou tokens.
+
+A política transparente está disponível em `/privacidade` e a coordenação só deve dizer que **não tem acesso ao conteúdo pelo painel**. Para confidencialidade inclusive frente à infraestrutura será necessária uma arquitetura E2EE adicional.

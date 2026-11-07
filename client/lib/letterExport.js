@@ -149,8 +149,8 @@ async function drawStickers(ctx, stickers, limit, width, height, mode) {
     const bandTop = mode === 'story' ? height - 510 : height - 480;
     const y = bandTop + sticker.y / 100 * 180;
     const angle = (sticker.rotate || 0) * Math.PI / 180;
-    const artwork=await imageBitmap('/stickers/'+encodeURIComponent(preset.id)+'.webp') ||
-      await imageBitmap('/stickers/'+encodeURIComponent(preset.id)+'.svg');
+    const artwork=await imageBitmap('/api/stickers/'+encodeURIComponent(preset.id)+'.png');
+    if(!artwork)throw new Error('O adesivo PNG original "'+preset.text+'" ainda não foi instalado.');
     ctx.save();
     ctx.translate(x,y);
     ctx.rotate(angle);

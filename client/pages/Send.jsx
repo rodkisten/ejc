@@ -13,6 +13,20 @@ import { useLetterComposer } from '../hooks/useLetterComposer';
 export default function Send(){
   const {slug}=useParams(),navigate=useNavigate(),{recipients,config}=useApp();
   const found=recipients.find(r=>r.slug===slug);
+  const previewVersion = found?.og_url
+    ? new URL(found.og_url, location.origin).searchParams.get('v') || '20261107b'
+    : '20261107b';
+  const shareUrl = new URL(`/enviar/${encodeURIComponent(slug || '')}`, location.origin);
+  shareUrl.searchParams.set('og', previewVersion);
+  useEffect(() => {
+    if (!found) return;
+    // Shareable page links must be versioned, otherwise WhatsApp can keep an
+    // old link card for days after the portrait PNG has been updated.
+    const current = new URL(window.location.href);
+    if (current.searchParams.get('og') === previewVersion) return;
+    current.searchParams.set('og', previewVersion);
+    window.history.replaceState(window.history.state, '', current.pathname + current.search + current.hash);
+  }, [found?.og_url, slug, previewVersion]);
   const { composition, setComposition } = useLetterComposer();
   const [sender,setSender]=useState(''),[html,setHtml]=useState(''),[assets,setAssets]=useState([]),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[preview,setPreview]=useState(false);
   useEffect(()=>{let active=true;draftGet(draftKey(slug)).then(d=>{if(d&&active){setSender(d.sender||'');setHtml(d.html||'');setComposition(d.composition);setAssets((d.assets||[]).map(x=>({...x,url:URL.createObjectURL(x.file)})));}if(active)setReady(true);}).catch(()=>setReady(true));return()=>{active=false;};},[slug]);
@@ -37,7 +51,7 @@ export default function Send(){
       className="btn ghost"
       type="button"
       onClick={async () => {
-        const url=location.origin+'/enviar/'+encodeURIComponent(found.slug);
+        const url=shareUrl.toString();
         const title='Uma cartinha para '+found.name+' · XX EJC Simonésia';
         try{
           if(navigator.share){

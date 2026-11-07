@@ -47,6 +47,7 @@ export default function Cart() {
         localStorage.setItem('ejc-order-slug-' + order.token, cart.items[index].recipient_slug);
       });
       localStorage.setItem('ejc-last-checkout', checkout.token);
+      localStorage.setItem('ejc-checkout-' + checkout.id, checkout.token);
       await cart.clear();
       track('checkout_created', { letters: checkout.items.length });
       navigate('/checkout/' + checkout.token);

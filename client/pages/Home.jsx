@@ -22,10 +22,11 @@ export default function Home() {
   const { recipients, config } = useApp();
   const cart = useCart();
   const [search, setSearch] = useState('');
+  const [visibleCount,setVisibleCount] = useState(18);
   const query = search.toLocaleLowerCase('pt-BR').trim();
   const filtered = recipients.filter((person) =>
     person.name.toLocaleLowerCase('pt-BR').includes(query));
-  const portraits = recipients.slice(0, 18);
+  const portraits = recipients.slice(0, visibleCount);
 
   return (
     <>
@@ -87,6 +88,10 @@ export default function Home() {
             <span>♡</span><p>Os retratos dos encontristas vão florescer por aqui.</p>
           </div>}
         </div>
+        {visibleCount < recipients.length && <button type="button"
+          className="btn ghost ejc-collage-more" onClick={() => setVisibleCount((value) => value + 18)}>
+          Mostrar mais encontristas <ArrowUpRight size={17}/>
+        </button>}
         <a className="text-button ejc-all-people-link" href="#encontristas">
           Encontrar um nome na lista completa <ArrowUpRight size={18}/>
         </a>

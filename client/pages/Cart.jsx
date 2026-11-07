@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Copy, Heart, Plus, ShoppingBag, Trash2 } from 'lucide-react';
 import { useApp } from '../main';
@@ -12,6 +12,7 @@ export default function Cart() {
   const navigate = useNavigate();
   const [targets, setTargets] = useState({});
   const [busy, setBusy] = useState(false);
+  const checkoutLock = useRef(false);
   const [error, setError] = useState('');
   const getPerson = (slug) => recipients.find((person) => person.slug === slug);
   const total = cart.items.length * Number(config?.amount_cents || 0);
@@ -27,6 +28,8 @@ export default function Cart() {
   }
 
   async function checkout() {
+    if(checkoutLock.current) return;
+    checkoutLock.current = true;
     setBusy(true);
     setError('');
     try {
@@ -53,7 +56,7 @@ export default function Cart() {
       navigate('/checkout/' + checkout.token);
     } catch (cause) {
       setError(cause.message || 'Não foi possível gerar o Pix.');
-    } finally { setBusy(false); }
+    } finally { checkoutLock.current = false; setBusy(false); }
   }
 
   return (

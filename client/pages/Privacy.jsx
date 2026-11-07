@@ -23,10 +23,12 @@ export default function Privacy() {
       <div className="form-card">
         <h2><Clock3 size={22} /> Quando a mensagem aparece?</h2>
         <p>
-          Depois de confirmar o Pix, você pode escrever, gravar, revisar e enviar
-          sua homenagem. Ela será exibida automaticamente no mural privado do
-          encontrista após o horário definido para a liberação.
-          Não existe aprovação ou moderação da coordenação.
+          Mesmo depois de gerar o Pix, você pode usar o link privado para
+          editar e confirmar o texto, o remetente, a decoração, as fotos e os áudios.
+          As alterações são salvas no servidor sem mudar o valor ou o código Pix.
+          O envio da homenagem ao mural só é permitido depois de a equipe
+          confirmar o pagamento no extrato. Ela será exibida no mural privado
+          do encontrista após o horário de liberação, sem moderação do conteúdo.
         </p>
       </div>
       <div className="form-card">

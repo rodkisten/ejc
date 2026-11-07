@@ -235,15 +235,15 @@ export default function Order() {
           )}
         </section>
       )}
-      {!paid && !order.checkout_id ? (
+      {!paid && !order.checkout_id && (
       <div className="payment-layout">
         <section className="form-card pix-checkout">
           <div className="pix-headline">
             <span className="eyebrow">✳ CARTINHAS · XX EJC SIMONÉSIA</span>
             <h2>Seu Pix está pronto!</h2>
             <p className="muted">
-              Sua homenagem está reservada. Assim que o pagamento for confirmado pela
-              coordenação, você poderá enviar texto, fotos e áudios.
+              Sua homenagem está reservada e já pode ser editada. Mesmo com o Pix exibido,
+              você pode confirmar alterações abaixo. O envio ao mural exige a conferência bancária.
             </p>
           </div>
 
@@ -317,7 +317,7 @@ export default function Order() {
         </aside>
       </div>
 
-            ) : (
+            )}
         <div className="compose-layout">
           <div className="compose-main">
             <div className="notice success">
@@ -335,7 +335,10 @@ export default function Order() {
             <div className="form-card">
               <label htmlFor="checkout-letter-sender">Quem assina esta cartinha? (opcional)</label>
               <input id="checkout-letter-sender" type="text" autoComplete="name" maxLength={100}
-                disabled={ended} value={sender} onChange={(event) => setSender(event.target.value)} />
+                disabled={ended} value={sender} onChange={(event) => {
+                  setSender(event.target.value);
+                  setComposition(previous => ({ ...previous, authorName: '' }));
+                }} />
               <p className="muted small">O remetente pode ser alterado sem gerar outro Pix.</p>
             </div>
             <div className="form-card">
@@ -493,7 +496,6 @@ export default function Order() {
             </div>
           </aside>
         </div>
-      )}
     </div>
   );
 }

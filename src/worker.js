@@ -1015,7 +1015,7 @@ export default {
       if ((headers.get('Content-Type')||'').includes('text/html')) {
         headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
       }
-      if(path==='/abrir'||path.startsWith('/mural/')||path.startsWith('/pedido/')||path.startsWith('/admin')){
+      if(path==='/abrir'||path.startsWith('/mural/')||path.startsWith('/pedido/')||path.startsWith('/checkout/')||path.startsWith('/admin')){
         headers.set('X-Robots-Tag','noindex, nofollow, noarchive');
       }
       if(sharePage && response.ok && (headers.get('Content-Type')||'').includes('text/html')){

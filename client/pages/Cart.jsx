@@ -109,7 +109,10 @@ export default function Cart() {
                       <span>De: {item.sender_name || 'Uma pessoa especial'}</span>
                       <div className="cart-item-actions">
                         <Link to={'/enviar/' + item.recipient_slug + '?edit=' + encodeURIComponent(item.id)} className="text-button">Editar cartinha</Link>
-                        <button className="text-button" type="button" onClick={() => cart.remove(item.id).catch((cause) => setError(cause.message))}>
+                        <button className="text-button" type="button"
+                          disabled={boundIds.has(item.id)}
+                          title={boundIds.has(item.id) ? 'Esta cartinha já faz parte de um Pix e continua salva para edição.' : 'Remover do carrinho'}
+                          onClick={() => cart.remove(item.id).catch((cause) => setError(cause.message))}>
                           <Trash2 size={15} /> Remover
                         </button>
                       </div>
@@ -119,7 +122,9 @@ export default function Cart() {
                           onChange={(event) => setTargets((old) => ({ ...old, [item.id]: event.target.value }))}>
                           {recipients.map((recipient) => <option key={recipient.id} value={recipient.slug}>{recipient.name}</option>)}
                         </select>
-                        <button className="btn ghost" type="button" onClick={() => duplicate(item)}>
+                        <button className="btn ghost" type="button" disabled={alreadyLinked}
+                          title={alreadyLinked ? 'Conclua o Pix atual antes de criar outra compra.' : 'Duplicar cartinha'}
+                          onClick={() => duplicate(item)}>
                           <Copy size={16} /> Duplicar
                         </button>
                       </div>

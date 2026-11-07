@@ -22,6 +22,7 @@
       "bucket_name": "ejc-mini-mercado-media",
     },
   ],
+  "triggers": { "crons": ["*/5 * * * *"] },
   "vars": {
     "PUBLIC_ORIGIN": "https://ejc.migos.club",
   },

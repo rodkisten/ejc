@@ -12,6 +12,7 @@ function fixture(){
   sql.exec(fs.readFileSync(new URL('../migrations/0005_og_images.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0006_private_letters.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0007_letter_compositions.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0008_read_receipts_notifications.sql',import.meta.url),'utf8'));
 
   const DB={
     prepare(query){const stmt=(...values)=>({first:async()=>sql.prepare(query).get(...values)||null,all:async()=>({results:sql.prepare(query).all(...values)}),run:async()=>({meta:sql.prepare(query).run(...values)})});return {...stmt(),bind:stmt};},

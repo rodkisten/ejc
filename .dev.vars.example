@@ -1,2 +1,8 @@
 ADMIN_PASSWORD="substitua-por-senha-forte-com-14-ou-mais-caracteres"
 SESSION_SECRET="substitua-por-uma-string-aleatoria-de-pelo-menos-32-caracteres"
+# Configure estes valores somente no Cloudflare Workers Secrets, nunca commite credenciais reais.
+RESEND_API_KEY="substituir-com-resend-api-key"
+RESEND_FROM="Cartinhas XX EJC <avisos@ejc.migos.club>"
+RELAY_URL="https://seu-relay.example/api/send"
+RELAY_TOKEN="substituir-com-token-rotacionado"
+RELAY_CHAT_ID="opcional"

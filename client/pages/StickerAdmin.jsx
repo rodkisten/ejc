@@ -13,6 +13,13 @@ const ORIGINAL_PACK = Object.freeze({
   '05_todos_juntos_azul_amarelo.png':'ejc-parabens',
   '06_todos_juntos_colagem_rosa.png':'encontro-abencoado',
 });
+const STICKER_IDS = new Set(STICKERS.map(sticker => sticker.id));
+function stickerIdFromFilename(filename) {
+  const basename = filename.split('/').pop();
+  if (!basename || !/\.png$/i.test(basename)) return null;
+  const id = basename.replace(/\.png$/i, '');
+  return STICKER_IDS.has(id) ? id : ORIGINAL_PACK[basename] || null;
+}
 export default function StickerAdmin() {
   const [assets,setAssets]=useState({});
   const [selected,setSelected]=useState(STICKERS[0]?.id||'');
@@ -62,15 +69,17 @@ export default function StickerAdmin() {
           const archive=unzipSync(new Uint8Array(await picked.arrayBuffer()));
           for(const [name,bytes] of Object.entries(archive)){
             const base=name.split('/').pop();
-            if(ORIGINAL_PACK[base])toImport.push({id:ORIGINAL_PACK[base],name:base,blob:new Blob([bytes],{type:'image/png'})});
+            const id=stickerIdFromFilename(base);
+            if(id)toImport.push({id,name:base,blob:new Blob([bytes],{type:'image/png'})});
           }
         }else if(/\.png$/i.test(picked.name)){
           const base=picked.name;
-          if(ORIGINAL_PACK[base])toImport.push({id:ORIGINAL_PACK[base],name:base,blob:picked});
+          const id=stickerIdFromFilename(base);
+          if(id)toImport.push({id,name:base,blob:picked});
         }
       }
       const unique=[...new Map(toImport.map(item=>[item.id,item])).values()];
-      if(!unique.length)throw new Error('O arquivo não contém os seis PNGs originais reconhecidos. Use o pacote de artes XX EJC.');
+      if(!unique.length)throw new Error('Nenhum PNG válido foi encontrado. Use arquivos nomeados pelos 20 IDs dos adesivos ou o pacote de seis artes antigas.');
       for(let index=0;index<unique.length;index++){
         const item=unique[index];
         setPackageProgress('Instalando '+(index+1)+' de '+unique.length+' · '+item.name);
@@ -83,7 +92,7 @@ export default function StickerAdmin() {
       setPackageFiles([]);
       setPackageProgress('');
       await reload();
-      setNotice(unique.length+' artes PNG originais instaladas no editor.');
+      setNotice(unique.length+' adesivos PNG instalados no editor.');
     }catch(cause){setError(cause.message);}
     finally{setBusy(false);setPackageProgress('');}
   }
@@ -100,11 +109,11 @@ export default function StickerAdmin() {
   return <div className="sticker-admin">
     <div className="section-head"><div><span className="eyebrow">DIREÇÃO DE ARTE / CARTINHAS</span>
       <h1>Adesivos PNG originais</h1>
-      <p>Use aqui as imagens PNG que criamos para o XX EJC. O editor, a prévia e a exportação usarão exatamente a mesma arte. Não há conversão automática em sticker genérico.</p>
+      <p>Instale aqui o conjunto de 20 adesivos PNG do XX EJC. O editor, a prévia e a exportação usarão exatamente a mesma arte. Não há conversão automática em sticker genérico.</p>
     </div></div>
     <section className="form-card">
-      <h2>Importar as artes originais de uma vez</h2>
-      <p className="muted">Selecione o ZIP XX_EJC_Artes_Originais_PNG.zip ou os seis PNGs individuais. As artes serão preservadas, sem conversão, e usadas no editor e no download da carta.</p>
+      <h2>Importar 20 adesivos PNG de uma vez</h2>
+      <p className="muted">Selecione XX_EJC_20_Adesivos_PNG_Importacao.zip (20 adesivos) ou o pacote antigo de seis artes. Os PNGs serão preservados com suas bordas e transparência, sem conversão.</p>
       <form className="sticker-upload-form" onSubmit={uploadPackage}>
         <label htmlFor="ejc-original-package">Pacote ZIP ou arquivos PNG</label>
         <input id="ejc-original-package" type="file" accept=".zip,application/zip,image/png,.png"

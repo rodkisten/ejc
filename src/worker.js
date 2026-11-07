@@ -415,7 +415,7 @@ async function publicRoute(req,env,path) {
 
   if(path==='/api/mural/redeem'&&req.method==='POST') {
     const body=await jsonBody(req,300);
-    const code=typeof body.code==='string'?body.code.toUpperCase().replace(/[\\s-]/g,''):'';
+    const code=typeof body.code==='string'?body.code.toUpperCase().replace(/[\s-]/g,''):'';
     if(!/^[A-HJ-NP-Z2-9]{6}$/.test(code))bad('Digite os seis caracteres do seu cartão.',400);
     const fingerprint=await digest((req.headers.get('CF-Connecting-IP')||'local')+':mural:'+env.SESSION_SECRET);
     const seconds=Math.floor(Date.now()/1000);

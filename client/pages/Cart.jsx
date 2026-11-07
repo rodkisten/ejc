@@ -41,6 +41,8 @@ export default function Cart() {
         data: { items: cart.items.map((item, index) => ({
           recipient_slug: item.recipient_slug,
           sender_name: item.sender_name,
+          rich_html: drafts[index].html || '',
+          composition: drafts[index].composition || {},
           notify_on_read: !!drafts[index].notifyOnRead,
           read_receipt_email: drafts[index].notifyOnRead ? drafts[index].receiptEmail : '',
         })) },

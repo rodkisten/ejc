@@ -202,6 +202,40 @@ test('tentativas incorretas de código curto são limitadas no servidor',async()
   assert.equal(blocked.status,429);
 });
 
+test('metatags OG de WhatsApp aparecem mesmo antes de gerar imagem personalizada',async()=>{
+  const env=fixture(),{list}=await setup(env);
+  const requested=[];
+  env.ASSETS.fetch=async(request)=>{
+    requested.push(new URL(request.url).pathname);
+    return new Response('<!doctype html><html><head><title>Cartinhas</title></head><body></body></html>',{
+      headers:{
+        'Content-Type':'text/html',
+        'Content-Length':'7',
+        'ETag':'"etag-do-html-original"',
+        'Content-Encoding':'gzip'
+      }
+    });
+  };
+  const page=await worker.fetch(new Request('https://ejc.test/enviar/'+list[0].slug),env);
+  const html=await page.text();
+  assert.equal(page.status,200);
+  assert.deepEqual(requested,['/']); // Don't rely on SPA fallback for WhatsApp bot requests.
+  assert.match(html,/property="og:image" content="https:\/\/ejc\.test\/og-ejc-default\.png\?v=/);
+  assert.match(html,/property="og:image:width" content="600"/);
+  assert.match(html,/property="og:image:height" content="315"/);
+  assert.match(html,/property="og:url" content="https:\/\/ejc\.test\/enviar\//);
+  assert.match(html,/name="twitter:card" content="summary_large_image"/);
+  assert.equal(page.headers.get('content-length'),null);
+  assert.equal(page.headers.get('content-encoding'),null);
+  assert.equal(page.headers.get('etag'),null);
+  assert.match(page.headers.get('content-type'),/text\/html; charset=utf-8/);
+  const home=await worker.fetch(new Request('https://ejc.test/'),env);
+  assert.match(await home.text(),/property="og:image"/);
+  const mural=await worker.fetch(new Request('https://ejc.test/mural/'+list[0].slug),env);
+  assert.match(await mural.text(),/property="og:image"/);
+  assert.match(mural.headers.get('X-Robots-Tag'),/noindex/);
+});
+
 test('imagens OG são PNG servidos para robôs sociais e metadados chegam no HTML',async()=>{
   const env=fixture(),{admin,list}=await setup(env);
   const person=list[0];
@@ -223,6 +257,11 @@ test('imagens OG são PNG servidos para robôs sociais e metadados chegam no HTM
   const image=await worker.fetch(new Request('https://ejc.test/api/og/'+person.slug+'.png'),env);
   assert.equal(image.status,200);
   assert.equal(image.headers.get('Content-Type'),'image/png');
+  assert.equal(image.headers.get('cache-control'),'public, max-age=300');
+  const imageHead=await worker.fetch(new Request('https://ejc.test/api/og/'+person.slug+'.png',{method:'HEAD'}),env);
+  assert.equal(imageHead.status,200);
+  assert.equal(imageHead.headers.get('Content-Type'),'image/png');
+  assert.equal((await imageHead.text()).length,0);
   env.ASSETS.fetch=async()=>new Response(
     '<!doctype html><html><head><title>Cartinhas</title><meta name="description" content="geral"/></head><body></body></html>',
     {headers:{'Content-Type':'text/html'}}
@@ -232,6 +271,12 @@ test('imagens OG são PNG servidos para robôs sociais e metadados chegam no HTM
   assert.equal(page.status,200);
   assert.match(html,/property="og:title"/);
   assert.match(html,/property="og:image"/);
+  assert.match(html,/property="og:image" content="https:\/\/ejc\.test\/api\/og\//);
+  assert.match(html,/property="og:image:width" content="1200"/);
+  assert.match(html,/property="og:image:height" content="630"/);
+  assert.match(html,/property="og:image:alt"/);
+  assert.match(html,/name="twitter:image"/);
+  assert.match(html,/property="og:url" content="https:\/\/ejc\.test\/enviar\/[^"]+\?og=/);
   assert.match(html,/name="twitter:card" content="summary_large_image"/);
   assert.match(html,/Ana Clara|João Pedro/);
   assert.ok(!html.includes('content="geral"'));

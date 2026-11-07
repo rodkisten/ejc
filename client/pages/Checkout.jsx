@@ -77,6 +77,12 @@ export default function Checkout() {
             </div>
             <div className="checkout-total"><span>Total</span><strong>{money(order.amount_cents)}</strong></div>
             <p className="muted small">Identificador da compra: {order.id}</p>
+            <button className="btn ghost" type="button" onClick={async()=>{
+              try{
+                await navigator.clipboard.writeText(window.location.href);
+                setMessage('Link privado do carrinho copiado. Guarde-o para continuar depois.');
+              }catch{setError('Não foi possível copiar o link. Salve esta página no navegador.');}
+            }}><Copy size={16}/> Copiar link privado desta compra</button>
             <div className="notice"><LockKeyhole size={17} />
               <span>Não compartilhe esta página: ela contém o acesso às cartinhas. A coordenação não vê o conteúdo de nenhuma delas.</span>
             </div>

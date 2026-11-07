@@ -83,83 +83,138 @@ export async function createOgImage({ name, photoUrl }) {
   const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) throw new Error('Seu navegador não conseguiu criar a prévia social.');
 
+  // Portrait-first editorial design. Keep name and face inside the WhatsApp safe crop.
   const gradient = ctx.createLinearGradient(0, 0, OG_WIDTH, OG_HEIGHT);
-  gradient.addColorStop(0, '#fff0de');
-  gradient.addColorStop(.58, '#f9dbe8');
-  gradient.addColorStop(1, '#e9ddfb');
+  gradient.addColorStop(0, '#1635CE');
+  gradient.addColorStop(.48, '#EC4B83');
+  gradient.addColorStop(1, '#FFB32C');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, OG_WIDTH, OG_HEIGHT);
 
-  // Anything beyond this central card is decorative only.
-  const { left, top, right, bottom } = OG_SAFE;
-  ctx.fillStyle = '#fffaf5';
-  rounded(ctx, left, top, right - left, bottom - top, 30);
+  ctx.save();
+  ctx.globalAlpha = .23;
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 2;
+  for (let x = -60; x < OG_WIDTH + 140; x += 58) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 180, OG_HEIGHT); ctx.stroke();
+  }
+  ctx.restore();
+
+  // Big off-centre labels frame the collage without becoming necessary to read.
+  ctx.save();
+  ctx.translate(36, 108);
+  ctx.rotate(-.16);
+  ctx.font = '900 100px "DM Sans", Arial, sans-serif';
+  ctx.fillStyle = '#FAFF70';
+  ctx.fillText('XX', 0, 0);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '900 73px "DM Sans", Arial, sans-serif';
+  ctx.fillText('EJC!', 0, 79);
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(945, 150); ctx.rotate(.14);
+  ctx.fillStyle = '#191722';
+  rounded(ctx, -30, -38, 226, 94, 10);
   ctx.fill();
-  ctx.strokeStyle = '#d7b8df';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  ctx.strokeStyle = '#eddfec';
-  ctx.lineWidth = 1.5;
-  rounded(ctx, left + 14, top + 14, right - left - 28, bottom - top - 28, 22);
-  ctx.stroke();
-
+  ctx.font = '900 42px "DM Sans", Arial, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#6d4089';
-  ctx.font = '800 19px "DM Sans",Arial,sans-serif';
-  ctx.fillText('✳  CARTINHAS  ·  XX EJC SIMONÉSIA  ✳', 600, 106, 490);
+  ctx.fillStyle = '#FAFC75';
+  ctx.fillText('EJC • MG', 83, 7, 200);
+  ctx.restore();
 
-  ctx.fillStyle = '#6a5972';
-  ctx.font = '700 15px "DM Sans",Arial,sans-serif';
-  ctx.fillText('UMA CARTINHA ESPECIAL PARA', 600, 156, 480);
+  // Central block must survive a square preview crop of 1200 x 630.
+  ctx.save();
+  ctx.fillStyle = '#151326';
+  rounded(ctx, 317, 25, 566, 574, 23);
+  ctx.fill();
+  ctx.fillStyle = '#FFFFFF';
+  rounded(ctx, 327, 35, 546, 554, 17);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = '#FFF03A';
+  rounded(ctx, 342, 51, 516, 52, 10);
+  ctx.fill();
+  ctx.fillStyle = '#17182C';
+  ctx.font = '900 21px "DM Sans", Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('CARTINHAS · XX EJC SIMONÉSIA  ✳', 600, 86, 478);
 
   const portrait = await loadPortrait(photoUrl);
-  const hasPortrait = !!portrait;
-  const x = hasPortrait ? 355 : 370;
-  const maxWidth = hasPortrait ? 265 : 460;
-  const { size, lines } = splitName(ctx, name, maxWidth, hasPortrait ? 3 : 3);
-  ctx.fillStyle = '#302037';
-  ctx.textAlign = hasPortrait ? 'left' : 'center';
-  ctx.font = `700 ${size}px "Playfair Display",Georgia,serif`;
-  const lineHeight = size * 1.18;
-  const firstLineY = Math.max(255, 313 - (lines.length - 1) * lineHeight / 2);
-  lines.forEach((line, index) => {
-    ctx.fillText(line, hasPortrait ? x : 600, firstLineY + index * lineHeight, maxWidth);
-  });
-
-  if (hasPortrait) {
-    const photoX = 660, photoY = 195, photoW = 182, photoH = 232;
+  const photoX = 342, photoY = 114, photoW = 516, photoH = 284;
+  ctx.fillStyle = '#89DBEB';
+  rounded(ctx, photoX, photoY, photoW, photoH, 12);
+  ctx.fill();
+  if (portrait) {
     ctx.save();
-    rounded(ctx, photoX, photoY, photoW, photoH, 17);
+    rounded(ctx, photoX, photoY, photoW, photoH, 12);
     ctx.clip();
-    ctx.fillStyle = '#e8d9f4';
-    ctx.fillRect(photoX, photoY, photoW, photoH);
     cover(ctx, portrait, photoX, photoY, photoW, photoH);
     ctx.restore();
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = '#fff';
-    rounded(ctx, photoX, photoY, photoW, photoH, 17);
-    ctx.stroke();
   } else {
-    ctx.fillStyle = '#74478e';
-    ctx.font = '38px Georgia,serif';
+    ctx.fillStyle = '#BE316C';
+    ctx.font = '900 146px Georgia, serif';
     ctx.textAlign = 'center';
-    ctx.fillText('♡', 600, 404);
+    ctx.fillText('♡', 600, 320);
   }
-
-  ctx.strokeStyle = '#ddcae2';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(385, 460);
-  ctx.lineTo(815, 460);
+  ctx.strokeStyle = '#151326';
+  ctx.lineWidth = 3;
+  rounded(ctx, photoX, photoY, photoW, photoH, 12);
   ctx.stroke();
 
-  ctx.fillStyle = '#624e69';
+  // Text stays below portrait rather than covering the face.
+  ctx.fillStyle = '#F6DFF0';
+  rounded(ctx, 342, 412, 516, 126, 11);
+  ctx.fill();
   ctx.textAlign = 'center';
-  ctx.font = '600 21px "DM Sans",Arial,sans-serif';
-  ctx.fillText('Sua voz, suas fotos, suas palavras.', 600, 501, 445);
-  ctx.fillStyle = '#81518f';
-  ctx.font = '800 14px "DM Sans",Arial,sans-serif';
-  ctx.fillText('EJC · SIMONÉSIA · MG', 600, 547, 440);
+  ctx.fillStyle = '#25162A';
+  ctx.font = '900 15px "DM Sans", Arial, sans-serif';
+  ctx.fillText('PARA', 600, 437);
+  const personName = String(name || 'Você').trim().replace(/\s+/g, ' ');
+  const segments = personName.split(' ');
+  let nameLines = [personName];
+  let nameFont = 52;
+  for (let size = 52; size >= 24; size -= 2) {
+    ctx.font = '900 ' + size + 'px "DM Sans", Arial, sans-serif';
+    let first = '', second = '';
+    if (ctx.measureText(personName).width <= 485) {
+      nameLines = [personName]; nameFont = size; break;
+    }
+    for (const part of segments) {
+      const candidate = first ? first + ' ' + part : part;
+      if (!second && ctx.measureText(candidate).width <= 480) first = candidate;
+      else second = second ? second + ' ' + part : part;
+    }
+    if (first && second && ctx.measureText(first).width <= 480 &&
+      ctx.measureText(second).width <= 480) {
+      nameLines = [first,second]; nameFont = size; break;
+    }
+    if (size === 24) {
+      const available = personName.slice(0, 42);
+      nameLines = [available.length < personName.length ? available + '…' : available];
+      nameFont = 24;
+    }
+  }
+  ctx.font = '900 ' + nameFont + 'px "DM Sans", Arial, sans-serif';
+  ctx.fillStyle = '#25162A';
+  const firstY = nameLines.length === 1 ? 501 : 472;
+  nameLines.forEach((line,index) => ctx.fillText(line, 600, firstY + index * (nameFont + 3), 486));
+
+  ctx.fillStyle = '#25162A';
+  ctx.font = '800 16px "DM Sans", Arial, sans-serif';
+  ctx.fillText('Sua voz, suas fotos e seus adesivos.', 600, 567, 480);
+
+  // Details outside central safe zone only.
+  ctx.save(); ctx.translate(960, 500); ctx.rotate(-.12);
+  ctx.font = '900 61px "DM Sans", Arial, sans-serif';
+  ctx.fillStyle = '#FFFFFF'; ctx.fillText('ENVIE', 0, 0);
+  ctx.fillStyle = '#FAFF70'; ctx.fillText('CARINHO.', -10, 62);
+  ctx.restore();
+  ctx.fillStyle = '#FAFF70';
+  ctx.beginPath(); ctx.moveTo(116, 385); ctx.lineTo(147, 437); ctx.lineTo(208, 445);
+  ctx.lineTo(157, 479); ctx.lineTo(143, 539); ctx.lineTo(109, 487);
+  ctx.lineTo(54, 461); ctx.lineTo(110, 441); ctx.closePath(); ctx.fill();
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -179,5 +234,71 @@ export async function publishOgImage(person) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || 'Não foi possível publicar a imagem social.');
+  return data.url;
+}
+
+
+// Brand-wide OG card when the link points to the home rather than one encontrista.
+// Rendered in the authenticated admin browser and served as PNG from R2.
+export async function createDefaultOgImage() {
+  try { await document.fonts.ready; } catch {}
+  const canvas=document.createElement('canvas');
+  canvas.width=OG_WIDTH;canvas.height=OG_HEIGHT;
+  const ctx=canvas.getContext('2d',{alpha:false});
+  if(!ctx)throw new Error('Canvas indisponível para prévia social.');
+  const bg=ctx.createLinearGradient(0,0,1200,630);
+  bg.addColorStop(0,'#2141DA');bg.addColorStop(.47,'#F7407A');bg.addColorStop(1,'#FFBD37');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,1200,630);
+  ctx.save();ctx.globalAlpha=.27;ctx.strokeStyle='#FFFFFF';ctx.lineWidth=2;
+  for(let x=-250;x<1380;x+=52){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+200,630);ctx.stroke();}
+  ctx.restore();
+  ctx.save();ctx.translate(58,138);ctx.rotate(-.11);
+  ctx.fillStyle='#FFF87B';ctx.font='900 83px "DM Sans",Arial,sans-serif';
+  ctx.fillText('XX',0,0);ctx.font='900 92px "DM Sans",Arial,sans-serif';ctx.fillText('EJC',0,100);
+  ctx.restore();
+  ctx.save();ctx.translate(940,148);ctx.rotate(.14);
+  ctx.fillStyle='#251929';ctx.font='900 51px "DM Sans",Arial,sans-serif';ctx.fillText('💌',0,0);
+  ctx.font='900 29px "DM Sans",Arial,sans-serif';ctx.fillText('SIMONÉSIA',0,80,235);ctx.restore();
+
+  // A square WhatsApp thumbnail still includes all meaningful content.
+  ctx.fillStyle='#201828';rounded(ctx,317,35,566,562,22);ctx.fill();
+  ctx.fillStyle='#FFF9E7';rounded(ctx,327,45,546,542,15);ctx.fill();
+  ctx.fillStyle='#F8DE37';rounded(ctx,341,59,518,53,8);ctx.fill();
+  ctx.fillStyle='#1F1931';ctx.font='900 22px "DM Sans",Arial,sans-serif';ctx.textAlign='center';
+  ctx.fillText('XX EJC  ·  SIMONÉSIA',600,95,494);
+
+  ctx.save();ctx.translate(600,305);ctx.rotate(-.04);
+  ctx.fillStyle='#1744D9';rounded(ctx,-238,-130,476,246,13);ctx.fill();
+  ctx.fillStyle='#FFF';ctx.font='900 69px "DM Sans",Arial,sans-serif';
+  ctx.fillText('CARTINHAS',0,-35,449);
+  ctx.fillStyle='#FDFC7A';ctx.font='900 67px "DM Sans",Arial,sans-serif';
+  ctx.fillText('DE AMOR.',0,50,449);ctx.restore();
+
+  ctx.fillStyle='#F6D4E2';rounded(ctx,341,440,518,108,12);ctx.fill();
+  ctx.fillStyle='#2D1A34';ctx.textAlign='center';
+  ctx.font='900 19px "DM Sans",Arial,sans-serif';
+  ctx.fillText('Crie. Decore. Envie. Guarde.',600,480,488);
+  ctx.font='700 16px "DM Sans",Arial,sans-serif';
+  ctx.fillText('Cartas com fotos, voz e adesivos de fé.',600,515,486);
+  ctx.fillStyle='#BE376B';ctx.font='900 20px "DM Sans",Arial,sans-serif';
+  ctx.fillText('💌  UMA SURPRESA PARA CADA ENCONTRISTA',600,575,490);
+
+  ctx.fillStyle='#FFFD79';ctx.beginPath();ctx.moveTo(115,401);ctx.lineTo(141,439);
+  ctx.lineTo(187,442);ctx.lineTo(154,469);ctx.lineTo(146,514);
+  ctx.lineTo(110,479);ctx.lineTo(70,463);ctx.lineTo(109,444);ctx.closePath();ctx.fill();
+
+  return new Promise((resolve,reject)=>{
+    canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Não foi possível gerar o PNG principal.')),'image/png');
+  });
+}
+
+export async function publishDefaultOgImage() {
+  const blob=await createDefaultOgImage();
+  const response=await fetch('/api/admin/og/default',{
+    method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':'image/png'},body:blob
+  });
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||'Não foi possível publicar a imagem da home.');
   return data.url;
 }

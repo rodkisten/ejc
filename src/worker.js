@@ -155,8 +155,8 @@ async function orderInfo(env,o) {
   const rows=(await env.DB.prepare("SELECT id,kind,filename,content_type,bytes,created_at FROM media WHERE order_id=? AND status='ready' ORDER BY created_at").bind(o.id).all()).results;
   const visible=activeOrder(o)?await Promise.all(rows.map(async m=>({...m,url:await mediaUrl(env,m.id,o.id)}))):[];
   const receipt=await env.DB.prepare('SELECT verified_at,notified_at FROM order_read_receipts WHERE order_id=?').bind(o.id).first();
-  return {id:o.id,recipient_name:o.recipient_name,recipient_slug:o.recipient_slug,sender_name:o.sender_name,status:o.status,
-    amount_cents:o.total_cents,pix_code:o.pix_payload,txid:o.txid,
+  return {id:o.id,recipient_name:o.recipient_name,recipient_slug:o.recipient_slug,sender_name:o.sender_name,status:o.status,checkout_id:o.checkout_id,
+    amount_cents:o.total_cents,pix_code:o.checkout_id?null:o.pix_payload,txid:o.checkout_id?null:o.txid,
     pix_receiver:config.pix_name||'',pix_city:config.pix_city||'',
     rich_html:activeOrder(o)?o.rich_html:'',
     composition:activeOrder(o)?normalizeComposition(JSON.parse(o.composition_json||'{}')):null,
@@ -338,8 +338,8 @@ function escapeMeta(value){
 // Social crawlers do not execute React. Always publish complete OG metadata
 // in Worker-rendered HTML, even when the admin has not generated a portrait PNG.
 const DEFAULT_OG_PATH = '/og-ejc-default.png';
-const DEFAULT_OG_VERSION = '20261107b';
-function socialImage(recipient) {
+const DEFAULT_OG_VERSION = '20261107c';
+function socialImage(recipient, defaultOg=null) {
   const personalized = recipient?.og_key && (!recipient.photo_key || recipient.photo_consent);
   if (personalized) {
     const version = recipient.og_key.split('/').pop();
@@ -348,12 +348,13 @@ function socialImage(recipient) {
       version, width: 1200, height: 630,
     };
   }
+  const fallbackVersion=defaultOg?.version||DEFAULT_OG_VERSION;
   return {
-    path: DEFAULT_OG_PATH + '?v=' + DEFAULT_OG_VERSION,
-    version: DEFAULT_OG_VERSION, width: 600, height: 315,
+    path: DEFAULT_OG_PATH + '?v=' + encodeURIComponent(fallbackVersion),
+    version: fallbackVersion, width: defaultOg?.ready?1200:600, height:defaultOg?.ready?630:315,
   };
 }
-function buildSocialMeta(origin, recipient, kind = 'enviar') {
+function buildSocialMeta(origin, recipient, kind = 'enviar', defaultOg=null) {
   const person = recipient?.name;
   const title = person
     ? (kind === 'mural' ? 'Mural secreto de ' : 'Envie uma cartinha para ') + person + ' · XX EJC Simonésia'
@@ -363,7 +364,7 @@ function buildSocialMeta(origin, recipient, kind = 'enviar') {
       ? 'Um cantinho privado para guardar mensagens, fotos e áudios. Acesso somente com código pessoal.'
       : 'Envie fotos, áudios e palavras especiais para ' + person + ' no XX EJC de Simonésia.'
     : 'Uma homenagem especial para guardar no coração. Cartinhas do XX EJC Simonésia.';
-  const image = socialImage(recipient);
+  const image = socialImage(recipient,defaultOg);
   const imageUrl = origin + image.path;
   const canonicalPath = person
     ? '/' + kind + '/' + encodeURIComponent(recipient.slug)
@@ -399,18 +400,85 @@ function buildSocialMeta(origin, recipient, kind = 'enviar') {
   };
 }
 
-async function publicRoute(req,env,path) {
-  const stickerPath=path.match(/^\/api\/stickers\/([a-z0-9-]+)\.webp$/);
-  if(stickerPath && (req.method==='GET'||req.method==='HEAD')){
-    if(!STICKERS_BY_ID[stickerPath[1]])bad('Adesivo desconhecido.',404);
-    const image=await env.MEDIA.get('stickers/v1/'+stickerPath[1]+'.webp');
-    if(!image)bad('Adesivo ainda não instalado.',404);
-    return new Response(req.method==='HEAD'?null:image.body,{headers:{
-      ...BASE_HEADERS,'Content-Type':'image/webp',
-      'Cache-Control':'public, max-age=120',
-      'Content-Length':String(image.size)
-    }});
+
+async function checkoutBuyer(req, env) {
+  const access=bearer(req);
+  const checkout=await env.DB.prepare('SELECT * FROM checkouts WHERE token_hash=?').bind(await digest(access)).first();
+  if (!checkout) bad('Compra não encontrada.',404);
+  return {checkout,access};
+}
+async function checkoutInfo(env,checkout,access) {
+  const rows=(await env.DB.prepare(
+    'SELECT o.id,o.status,o.checkout_item_index,r.name AS recipient_name,r.slug AS recipient_slug FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.checkout_id=? ORDER BY o.checkout_item_index'
+  ).bind(checkout.id).all()).results;
+  return {
+    id:checkout.id,status:checkout.status,amount_cents:checkout.total_cents,
+    txid:checkout.txid,pix_code:checkout.pix_payload,created_at:checkout.created_at,
+    claimed_at:checkout.claimed_at,confirmed_at:checkout.confirmed_at,
+    items:await Promise.all(rows.map(async row=>({
+      id:row.id,status:row.status,recipient_name:row.recipient_name,
+      recipient_slug:row.recipient_slug,token:await digest(access+':item:'+row.checkout_item_index)
+    })))
+  };
+}
+async function createCheckout(req,env,config) {
+  if (config.open!=='true') bad('As cartinhas estão temporariamente fechadas.',403);
+  editable(config);
+  if(!config.pix_key||!config.pix_name||!config.pix_city) bad('A chave Pix ainda não foi configurada.',503);
+  const input=await jsonBody(req,24000);
+  if(!Array.isArray(input.items)||input.items.length<1||input.items.length>20)
+    bad('Adicione entre 1 e 20 cartinhas ao carrinho.');
+  const unit=Number(config.message_price_cents||1000);
+  if(!Number.isSafeInteger(unit)||unit<100||unit>5000000)bad('Valor unitário inválido.',503);
+  const amount=unit*input.items.length;
+  if(!Number.isSafeInteger(amount)||amount>5000000)bad('O total Pix excede o limite permitido.',400);
+  const slugs=input.items.map(item=>assertText(item?.recipient_slug||'',65,'Encontrista'));
+  if(input.items.some(item=>!item||typeof item!=='object'||Array.isArray(item)))bad('Item inválido no carrinho.',400);
+  const found=(await env.DB.prepare('SELECT id,name,slug FROM recipients WHERE active=1').all()).results;
+  const bySlug=new Map(found.map(r=>[r.slug,r]));
+  const recipients=slugs.map(slug=>bySlug.get(slug));
+  if(recipients.some(r=>!r))bad('Um dos encontristas não está disponível.',400);
+  const prepared=input.items.map((item,index)=>({
+    recipient:recipients[index],
+    sender:assertText(item.sender_name||'',100,'Remetente',false),
+    email:item.notify_on_read===true?validateEmail(item.read_receipt_email):null,
+    notify:item.notify_on_read===true
+  }));
+  if(prepared.some(p=>p.notify&&(!emailsReady(env)||!p.email)))
+    bad('Confira o e-mail de aviso de leitura.',400);
+  const fingerprint=await digest((req.headers.get('CF-Connecting-IP')||'local')+':orders:'+env.SESSION_SECRET);
+  const seconds=Math.floor(Date.now()/1000);
+  const rate=await env.DB.prepare('SELECT attempts,window_start FROM order_rate WHERE fingerprint=?').bind(fingerprint).first();
+  if(rate&&rate.window_start>seconds-3600&&rate.attempts>=15)bad('Muitas compras neste período.',429);
+  const code=randomCode(),checkoutId='EJCB-'+code,txid='EJCB'+code,access=token();
+  const pix=generatePix({key:config.pix_key,merchantName:config.pix_name,
+    merchantCity:config.pix_city,amountCents:amount,txid});
+  const records=await Promise.all(prepared.map(async(item,index)=>{
+    const orderCode=randomCode(),id='EJC-'+orderCode;
+    const itemToken=await digest(access+':item:'+index);
+    return {id,token:itemToken,tokenHash:await digest(itemToken),...item,index};
+  }));
+  const statements=[
+    env.DB.prepare('INSERT INTO checkouts(id,token_hash,txid,total_cents,pix_payload) VALUES(?,?,?,?,?)')
+      .bind(checkoutId,await digest(access),txid,amount,pix),
+    ...records.map(row=>env.DB.prepare(
+      'INSERT INTO orders(id,token_hash,recipient_id,sender_name,total_cents,pix_payload,txid,public_message,checkout_id,checkout_item_index) VALUES(?,?,?,?,?,?,?,?,?,?)'
+    ).bind(row.id,row.tokenHash,row.recipient.id,row.sender,unit,pix,'ITEM'+row.id.slice(4),0,checkoutId,row.index)),
+    env.DB.prepare('INSERT INTO order_rate(fingerprint,attempts,window_start) VALUES(?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET attempts=excluded.attempts,window_start=excluded.window_start')
+      .bind(fingerprint,rate&&rate.window_start>seconds-3600?rate.attempts+1:1,rate&&rate.window_start>seconds-3600?rate.window_start:seconds)
+  ];
+  await env.DB.batch(statements);
+  for(const row of records){
+    await event(env,row.id,'created');
+    await enqueue(env,row.id,'order_created');
+    if(row.notify)await enableReceipt(env,row.id,row.email);
   }
+  return result({id:checkoutId,token:access,txid,pix_code:pix,amount_cents:amount,
+    items:records.map(row=>({id:row.id,token:row.token,recipient_slug:row.recipient.slug,recipient_name:row.recipient.name}))
+  },201);
+}
+
+async function publicRoute(req,env,path) {
   const ogImage=path.match(/^\/api\/og\/([a-z0-9-]+)\.png$/);
   if(ogImage&&(req.method==='GET'||req.method==='HEAD')){
     const r=await env.DB.prepare(
@@ -435,6 +503,16 @@ async function publicRoute(req,env,path) {
     if(!logo)bad('Logo ainda não cadastrada.',404);
     return serveBrandImage(logo);
   }
+  const stickerImage=path.match(/^\/api\/stickers\/([a-z0-9-]+)\.png$/);
+  if(stickerImage&&(req.method==='GET'||req.method==='HEAD')){
+    if(!STICKERS_BY_ID[stickerImage[1]])bad('Adesivo desconhecido.',404);
+    const object=await env.MEDIA.get('stickers/v1/'+stickerImage[1]+'.png');
+    if(!object)bad('Adesivo PNG ainda não cadastrado.',404);
+    return new Response(req.method==='HEAD'?null:object.body,{headers:{
+      'Content-Type':'image/png','Cache-Control':'public, max-age=300',
+      'X-Content-Type-Options':'nosniff','Content-Length':String(object.size)
+    }});
+  }
   const photo=path.match(/^\/api\/recipients\/([a-f0-9-]{36})\/photo$/);
   if(photo && req.method==='GET') {
     const r=await env.DB.prepare('SELECT photo_key,photo_consent FROM recipients WHERE id=? AND active=1').bind(photo[1]).first();
@@ -442,6 +520,12 @@ async function publicRoute(req,env,path) {
     const blob=await env.MEDIA.get(r.photo_key);
     if(!blob)bad('Foto não disponível.',404);
     return serveBrandImage(blob);
+  }
+  if(path==='/api/stickers'&&req.method==='GET'){
+    const entries=await Promise.all(Object.keys(STICKERS_BY_ID).map(async id=>({
+      id,exists:!!(await env.MEDIA.head('stickers/v1/'+id+'.png'))
+    })));
+    return result({stickers:entries.filter(item=>item.exists).map(item=>item.id)},200,{'Cache-Control':'public, max-age=45'});
   }
   const config=await settings(env);
   if (path==='/api/public' && req.method==='GET') {
@@ -508,6 +592,27 @@ async function publicRoute(req,env,path) {
     if(!await confirmReceipt(env,body.token))bad('Link de confirmação inválido ou expirado.',400);
     return result({ok:true});
   }
+  if (path==='/api/checkouts'&&req.method==='POST') return createCheckout(req,env,config);
+  if (path==='/api/checkout'&&req.method==='GET'){
+    const {checkout,access}=await checkoutBuyer(req,env);
+    return result(await checkoutInfo(env,checkout,access));
+  }
+  if (path==='/api/checkout/claim'&&req.method==='POST'){
+    const {checkout}=await checkoutBuyer(req,env);
+    if(checkout.status==='paid')return result({ok:true,status:'paid'});
+    if(checkout.status==='claimed')return result({ok:true,status:'claimed'});
+    if(checkout.status==='cancelled')bad('Compra cancelada.',409);
+    const changed=await env.DB.prepare(
+      "UPDATE checkouts SET status='claimed',claimed_at=COALESCE(claimed_at,?) WHERE id=? AND status='pending'"
+    ).bind(now(),checkout.id).run();
+    if(changed.meta.changes){
+      await env.DB.prepare("UPDATE orders SET status='claimed',payment_claimed_at=COALESCE(payment_claimed_at,?),updated_at=? WHERE checkout_id=? AND status IN ('pending','claimed')")
+        .bind(now(),now(),checkout.id).run();
+      const children=(await env.DB.prepare('SELECT id FROM orders WHERE checkout_id=?').bind(checkout.id).all()).results;
+      for(const row of children){await event(env,row.id,'payment_claimed');await enqueue(env,row.id,'payment_claimed');}
+    }
+    return result({ok:true,status:'claimed'});
+  }
   if (path==='/api/orders' && req.method==='POST') {
     if(config.open!=='true')bad('As homenagens estão temporariamente fechadas.',403);
     editable(config);
@@ -548,6 +653,7 @@ async function publicRoute(req,env,path) {
       return result(await enableReceipt(env,o.id,data.email));
     }
     if(path==='/api/order/claim'&&req.method==='POST') {
+      if(o.checkout_id)bad('Confirme o Pix da compra agrupada, não da cartinha individual.',409);
       if(activeOrder(o))return result({ok:true,status:o.status});
       if(o.status==='cancelled')bad('Pedido cancelado.',409);
       await env.DB.prepare("UPDATE orders SET status='claimed',payment_claimed_at=?,updated_at=? WHERE id=? AND status IN ('pending','claimed')").bind(now(),now(),o.id).run();
@@ -588,22 +694,6 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
   await requireAdmin(req,env);
   if(path==='/api/admin/me')return result({authenticated:true});
-  const stickerUpload=path.match(/^\/api\/admin\/stickers\/([a-z0-9-]+)\.webp$/);
-  if(stickerUpload && req.method==='PUT'){
-    if(!STICKERS_BY_ID[stickerUpload[1]])bad('Adesivo não faz parte da coleção.',404);
-    const image=await receiveSafeImage(req,600*1024);
-    if(image.type!=='image/webp')bad('Somente arquivos WebP.',415);
-    await env.MEDIA.put('stickers/v1/'+stickerUpload[1]+'.webp',image.bytes,{
-      httpMetadata:{contentType:'image/webp'}
-    });
-    return result({ok:true,id:stickerUpload[1]});
-  }
-  if(path==='/api/admin/stickers'&&req.method==='GET'){
-    const found=await Promise.all(Object.keys(STICKERS_BY_ID).map(async id=>({
-      id,installed:!!(await env.MEDIA.head('stickers/v1/'+id+'.webp'))
-    })));
-    return result({stickers:found});
-  }
   if(path==='/api/admin/branding/logo' && req.method==='POST') {
     const image=await receiveSafeImage(req,2*1024*1024);
     await env.MEDIA.put('branding/ejc-market-logo',image.bytes,{httpMetadata:{contentType:image.type}});
@@ -612,6 +702,37 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/branding/logo' && req.method==='DELETE') {
     await env.MEDIA.delete('branding/ejc-market-logo');
     return result({ok:true});
+  }
+  const stickerUpload=path.match(/^\/api\/admin\/stickers\/([a-z0-9-]+)\.png$/);
+  if(stickerUpload&&(req.method==='POST'||req.method==='DELETE')){
+    const id=stickerUpload[1];
+    if(!STICKERS_BY_ID[id])bad('Adesivo desconhecido.',404);
+    const key='stickers/v1/'+id+'.png';
+    if(req.method==='DELETE'){
+      await env.MEDIA.delete(key);
+      return result({ok:true});
+    }
+    const asset=await receiveSafeImage(req,16*1024*1024);
+    if(asset.type!=='image/png')bad('Envie a arte original em PNG.',415);
+    if(asset.bytes.length<24||!asset.bytes.slice(0,8).every((b,index)=>b===[137,80,78,71,13,10,26,10][index]))
+      bad('O arquivo não é um PNG válido.',415);
+    await env.MEDIA.put(key,asset.bytes,{httpMetadata:{contentType:'image/png'}});
+    return result({ok:true,url:'/api/stickers/'+id+'.png?v='+Date.now()});
+  }
+  if(path==='/api/admin/stickers'&&req.method==='GET'){
+    const entries=await Promise.all(Object.keys(STICKERS_BY_ID).map(async id=>({
+      id,exists:!!(await env.MEDIA.head('stickers/v1/'+id+'.png'))
+    })));
+    return result({stickers:entries});
+  }
+  if(path==='/api/admin/og/default'&&req.method==='POST'){
+    const image=await receiveSafeImage(req,5*1024*1024);
+    if(image.type!=='image/png')bad('Prévia social deve ser PNG.',415);
+    const view=new DataView(image.bytes.buffer,image.bytes.byteOffset,image.bytes.byteLength);
+    if(image.bytes.byteLength<24||view.getUint32(16)!==1200||view.getUint32(20)!==630)
+      bad('A imagem social da home deve medir 1200 x 630 pixels.',400);
+    await env.MEDIA.put('og/default-v3.png',image.bytes,{httpMetadata:{contentType:'image/png'}});
+    return result({ok:true,url:'/og-ejc-default.png?v='+Date.now()});
   }
   const ogUpload=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/og$/);
   if(ogUpload&&req.method==='POST'){
@@ -623,7 +744,7 @@ async function adminRoute(req,env,path) {
     const dimensions=new DataView(image.bytes.buffer,image.bytes.byteOffset,image.bytes.byteLength);
     if(image.bytes.byteLength<24||dimensions.getUint32(16)!==1200||dimensions.getUint32(20)!==630)
       bad('A imagem deve ter 1200 x 630 pixels.',400);
-    const key='og/v2/'+r.id+'/'+newId()+'.png';
+    const key='og/v3/'+r.id+'/'+newId()+'.png';
     await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:'image/png'}});
     await env.DB.prepare('UPDATE recipients SET og_key=? WHERE id=?').bind(key,r.id).run();
     if(r.og_key)await env.MEDIA.delete(r.og_key);
@@ -648,6 +769,39 @@ async function adminRoute(req,env,path) {
     if(r.og_key)await env.MEDIA.delete(r.og_key);
     return result({ok:true,photo_url:`/api/recipients/${r.id}/photo?v=${key.split('/').pop()}`});
   }
+  if(path==='/api/admin/checkouts'&&req.method==='GET'){
+    const checkouts=(await env.DB.prepare(
+      "SELECT c.id,c.status,c.total_cents,c.txid,c.created_at,c.claimed_at,c.confirmed_at,c.bank_reference,COUNT(o.id) AS item_count FROM checkouts c JOIN orders o ON o.checkout_id=c.id GROUP BY c.id ORDER BY c.created_at DESC LIMIT 500"
+    ).all()).results;
+    return result({checkouts});
+  }
+  const checkoutStatus=path.match(/^\/api\/admin\/checkouts\/(EJCB-[A-F0-9]{12})\/status$/);
+  if(checkoutStatus&&req.method==='PATCH'){
+    const input=await jsonBody(req,700);
+    if(input.status!=='paid')bad('A coordenação só pode confirmar o Pix.',409);
+    const order=await env.DB.prepare('SELECT id,status,total_cents FROM checkouts WHERE id=?').bind(checkoutStatus[1]).first();
+    if(!order)bad('Compra não encontrada.',404);
+    if(!['pending','claimed'].includes(order.status))bad('A compra já foi processada.',409);
+    if(input.bank_checked!==true||input.amount_checked!==true)bad('Confira recebimento e total no extrato.',400);
+    const reference=assertText(input.bank_reference||'',128,'Identificador bancário').toUpperCase();
+    if(!/^[A-Z0-9:/._-]{8,128}$/.test(reference))bad('Identificador bancário inválido.');
+    const priorCheckout=await env.DB.prepare('SELECT id FROM checkouts WHERE bank_reference=?').bind(reference).first();
+    const priorOrder=await env.DB.prepare('SELECT id FROM orders WHERE bank_reference=?').bind(reference).first();
+    if(priorCheckout||priorOrder)bad('Esta transferência já foi confirmada.',409);
+    const confirmed=now();
+    const results=await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE checkouts SET status='paid',bank_reference=?,confirmed_at=? WHERE id=? AND status IN ('pending','claimed')"
+      ).bind(reference,confirmed,order.id),
+      env.DB.prepare(
+        "UPDATE orders SET status='paid',confirmed_at=?,updated_at=? WHERE checkout_id=? AND status IN ('pending','claimed')"
+      ).bind(confirmed,confirmed,order.id),
+    ]);
+    if(results[0].meta.changes!==1)bad('Compra alterada por outro administrador.',409);
+    const children=(await env.DB.prepare('SELECT id FROM orders WHERE checkout_id=?').bind(order.id).all()).results;
+    for(const row of children){await event(env,row.id,'payment_confirmed');await enqueue(env,row.id,'payment_confirmed');}
+    return result({ok:true,status:'paid',letters:children.length});
+  }
   if(path==='/api/admin/bootstrap'&&req.method==='GET'){
     const [config,recipients,orders]=await Promise.all([
       settings(env),
@@ -663,7 +817,7 @@ async function adminRoute(req,env,path) {
         ...r,
         photo_url:recipientPhotoUrl(r),
         og_url:socialImage(r).path,
-        og_safe:typeof r.og_key==='string'&&r.og_key.startsWith('og/v2/')
+        og_safe:typeof r.og_key==='string'&&r.og_key.startsWith('og/v3/')
       })),orders:orders.results});
   }
 
@@ -741,8 +895,9 @@ async function adminRoute(req,env,path) {
   }
   const status=path.match(/^\/api\/admin\/orders\/(EJC-[A-F0-9]{12})\/status$/);
   if(status&&req.method==='PATCH'){
-    const data=await jsonBody(req),order=await env.DB.prepare('SELECT id,status FROM orders WHERE id=?').bind(status[1]).first();
+    const data=await jsonBody(req),order=await env.DB.prepare('SELECT id,status,checkout_id FROM orders WHERE id=?').bind(status[1]).first();
     if(!order)bad('Pedido inexistente.',404);
+    if(order.checkout_id)bad('Confirme o Pix pelo checkout agrupado.',409);
     if(data.status!=='paid')bad('A coordenação só pode confirmar o pagamento Pix.',409);
     if(!['pending','claimed'].includes(order.status))bad('Pedido não está aguardando Pix.',409);
     const ref=assertText(data.bank_reference||'',128,'Identificador bancário').toUpperCase();
@@ -867,6 +1022,13 @@ export default {
       const socialRecipient=social?await env.DB.prepare(
         'SELECT name,slug,og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
       ).bind(social[2]).first():null;
+      if(path==='/og-ejc-default.png'&&(request.method==='GET'||request.method==='HEAD')){
+        const image=await env.MEDIA.get('og/default-v3.png');
+        if(image)return new Response(request.method==='HEAD'?null:image.body,{headers:{
+          'Content-Type':'image/png','Content-Length':String(image.size),
+          'Cache-Control':'public, max-age=300','X-Content-Type-Options':'nosniff'
+        }});
+      }
       const sharePage=!!social || path==='/' || path==='/abrir';
       const assetRequest=sharePage && path!=='/'
         ?new Request(new URL('/',url.origin),request)
@@ -881,12 +1043,14 @@ export default {
       if ((headers.get('Content-Type')||'').includes('text/html')) {
         headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
       }
-      if(path==='/abrir'||path.startsWith('/mural/')||path.startsWith('/pedido/')||path.startsWith('/admin')){
+      if(path==='/abrir'||path.startsWith('/mural/')||path.startsWith('/pedido/')||path.startsWith('/checkout/')||path.startsWith('/admin')){
         headers.set('X-Robots-Tag','noindex, nofollow, noarchive');
       }
       if(sharePage && response.ok && (headers.get('Content-Type')||'').includes('text/html')){
         const publicOrigin=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
-        const meta=buildSocialMeta(publicOrigin,socialRecipient,social?.[1]||'enviar');
+        const ogDefault=await env.MEDIA.head('og/default-v3.png');
+        const meta=buildSocialMeta(publicOrigin,socialRecipient,social?.[1]||'enviar',
+          ogDefault?{ready:true,version:String(ogDefault.uploaded?.getTime()||'v3')} : null);
         const html=(await response.text())
           .replace(/<!-- EJC-OG-START:[\s\S]*?<!-- EJC-OG-END -->/i,'')
           .replace(/<title>[\s\S]*?<\/title>/i,'<title>'+escapeMeta(meta.title)+'</title>')

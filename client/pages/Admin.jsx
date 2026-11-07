@@ -5,7 +5,7 @@ import { api, money, btime, track,download } from '../lib/api';
 import QrCode from '../components/QrCode';
 import Labels from './Labels';
 import StickerAdmin from './StickerAdmin';
-import { publishOgImage } from '../lib/og';
+import { publishOgImage, publishDefaultOgImage } from '../lib/og';
 function useAdmin(){const [info,setInfo]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const reload=useCallback(async()=>{try{setInfo(await api('/api/admin/bootstrap'));setError('');}catch(e){setError(e.message);setInfo(null);}finally{setLoading(false);}},[]);
   useEffect(()=>{reload();},[reload]);return {info,loading,error,reload};}
@@ -13,8 +13,10 @@ const copy=t=>navigator.clipboard.writeText(t);
 // O painel não renderiza nem solicita texto, áudio, fotos ou nome do remetente.
 function AdminDashboard({ info, reload }) {
   const navigate = useNavigate();
-  const pending = info.orders.filter((order) => ['pending', 'claimed'].includes(order.status));
-  const paid = info.orders.filter((order) => ['paid', 'preparing', 'delivered'].includes(order.status));
+  const pending = new Set(info.orders.filter((order) => ['pending', 'claimed'].includes(order.status))
+    .map(order => order.checkout_id || order.id));
+  const paid = new Set(info.orders.filter((order) => ['paid', 'preparing', 'delivered'].includes(order.status))
+    .map(order => order.checkout_id || order.id));
   const sent = info.orders.filter((order) => order.submitted);
   return (
     <>
@@ -27,8 +29,8 @@ function AdminDashboard({ info, reload }) {
         <button className="btn ghost" onClick={reload}><RefreshCw size={17} /> Atualizar</button>
       </div>
       <div className="stats-grid">
-        <div><span>Pix a conferir</span><strong>{pending.length}</strong></div>
-        <div><span>Pagamentos confirmados</span><strong>{paid.length}</strong></div>
+        <div><span>Pix a conferir</span><strong>{pending.size}</strong></div>
+        <div><span>Pagamentos confirmados</span><strong>{paid.size}</strong></div>
         <div><span>Cartinhas enviadas</span><strong>{sent.length}</strong></div>
         <div><span>Total de pedidos</span><strong>{info.orders.length}</strong></div>
       </div>
@@ -36,14 +38,85 @@ function AdminDashboard({ info, reload }) {
         <ShieldCheck size={19} />
         A coordenação acessa apenas dados operacionais de pagamento e envio. Mensagens, fotos e áudios não são exibidos.
       </div>
+      <CheckoutList orders={info.orders} reloadOrders={reload} />
       <OrderList orders={info.orders} navigate={navigate} />
     </>
   );
 }
+
+function CheckoutList({ orders, reloadOrders }) {
+  const [checkouts,setCheckouts]=useState([]);
+  const [selected,setSelected]=useState(null);
+  const [reference,setReference]=useState('');
+  const [bankChecked,setBankChecked]=useState(false);
+  const [amountChecked,setAmountChecked]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const refresh=useCallback(async()=>{
+    try{
+      const result=await api('/api/admin/checkouts');
+      setCheckouts(result.checkouts||[]);
+    }catch(cause){setError(cause.message);}
+  },[]);
+  useEffect(()=>{refresh();},[refresh]);
+  async function confirm(){
+    if(!selected)return;
+    setBusy(true);setError('');
+    try{
+      await api('/api/admin/checkouts/'+selected.id+'/status',{
+        method:'PATCH',
+        data:{status:'paid',bank_reference:reference,
+          bank_checked:bankChecked,amount_checked:amountChecked}
+      });
+      setSelected(null);setReference('');setBankChecked(false);setAmountChecked(false);
+      await Promise.all([refresh(),reloadOrders()]);
+    }catch(cause){setError(cause.message);}
+    finally{setBusy(false);}
+  }
+  return <section className="form-card admin-checkouts">
+    <div className="row between">
+      <div><h2>Pix com várias cartinhas</h2><p className="muted small">Uma compra, um Pix, várias cartas privadas.</p></div>
+      <button type="button" className="btn ghost" onClick={refresh}><RefreshCw size={16}/> Atualizar</button>
+    </div>
+    {error&&<div className="notice error" role="alert">{error}</div>}
+    {!checkouts.length?<p className="muted small">Ainda não há compras agrupadas.</p>:
+      <div className="admin-order-list">
+        {checkouts.map((checkout)=><button key={checkout.id} type="button" className="admin-order"
+          onClick={()=>{setSelected(checkout);setReference('');setBankChecked(false);setAmountChecked(false);}}>
+          <span><strong>{checkout.item_count} cartinha(s)</strong><small>{checkout.id}</small></span>
+          <span className="order-tags"><b>{money(checkout.total_cents)}</b>
+            <small>{checkout.status==='paid'?'Pix confirmado':checkout.status==='claimed'?'Conferir Pix':'Aguardando Pix'}</small></span>
+        </button>)}
+      </div>}
+    {selected&&<div className="form-card admin-checkout-confirm">
+      <h3>{selected.id} · {money(selected.total_cents)}</h3>
+      <div className="admin-group-letters">
+        {orders.filter(row=>row.checkout_id===selected.id).map(row=><p key={row.id}>
+          <strong>{row.recipient_name}</strong><span className="muted small">
+          {row.submitted?'Cartinha enviada':'Cartinha ainda não enviada'}</span></p>)}
+      </div>
+      <p className="muted">Confirme um único crédito do valor total para liberar {selected.item_count} cartinha(s). Não compartilhe comprovantes ou conteúdo das mensagens.</p>
+      {selected.status==='paid'?<p className="notice">Este Pix já foi confirmado.</p>:<>
+        <label htmlFor="checkout-reference">Identificador bancário (E2E)</label>
+        <input id="checkout-reference" value={reference} onChange={e=>setReference(e.target.value)}
+          placeholder="Identificador completo da transferência"/>
+        <label className="toggle-line"><input type="checkbox" checked={bankChecked}
+          onChange={e=>setBankChecked(e.target.checked)}/> Confirmei a entrada no extrato real</label>
+        <label className="toggle-line"><input type="checkbox" checked={amountChecked}
+          onChange={e=>setAmountChecked(e.target.checked)}/> Confirmei o valor total de {money(selected.total_cents)}</label>
+        <button type="button" className="btn" disabled={busy||!bankChecked||!amountChecked||reference.trim().length<8}
+          onClick={confirm}><Check size={17}/> Confirmar Pix de todas as cartinhas</button>
+      </>}
+      <button type="button" className="btn ghost" onClick={()=>setSelected(null)}>Fechar</button>
+    </div>}
+  </section>;
+}
+
 function OrderList({ orders, navigate }) {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
   const rows = orders.filter((order) => {
+    if(order.checkout_id) return false;
     const matches = `${order.id} ${order.recipient_name}`.toLocaleLowerCase('pt-BR').includes(q.toLocaleLowerCase('pt-BR'));
     if (filter === 'pix') return matches && ['pending', 'claimed'].includes(order.status);
     if (filter === 'paid') return matches && ['paid', 'preparing', 'delivered'].includes(order.status);
@@ -201,12 +274,22 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
     } catch (cause) { setError(cause.message); }
     finally { setOgProgress(''); }
   }
+  async function makeHomeOg(){
+    setOgProgress('Gerando a imagem social moderna da home...');
+    setError('');
+    try{
+      await publishDefaultOgImage();
+      setNotice('Imagem de compartilhamento da home publicada. A prévia já foi atualizada no R2.');
+    }catch(cause){setError(cause.message);}
+    finally{setOgProgress('');}
+  }
   async function makeAllOg(){
     setOgProgress('Preparando imagens...');
     setError('');
     let complete=0;
     let failed=0;
     try{
+      await publishDefaultOgImage();
       for(const person of info.recipients.filter(p=>p.active!==0)){
         setOgProgress('Gerando '+(complete+failed+1)+' de '+info.recipients.length+' · '+person.name);
         try { await publishOgImage(person); complete++; }
@@ -220,6 +303,10 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
   return <><div className="section-head"><div><span className="eyebrow">ENCONTRISTAS</span><h1>Nomes, fotos e links exclusivos</h1><p>A coordenação gerencia os nomes, fotos e QR Codes, mas não lê nem escuta as cartinhas. Entregue os códigos dos murais individualmente.</p></div></div><section className="form-card"><label>Importar nomes (um por linha)</label><textarea rows={4} value={names} onChange={e=>setNames(e.target.value)} placeholder={'Maria Eduarda\nJoão Pedro\nAna Clara'}/><button className="btn" onClick={add}>Adicionar encontristas</button></section>
     <section className="form-card">
       <h2>Imagens para redes sociais</h2>
+      <p className="muted small">Atualize a arte da home e as prévias individuais (nome e foto). O WhatsApp e o Telegram receberão PNGs com dimensões reais.</p>
+      <button className="btn ghost" disabled={!!ogProgress} onClick={makeHomeOg}>
+        <ImagePlus size={16}/> Publicar nova OG da home
+      </button>
       <p className="muted small">Os nomes e as fotos devem ficar dentro da área central visível mesmo quando o WhatsApp recortar a miniatura.</p>
       {info.recipients.filter(p=>p.active!==0&&!p.og_safe).length>0&&
         <div className="notice warning">
@@ -313,5 +400,5 @@ export default function Admin(){const [authenticated,setAuthenticated]=useState(
   const login=async e=>{e.preventDefault();setBusy(true);try{await api('/api/admin/login',{method:'POST',data:{password}});setAuthenticated(true);setLoginError('');await reload();}catch(e){setLoginError(e.message);}finally{setBusy(false);}};
   if(loading||authenticated===null)return <div className="loading">Carregando administração...</div>;
   if(!authenticated)return <div className="admin-login"><div className="form-card"><ShieldCheck size={40}/><h1>Coordenação do EJC</h1><p>Área reservada aos administradores das homenagens.</p><form onSubmit={login}><label htmlFor="admin-password">Senha da administração</label><input type="password" id="admin-password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)}/><button disabled={busy} className="btn wide">Entrar no painel</button></form>{loginError&&<div className="notice error">{loginError}</div>}</div></div>;
-  return <div className="admin-layout"><nav className="admin-nav no-print" aria-label="Navegação administrativa"><NavLink end to="/admin"><ClipboardList size={17}/> Pedidos</NavLink><NavLink to="/admin/encontristas"><UsersRound size={17}/> Encontristas</NavLink><NavLink to="/admin/configuracoes"><Settings2 size={17}/> Configurações</NavLink><NavLink to="/admin/qrcodes"><QrIcon size={17}/> QR e impressão</NavLink><NavLink to="/admin/etiquetas"><Printer size={17}/> Etiquetas do mural</NavLink><NavLink to="/admin/adesivos"><ImagePlus size={17}/> Adesivos</NavLink><NavLink to="/admin/demo"><Sparkles size={17}/> Demonstração</NavLink><button onClick={async()=>{await api('/api/admin/logout',{method:'POST',data:{}});setAuthenticated(false);}}><LogOut size={17}/> Sair</button></nav><div className="admin-content">{error&&<div className="notice error">{error}</div>}<Routes><Route index element={<AdminDashboard info={info} reload={reload}/>}/><Route path="pedidos/:id" element={<OrderDetail reload={reload}/>}/><Route path="encontristas" element={<People info={info} reload={reload}/>}/><Route path="configuracoes" element={<Config info={info} reload={reload}/>}/><Route path="qrcodes" element={<QrPrint info={info}/>}/><Route path="etiquetas" element={<Labels info={info} reload={reload}/>}/><Route path="adesivos" element={<StickerAdmin/>}/><Route path="demo" element={<Demo reload={reload}/>}/></Routes></div></div>;
+  return <div className="admin-layout"><nav className="admin-nav no-print" aria-label="Navegação administrativa"><NavLink end to="/admin"><ClipboardList size={17}/> Pedidos</NavLink><NavLink to="/admin/encontristas"><UsersRound size={17}/> Encontristas</NavLink><NavLink to="/admin/stickers"><ImagePlus size={17}/> Stickers PNG</NavLink><NavLink to="/admin/configuracoes"><Settings2 size={17}/> Configurações</NavLink><NavLink to="/admin/qrcodes"><QrIcon size={17}/> QR e impressão</NavLink><NavLink to="/admin/etiquetas"><Printer size={17}/> Etiquetas do mural</NavLink><NavLink to="/admin/demo"><Sparkles size={17}/> Demonstração</NavLink><button onClick={async()=>{await api('/api/admin/logout',{method:'POST',data:{}});setAuthenticated(false);}}><LogOut size={17}/> Sair</button></nav><div className="admin-content">{error&&<div className="notice error">{error}</div>}<Routes><Route index element={<AdminDashboard info={info} reload={reload}/>}/><Route path="pedidos/:id" element={<OrderDetail reload={reload}/>}/><Route path="encontristas" element={<People info={info} reload={reload}/>}/><Route path="stickers" element={<StickerAdmin/>}/><Route path="configuracoes" element={<Config info={info} reload={reload}/>}/><Route path="qrcodes" element={<QrPrint info={info}/>}/><Route path="etiquetas" element={<Labels info={info} reload={reload}/>}/><Route path="demo" element={<Demo reload={reload}/>}/></Routes></div></div>;
 }

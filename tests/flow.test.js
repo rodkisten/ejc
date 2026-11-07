@@ -14,6 +14,7 @@ function fixture(){
   sql.exec(fs.readFileSync(new URL('../migrations/0006_private_letters.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0007_letter_compositions.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0008_read_receipts_notifications.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0009_checkout_cart.sql',import.meta.url),'utf8'));
 
   const DB={
     prepare(query){const stmt=(...values)=>({first:async()=>sql.prepare(query).get(...values)||null,all:async()=>({results:sql.prepare(query).all(...values)}),run:async()=>({meta:sql.prepare(query).run(...values)})});return {...stmt(),bind:stmt};},
@@ -417,33 +418,128 @@ test('pedido com e-mail inválido e opt-in não é criado',async()=>{
   assert.equal((await env.DB.prepare('SELECT COUNT(*) AS c FROM orders').first()).c,0);
 });
 
-test('pacote WebP: envio só no admin e leitura pública por adesivo cadastrado',async()=>{
+
+test('carrinho: um único Pix com preço verificado no servidor para três cartinhas, inclusive destinatários repetidos', async () => {
+  const env = fixture(), {admin,list} = await setup(env);
+  const created = await call(env,'/api/checkouts','POST',{
+    items:[
+      {recipient_slug:list[0].slug,sender_name:'Mãe'},
+      {recipient_slug:list[1].slug,sender_name:'Seus amigos'},
+      {recipient_slug:list[0].slug,sender_name:'Anônimo'},
+    ],
+  });
+  assert.equal(created.status,201);
+  assert.equal(created.data.items.length,3);
+  assert.equal(created.data.amount_cents,3000);
+  assert.match(created.data.pix_code,/540530\.00/);
+  assert.equal(new Set(created.data.items.map(i=>i.id)).size,3);
+  const parent = await call(env,'/api/checkout','GET',undefined,{token:created.data.token});
+  assert.equal(parent.status,200);
+  assert.equal(parent.data.amount_cents,3000);
+  assert.equal(parent.data.items.length,3);
+  assert.equal(parent.data.items[0].recipient_slug,list[0].slug);
+  assert.equal(parent.data.items[2].recipient_slug,list[0].slug);
+
+  for(const item of parent.data.items){
+    const before = await call(env,'/api/order','GET',undefined,{token:item.token});
+    assert.equal(before.data.status,'pending');
+    assert.equal(before.data.amount_cents,1000);
+    assert.equal(before.data.checkout_id,created.data.id);
+  }
+  assert.equal((await call(env,'/api/order','GET',undefined,{token:created.data.token})).status,404);
+
+  const adminOrders=await call(env,'/api/admin/bootstrap','GET',undefined,admin);
+  assert.equal(adminOrders.status,200);
+  for(const secret of ['Mãe','Seus amigos','Anônimo',created.data.token]){
+    assert.ok(!JSON.stringify(adminOrders.data.orders).includes(secret));
+  }
+  const pending=await call(env,'/api/admin/checkouts','GET',undefined,admin);
+  assert.equal(pending.data.checkouts.length,1);
+  assert.equal(pending.data.checkouts[0].item_count,3);
+  assert.equal(pending.data.checkouts[0].total_cents,3000);
+
+  const claimed=await call(env,'/api/checkout/claim','POST',{}, {token:created.data.token});
+  assert.equal(claimed.status,200);
+  const confirmed=await call(env,'/api/admin/checkouts/'+created.data.id+'/status','PATCH',{
+    status:'paid',bank_reference:'E2EGROUPPAYMENT98765',bank_checked:true,amount_checked:true,
+  },admin);
+  assert.equal(confirmed.status,200);
+  assert.equal(confirmed.data.letters,3);
+  assert.equal((await call(env,'/api/admin/checkouts/'+created.data.id+'/status','PATCH',{
+    status:'paid',bank_reference:'E2EGROUPPAYMENT98765',bank_checked:true,amount_checked:true
+  },admin)).status,409);
+
+  for(const item of parent.data.items){
+    const order=await call(env,'/api/order','GET',undefined,{token:item.token});
+    assert.equal(order.data.status,'paid');
+    const saved=await call(env,'/api/order/message','PUT',{
+      rich_html:'<p>Cartinha para '+item.recipient_name+'</p>',
+      composition:{theme:'marian',stickers:[]},
+    },{token:item.token});
+    assert.equal(saved.status,200);
+    assert.equal((await call(env,'/api/order/submit','POST',{}, {token:item.token})).status,200);
+  }
+  const parentAfter=await call(env,'/api/checkout','GET',undefined,{token:created.data.token});
+  assert.ok(parentAfter.data.items.every(i=>i.status==='paid'));
+});
+
+test('carrinho: valida itens e recusa associação manual de pagamento individual', async () => {
+  const env=fixture(), {admin,list}=await setup(env);
+  assert.equal((await call(env,'/api/checkouts','POST',{items:[]})).status,400);
+  assert.equal((await call(env,'/api/checkouts','POST',{items:[{recipient_slug:'nao-existe'}]})).status,400);
+  const created=await call(env,'/api/checkouts','POST',{
+    items:[{recipient_slug:list[0].slug,sender_name:'Pessoa'}],
+  });
+  const item=created.data.items[0];
+  assert.equal((await call(env,'/api/admin/orders/'+item.id+'/status','PATCH',{
+    status:'paid',bank_reference:'E2EUNICO777777',bank_checked:true,amount_checked:true,
+  },admin)).status,409);
+  assert.equal((await call(env,'/api/admin/checkouts/'+created.data.id+'/status','PATCH',{
+    status:'paid',bank_reference:'E2EUNICO777777',bank_checked:false,amount_checked:true,
+  },admin)).status,400);
+});
+
+
+test('PNG originais: coordenação publica, público só vê IDs instalados',async()=>{
   const env=fixture(),{admin}=await setup(env);
-  const bytes=new Uint8Array([82,73,70,70,16,0,0,0,87,69,66,80,86,80,56,32,0,0,0,0]);
-  const endpoint='/api/admin/stickers/ejc-parabens.webp';
-  const unauthorized=await worker.fetch(new Request('https://ejc.test'+endpoint,{
-    method:'PUT',headers:{Origin:'https://ejc.test','Content-Type':'image/webp'},body:bytes
+  const before=await call(env,'/api/stickers');
+  assert.equal(before.status,200);
+  assert.deepEqual(before.data.stickers,[]);
+  const png=new Uint8Array(128);
+  png.set([137,80,78,71,13,10,26,10]);
+  const uploaded=await worker.fetch(new Request('https://ejc.test/api/admin/stickers/nossa-senhora.png',{
+    method:'POST',headers:{Origin:'https://ejc.test',Cookie:admin.cookie,'Content-Type':'image/png'},body:png,
   }),env);
-  assert.equal(unauthorized.status,401);
-  const upload=await worker.fetch(new Request('https://ejc.test'+endpoint,{
-    method:'PUT',headers:{Origin:'https://ejc.test','Content-Type':'image/webp',Cookie:admin.cookie},body:bytes
-  }),env);
-  assert.equal(upload.status,200);
-  const listing=await call(env,'/api/admin/stickers','GET',undefined,admin);
-  assert.equal(listing.status,200);
-  assert.equal(listing.data.stickers.length,20);
-  assert.equal(listing.data.stickers.find(x=>x.id==='ejc-parabens').installed,true);
-  const img=await worker.fetch(new Request('https://ejc.test/api/stickers/ejc-parabens.webp'),env);
-  assert.equal(img.status,200);
-  assert.equal(img.headers.get('Content-Type'),'image/webp');
-  assert.equal((await img.arrayBuffer()).byteLength,bytes.byteLength);
-  const missing=await worker.fetch(new Request('https://ejc.test/api/stickers/alegria.webp'),env);
-  assert.equal(missing.status,404);
-  const unknown=await worker.fetch(new Request('https://ejc.test/api/stickers/unlisted.webp'),env);
+  assert.equal(uploaded.status,200);
+  assert.deepEqual((await call(env,'/api/stickers')).data.stickers,['nossa-senhora']);
+  const publicImage=await worker.fetch(new Request('https://ejc.test/api/stickers/nossa-senhora.png'),env);
+  assert.equal(publicImage.status,200);
+  assert.equal(publicImage.headers.get('Content-Type'),'image/png');
+  assert.deepEqual([...new Uint8Array(await publicImage.arrayBuffer())].slice(0,8),
+    [137,80,78,71,13,10,26,10]);
+  const unknown=await call(env,'/api/admin/stickers/desconhecido.png','DELETE',undefined,admin);
   assert.equal(unknown.status,404);
-  const invalid=await worker.fetch(new Request('https://ejc.test'+endpoint,{
-    method:'PUT',headers:{Origin:'https://ejc.test','Content-Type':'image/webp',Cookie:admin.cookie},
-    body:new Uint8Array([10,11,12,13])
+});
+
+test('prévia social da home usa PNG 1200x630 gerado e publicado no R2',async()=>{
+  const env=fixture(),{admin}=await setup(env);
+  const png=new Uint8Array(128);
+  png.set([137,80,78,71,13,10,26,10]);
+  new DataView(png.buffer).setUint32(16,1200);
+  new DataView(png.buffer).setUint32(20,630);
+  const uploaded=await worker.fetch(new Request('https://ejc.test/api/admin/og/default',{
+    method:'POST',headers:{Origin:'https://ejc.test',Cookie:admin.cookie,'Content-Type':'image/png'},body:png
   }),env);
-  assert.equal(invalid.status,415);
+  assert.equal(uploaded.status,200);
+  env.ASSETS.fetch=async()=>new Response('<!doctype html><html><head><title>XX EJC</title></head><body></body></html>',{
+    headers:{'Content-Type':'text/html'},
+  });
+  const page=await worker.fetch(new Request('https://ejc.test/'),env);
+  const html=await page.text();
+  assert.match(html,/property="og:image:width" content="1200"/);
+  assert.match(html,/property="og:image:height" content="630"/);
+  const image=await worker.fetch(new Request('https://ejc.test/og-ejc-default.png'),env);
+  assert.equal(image.status,200);
+  assert.match(image.headers.get('Content-Type'),/image\/png/);
+  assert.equal((await image.arrayBuffer()).byteLength,128);
 });

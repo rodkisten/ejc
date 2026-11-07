@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createOgImage, OG_WIDTH, OG_HEIGHT, OG_SAFE } from '../client/lib/og.js';
+import { createOgImage, createDefaultOgImage, OG_WIDTH, OG_HEIGHT, OG_SAFE } from '../client/lib/og.js';
 
 test('fallback PNG is real, correctly sized, and usable without any admin upload', () => {
   const png = fs.readFileSync(new URL('../public/og-ejc-default.png', import.meta.url));
@@ -22,7 +22,8 @@ function browserCanvas() {
     },
     createLinearGradient() { return { addColorStop() {} }; },
     fillRect() {}, beginPath() {}, roundRect() {}, fill() {}, stroke() {},
-    moveTo() {}, lineTo() {}, save() {}, restore() {}, clip() {},
+    moveTo() {}, lineTo() {}, closePath() {}, translate() {}, rotate() {},
+    save() {}, restore() {}, clip() {},
     drawImage(image, x, y, width, height) { photos.push({ x, y, width, height }); },
   };
   const canvas = {
@@ -97,4 +98,27 @@ test('failed portrait load rejects instead of publishing an empty photo preview'
     globalThis.Image = originalImage;
     globalThis.window = originalWindow;
   }
+});
+
+
+test('OG da home é PNG real com título e chamadas dentro do corte seguro',async()=>{
+  const original=globalThis.document;
+  const mock=browserCanvas();
+  globalThis.document={fonts:{ready:Promise.resolve()},createElement:()=>mock.canvas};
+  try{
+    const rendered=await createDefaultOgImage();
+    assert.equal(rendered.type,'image/png');
+    assert.equal(mock.canvas.width,1200);
+    assert.equal(mock.canvas.height,630);
+    const center=mock.text.filter(item=>
+      item.value.includes('XX EJC  ·  SIMONÉSIA') ||
+      item.value.includes('CARTINHAS') ||
+      item.value.includes('DE AMOR') ||
+      item.value.includes('Crie. Decore.') ||
+      item.value.includes('Cartas com fotos') ||
+      item.value.includes('Uma surpresa'.toUpperCase())
+    ).filter(item=>item.x===600);
+    assert.ok(center.length>=4);
+    assert.ok(center.every(item=>item.y>=OG_SAFE.top&&item.y<=OG_SAFE.bottom));
+  } finally {globalThis.document=original;}
 });

@@ -1,18 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { STICKERS_BY_ID } from '../../../shared/letter.js';
 
-// Each sticker is now an authored graphic asset, not an icon + HTML text widget.
+// Same lossless PNG for picker, on-letter preview and exported image.
 export function Sticker({ presetId, small = false }) {
   const preset = STICKERS_BY_ID[presetId];
-  const [useFallback, setUseFallback] = useState(false);
-  useEffect(() => setUseFallback(false), [presetId]);
-  if (!preset) return null;
+  const [missing, setMissing] = useState(false);
+  useEffect(() => setMissing(false), [presetId]);
+  if (!preset || missing) return null;
   return (
-    <span className={`ejc-sticker-image${small ? ' ejc-sticker-image--small' : ''}`}>
-      <img
-        src={useFallback ? `/stickers/${encodeURIComponent(preset.id)}.svg` : `/api/stickers/${encodeURIComponent(preset.id)}.webp`}
-        onError={() => setUseFallback(true)}
-        alt={preset.text}
+    <span className={'ejc-sticker-image' + (small ? ' ejc-sticker-image--small' : '')}>
+      <img src={'/api/stickers/' + encodeURIComponent(preset.id) + '.png'}
+        onError={() => setMissing(true)} alt={preset.text}
         loading="lazy" draggable={false} />
     </span>
   );

@@ -149,19 +149,19 @@ async function drawStickers(ctx, stickers, limit, width, height, mode) {
     const bandTop = mode === 'story' ? height - 510 : height - 480;
     const y = bandTop + sticker.y / 100 * 180;
     const angle = (sticker.rotate || 0) * Math.PI / 180;
-    const artwork=await imageBitmap('/api/stickers/'+encodeURIComponent(preset.id)+'.webp') ||
-      await imageBitmap('/stickers/'+encodeURIComponent(preset.id)+'.svg');
+    const artwork=await imageBitmap('/api/stickers/'+encodeURIComponent(preset.id)+'.png');
+    if(!artwork)throw new Error('O adesivo PNG original "'+preset.text+'" ainda não foi instalado.');
     ctx.save();
     ctx.translate(x,y);
     ctx.rotate(angle);
     if(artwork){
-      const aw=artwork.width||artwork.naturalWidth||1;
-      const ah=artwork.height||artwork.naturalHeight||1;
+      const iw=artwork.width||artwork.naturalWidth||1;
+      const ih=artwork.height||artwork.naturalHeight||1;
       const maxW=Math.max(sw,sh)*1.5;
-      const maxH=Math.max(sw,sh)*1.1;
-      const fit=Math.min(maxW/aw,maxH/ah);
-      const imageW=aw*fit, imageH=ah*fit;
-      ctx.drawImage(artwork,-imageW/2,-imageH/2,imageW,imageH);
+      const maxH=Math.max(sw,sh)*1.25;
+      const fit=Math.min(maxW/iw,maxH/ih);
+      const renderW=iw*fit,renderH=ih*fit;
+      ctx.drawImage(artwork,-renderW/2,-renderH/2,renderW,renderH);
       artwork.close?.();
       ctx.restore();
       continue;

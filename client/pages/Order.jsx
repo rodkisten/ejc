@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { api, btime, money, privateOrder, uploadMedia, track } from '../lib/api';
 import { draftGet, draftRemove, draftKey } from '../lib/drafts';
+import { cartDraftKey } from '../lib/cart';
 import RichEditor from '../components/RichEditor';
 import Recorder from '../components/Recorder';
 import VoicePlayer from '../components/VoicePlayer';
@@ -66,8 +67,9 @@ export default function Order() {
   useEffect(() => {
     if (!order || !['paid', 'preparing', 'delivered'].includes(order.status)) return;
     const slug = localStorage.getItem(`ejc-order-slug-${token}`);
-    if (!slug) return;
-    draftGet(draftKey(slug))
+    const cartId = localStorage.getItem('ejc-cart-order-' + token);
+    if (!slug && !cartId) return;
+    draftGet(cartId ? cartDraftKey(cartId) : draftKey(slug))
       .then((d) => {
         if (!d) return;
         setHtml((h) => h || d.html || '');
@@ -223,7 +225,15 @@ export default function Order() {
           )}
         </section>
       )}
-      {!paid ? (
+      {!paid && order.checkout_id ? (
+        <section className="form-card">
+          <h2>Esta cartinha faz parte de um Pix com várias homenagens.</h2>
+          <p>O QR Code correto contém a soma de todas as cartinhas do carrinho. Por segurança, o pagamento não é gerado individualmente nesta página.</p>
+          {localStorage.getItem('ejc-checkout-' + order.checkout_id) &&
+            <Link className="btn" to={'/checkout/' + localStorage.getItem('ejc-checkout-' + order.checkout_id)}>Ver o Pix deste carrinho</Link>}
+          <button className="btn ghost" type="button" onClick={reload}>Atualizar pagamento</button>
+        </section>
+      ) : !paid ? (
       <div className="payment-layout">
         <section className="form-card pix-checkout">
           <div className="pix-headline">

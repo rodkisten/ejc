@@ -1,125 +1,156 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { unzipSync } from 'fflate';
-import { ImagePlus, UploadCloud, CheckCircle2, RefreshCw } from 'lucide-react';
-import { STICKERS, STICKERS_BY_ID } from '../../shared/letter.js';
-import { Sticker } from '../components/letter/Sticker';
+import { ImagePlus, RefreshCw, Trash2 } from 'lucide-react';
+import { STICKERS, STICKER_CATEGORIES } from '../../shared/letter.js';
+import { api } from '../lib/api.js';
 
-const MAX_ZIP = 12 * 1024 * 1024;
-const MAX_FILE = 600 * 1024;
-const isWebP = (bytes) =>
-  bytes.length > 12 &&
-  [82,73,70,70].every((byte, index) => bytes[index] === byte) &&
-  [87,69,66,80].every((byte, index) => bytes[index + 8] === byte);
 
+const ORIGINAL_PACK = Object.freeze({
+  '01_nossa_senhora.png':'nossa-senhora',
+  '02_jesus.png':'jesus-ama',
+  '03_cruz.png':'firme-na-fe',
+  '04_sao_carlo_acutis.png':'carlo-acutis',
+  '05_todos_juntos_azul_amarelo.png':'ejc-parabens',
+  '06_todos_juntos_colagem_rosa.png':'encontro-abencoado',
+});
 export default function StickerAdmin() {
-  const [installed, setInstalled] = useState({});
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState('');
-  const [error, setError] = useState('');
-  const [done, setDone] = useState('');
+  const [assets,setAssets]=useState({});
+  const [selected,setSelected]=useState(STICKERS[0]?.id||'');
+  const [file,setFile]=useState(null);
+  const [packageFiles,setPackageFiles]=useState([]);
+  const [packageProgress,setPackageProgress]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const [notice,setNotice]=useState('');
+  const [version,setVersion]=useState(0);
+  const reload=useCallback(async()=>{
+    try{
+      const result=await api('/api/admin/stickers');
+      setAssets(Object.fromEntries(result.stickers.map((s)=>[s.id,s.exists])));
+      setError('');
+      setVersion(Date.now());
+    }catch(cause){setError(cause.message);}
+  },[]);
+  useEffect(()=>{reload();},[reload]);
 
-  const refresh = useCallback(async () => {
-    const response = await fetch('/api/admin/stickers', { credentials: 'same-origin' });
-    if (!response.ok) throw new Error('Não foi possível consultar os adesivos.');
-    const info = await response.json();
-    setInstalled(Object.fromEntries(info.stickers.map((entry) => [entry.id, entry.installed])));
-  }, []);
-
-  useEffect(() => { refresh().catch((cause) => setError(cause.message)); }, [refresh]);
-
-  async function importPack(file) {
-    if (!file) return;
-    setBusy(true);
-    setProgress('');
-    setDone('');
-    setError('');
-    try {
-      if (file.size > MAX_ZIP) throw new Error('O ZIP deve ter no máximo 12 MB.');
-      const archive = unzipSync(new Uint8Array(await file.arrayBuffer()));
-      if (Object.keys(archive).length > 80) throw new Error('Este ZIP tem arquivos demais.');
-      const assets = [];
-      for (const [path, bytes] of Object.entries(archive)) {
-        const name = path.split('/').pop();
-        if (!name?.endsWith('.webp')) continue;
-        const id = name.slice(0, -5);
-        if (!STICKERS_BY_ID[id]) continue;
-        if (bytes.length > MAX_FILE || !isWebP(bytes))
-          throw new Error('Imagem WebP inválida ou muito grande: ' + name);
-        assets.push({ id, bytes });
-      }
-      if (assets.length !== STICKERS.length ||
-          new Set(assets.map((item) => item.id)).size !== STICKERS.length) {
-        throw new Error('O ZIP precisa conter exatamente os 20 adesivos da coleção.');
-      }
-      for (const [index, asset] of assets.entries()) {
-        setProgress(`Publicando ${index + 1} de ${assets.length}: ${asset.id}`);
-        const response = await fetch('/api/admin/stickers/' + encodeURIComponent(asset.id) + '.webp', {
-          method: 'PUT', credentials: 'same-origin',
-          headers: { 'Content-Type': 'image/webp' },
-          body: asset.bytes,
-        });
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || 'Falha ao publicar ' + asset.id);
-        }
-      }
-      await refresh();
-      setDone('Os 20 adesivos foram instalados. Já aparecem nas cartinhas e nas imagens exportadas.');
-    } catch (cause) {
-      setError(cause.message || 'Não foi possível instalar o pacote.');
-    } finally {
-      setBusy(false);
-      setProgress('');
-    }
+  async function upload(event) {
+    event.preventDefault();
+    if(!file)return setError('Selecione o arquivo PNG original.');
+    if(file.type!=='image/png')return setError('Escolha uma imagem PNG, não um SVG ou WebP.');
+    setBusy(true);setError('');setNotice('');
+    try{
+      const response=await fetch('/api/admin/stickers/'+encodeURIComponent(selected)+'.png',{
+        method:'POST',headers:{'Content-Type':'image/png'},credentials:'same-origin',body:file
+      });
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.error||'Erro no envio do adesivo.');
+      setFile(null);
+      setNotice('Arte PNG original de "'+STICKERS.find(s=>s.id===selected)?.text+'" enviada.');
+      await reload();
+    }catch(cause){setError(cause.message);}
+    finally{setBusy(false);}
   }
 
-  const count = STICKERS.filter((item) => installed[item.id]).length;
-  return (
-    <div className="sticker-admin-page">
-      <div className="section-head">
-        <div>
-          <span className="eyebrow">XX EJC · PAPELARIA DIGITAL</span>
-          <h1>Adesivos da cartinha</h1>
-          <p>Artes ilustradas, recortadas e com fundo transparente para decorar com um toque.</p>
-        </div>
+  async function uploadPackage(event){
+    event.preventDefault();
+    if(!packageFiles.length)return setError('Escolha um ZIP ou as imagens PNG originais.');
+    setBusy(true);setError('');setNotice('');setPackageProgress('Lendo artes originais...');
+    try{
+      const toImport=[];
+      for(const picked of packageFiles){
+        if(/\.zip$/i.test(picked.name)){
+          const archive=unzipSync(new Uint8Array(await picked.arrayBuffer()));
+          for(const [name,bytes] of Object.entries(archive)){
+            const base=name.split('/').pop();
+            if(ORIGINAL_PACK[base])toImport.push({id:ORIGINAL_PACK[base],name:base,blob:new Blob([bytes],{type:'image/png'})});
+          }
+        }else if(/\.png$/i.test(picked.name)){
+          const base=picked.name;
+          if(ORIGINAL_PACK[base])toImport.push({id:ORIGINAL_PACK[base],name:base,blob:picked});
+        }
+      }
+      const unique=[...new Map(toImport.map(item=>[item.id,item])).values()];
+      if(!unique.length)throw new Error('O arquivo não contém os seis PNGs originais reconhecidos. Use o pacote de artes XX EJC.');
+      for(let index=0;index<unique.length;index++){
+        const item=unique[index];
+        setPackageProgress('Instalando '+(index+1)+' de '+unique.length+' · '+item.name);
+        const response=await fetch('/api/admin/stickers/'+encodeURIComponent(item.id)+'.png',{
+          method:'POST',headers:{'Content-Type':'image/png'},credentials:'same-origin',body:item.blob
+        });
+        const result=await response.json().catch(()=>({}));
+        if(!response.ok)throw new Error(item.name+': '+(result.error||'Falha no envio.'));
+      }
+      setPackageFiles([]);
+      setPackageProgress('');
+      await reload();
+      setNotice(unique.length+' artes PNG originais instaladas no editor.');
+    }catch(cause){setError(cause.message);}
+    finally{setBusy(false);setPackageProgress('');}
+  }
+  async function remove(id){
+    if(!window.confirm('Remover a arte PNG de "'+STICKERS.find(s=>s.id===id)?.text+'"?'))return;
+    setBusy(true);setError('');
+    try{
+      await api('/api/admin/stickers/'+id+'.png',{method:'DELETE'});
+      await reload();
+      setNotice('Adesivo removido.');
+    }catch(cause){setError(cause.message);}
+    finally{setBusy(false);}
+  }
+  return <div className="sticker-admin">
+    <div className="section-head"><div><span className="eyebrow">DIREÇÃO DE ARTE / CARTINHAS</span>
+      <h1>Adesivos PNG originais</h1>
+      <p>Use aqui as imagens PNG que criamos para o XX EJC. O editor, a prévia e a exportação usarão exatamente a mesma arte. Não há conversão automática em sticker genérico.</p>
+    </div></div>
+    <section className="form-card">
+      <h2>Importar as artes originais de uma vez</h2>
+      <p className="muted">Selecione o ZIP XX_EJC_Artes_Originais_PNG.zip ou os seis PNGs individuais. As artes serão preservadas, sem conversão, e usadas no editor e no download da carta.</p>
+      <form className="sticker-upload-form" onSubmit={uploadPackage}>
+        <label htmlFor="ejc-original-package">Pacote ZIP ou arquivos PNG</label>
+        <input id="ejc-original-package" type="file" accept=".zip,application/zip,image/png,.png"
+          multiple onChange={event=>setPackageFiles([...event.target.files])}/>
+        <button type="submit" className="btn" disabled={busy||!packageFiles.length}>
+          <ImagePlus size={18}/> {busy?'Instalando...':'Importar artes PNG originais'}
+        </button>
+      </form>
+      {packageProgress&&<p className="notice" role="status">{packageProgress}</p>}
+    </section>
+    <section className="form-card">
+      <h2>Substituir um adesivo</h2>
+      <form onSubmit={upload} className="sticker-upload-form">
+        <label htmlFor="sticker-id">Adesivo</label>
+        <select id="sticker-id" value={selected} onChange={e=>setSelected(e.target.value)}>
+          {STICKER_CATEGORIES.map(group=><optgroup label={group.label} key={group.id}>
+            {STICKERS.filter(s=>s.category===group.id).map(s=><option key={s.id} value={s.id}>
+              {s.text}</option>)}
+          </optgroup>)}
+        </select>
+        <label htmlFor="sticker-file">Arquivo original .png (até 16 MB)</label>
+        <input id="sticker-file" type="file" accept="image/png,.png"
+          onChange={e=>setFile(e.target.files?.[0]||null)}/>
+        <button className="btn" type="submit" disabled={busy||!file}>
+          <ImagePlus size={17}/> {busy?'Enviando arte...':'Salvar PNG original'}
+        </button>
+      </form>
+    </section>
+    {error&&<p className="notice error" role="alert">{error}</p>}
+    {notice&&<p className="notice" role="status">{notice}</p>}
+    <section className="form-card">
+      <div className="row between"><div><h2>Biblioteca de adesivos</h2>
+        <p className="muted small">{Object.values(assets).filter(Boolean).length} / {STICKERS.length} PNGs instalados</p></div>
+        <button type="button" className="btn ghost" onClick={reload}><RefreshCw size={16}/> Atualizar</button>
       </div>
-      <section className="form-card" style={{ display:'grid', gap:14 }}>
-        <h2>Instalar coleção de imagens</h2>
-        <p className="muted">
-          Selecione o ZIP com os 20 arquivos WebP. O site instala tudo no R2,
-          sem publicar textos ou fotos privadas das cartinhas.
-        </p>
-        <div className="row between">
-          <strong>{count} de {STICKERS.length} adesivos instalados</strong>
-          <button type="button" className="btn ghost" disabled={busy}
-            onClick={() => refresh().catch((cause) => setError(cause.message))}>
-            <RefreshCw size={16} /> Atualizar
-          </button>
-        </div>
-        <label className="upload-label" style={{ display:'flex', gap:9, alignItems:'center' }}>
-          <UploadCloud size={19} /> {busy ? 'Instalando...' : 'Selecionar pacote ZIP'}
-          <input type="file" accept=".zip,application/zip" disabled={busy}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = '';
-              importPack(file);
-            }} />
-        </label>
-        {progress && <p className="notice" role="status">{progress}</p>}
-        {error && <p className="notice error" role="alert">{error}</p>}
-        {done && <p className="notice success" role="status"><CheckCircle2 size={18} /> {done}</p>}
-      </section>
-      <section className="form-card">
-        <h2><ImagePlus size={19} /> Prévia da coleção</h2>
-        <div className="sticker-picker-grid" style={{ maxHeight:'none', overflow:'visible' }}>
-          {STICKERS.map((sticker) => (
-            <div key={sticker.id} className="ejc-sticker-preview" style={{ cursor:'default' }}>
-              <Sticker presetId={sticker.id} />
-              <small>{installed[sticker.id] ? 'Instalado' : 'Imagem padrão'}</small>
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
+      <div className="sticker-admin-grid">
+        {STICKERS.map(s=><div className="sticker-admin-card" key={s.id}>
+          <div className="sticker-admin-image">
+            {assets[s.id]?<img src={'/api/stickers/'+s.id+'.png?v='+version} alt={s.text}/>:
+              <span className="muted small">PNG pendente</span>}
+          </div>
+          <strong>{s.text}</strong>
+          {assets[s.id]&&<button type="button" className="text-button" disabled={busy} onClick={()=>remove(s.id)}>
+            <Trash2 size={15}/> Remover arte</button>}
+        </div>)}
+      </div>
+    </section>
+  </div>;
 }

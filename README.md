@@ -2,9 +2,50 @@
 
 **Feito com amor por Rod Costa** · EJC Simonésia · novembro de 2026
 
-Aplicação de homenagens digitais: **React 19 + React Router 7 + Vite 7** no frontend; **Cloudflare Worker com API HTTP nativa**, banco **D1** e mídia privada **R2**. O objetivo é vender **uma cartinha, nunca produtos**, com um único encontrista por pedido. Não depende de ações GitHub para publicar.
+Aplicação de homenagens digitais: **React 19 + React Router 7 + Vite 7** no frontend; **Cloudflare Worker com API HTTP nativa**, banco **D1** e mídia privada **R2**. O objetivo é vender **cartinhas, nunca produtos**. O visitante monta um carrinho de uma ou mais homenagens com remetentes individuais e paga **um único Pix** pelo total. Não depende de ações GitHub para publicar.
 
 > **Estado:** alterações de privacidade implementadas. Execute os testes e o build antes de publicar; a nova versão ainda não foi validada no navegador em produção. Não foi possível executar o build completo Vite neste ambiente offline (dependências npm não estão instaladas). Publicar e validar no Safari real e fazer um Pix de teste **antes** de distribuir os QR Codes.
+
+
+## Novidade: home de colagens, cartinhas múltiplas e artes PNG (07/11/2026)
+
+A versão de carrinho foi implementada na branch `feat/cartinhas-carrinho-colagem`. **Ainda não é um deploy em produção.**
+
+#
+### Avisos de leitura e relay
+
+A conexão já existente com **Resend** permanece: para receber aviso de primeira abertura da cartinha, o remetente confirma o próprio e-mail, e a notificação é gerada apenas após a abertura individual no mural. Isso não comprova leitura integral. Configure `RESEND_API_KEY` e `RESEND_FROM` **somente como segredos no Worker**. O endereço não aparece no painel.
+
+O relay da coordenação recebe eventos operacionais de pedido e Pix, nunca o texto ou a mídia das cartinhas. Use `RELAY_URL=https://xtelegram-cf.migos.club/send`, `RELAY_TOKEN` em secrets e `RELAY_CHAT_ID` conforme a configuração do bot. Rotacione qualquer credencial que tenha sido exposta anteriormente e nunca inclua tokens no código ou nos logs.
+
+## Jornada do comprador
+
+1. A home apresenta um mural de retratos autorizados, cada um clicável, e mantém a **lista completa com busca por nome**. Clicar em qualquer encontrista abre `/enviar/:slug`.
+2. Em `/enviar/:slug`, a pessoa escolhe o remetente **daquela cartinha**, escreve a mensagem e adiciona áudios, fotos e adesivos PNG instalados. O rascunho, inclusive as mídias, é salvo em IndexedDB do navegador.
+3. `/carrinho` permite **editar**, **remover**, **duplicar para outro encontrista** e **criar cartas novas**. A assinatura é independente. Uma mesma pessoa pode receber mais de uma cartinha.
+4. `POST /api/checkouts` recebe de 1 a 20 itens e valida o valor unitário **exclusivamente no servidor**. A API cria um `checkout` e múltiplos `orders` privativos, em transação D1. O único BR Code Pix inclui a **soma correta** com um `txid` da compra.
+5. Em `/checkout/:token`, o comprador vê o Pix consolidado, informa o pagamento e acompanha a confirmação. A coordenação aprova **uma transferência**, em `/admin`, verificando entrada no extrato, identificador e valor total. Nenhuma carta é aprovada individualmente antes disso.
+6. Depois do Pix, `/pedido/:token` permite enviar **cada** carta ao mural com suas fotos e áudios. O navegador recupera os rascunhos correspondentes. O mural continua privado e as cartas são liberadas no horário do encontro.
+7. O encontrista abre o envelope, pode baixar a carta PNG, o ZIP com mídias e usar **Telegram / Compartilhar** na folha de compartilhamento nativa do iPhone. Não existe postagem automática por bot no Telegram nem exposição do token do mural.
+
+### Artes PNG originais
+
+Foram recuperados **seis arquivos PNG originais já produzidos para o EJC**. Eles não foram substituídos por SVG. O pacote `XX_EJC_Artes_Originais_PNG.zip` deve ser importado em **Administração → Stickers PNG → Importar artes originais**. O formulário aceita esse ZIP ou arquivos individuais, e relaciona os seis nomes de arquivo aos adesivos predefinidos. A biblioteca permite acrescentar outras artes PNG. O seletor público mostra somente PNGs realmente instalados, e a exportação usa **exatamente a mesma URL /api/stickers/:id.png** que o editor.
+
+A plataforma não publica os arquivos em R2 automaticamente a partir de conversas do ChatGPT. Eles precisam ser importados pelo formulário administrativo após deploy. Não divulgue o editor com adesivos antes de instalar e conferir as seis artes.
+
+### Imagens de compartilhamento
+
+As rotas `/enviar/:slug` e `/mural/:slug` recebem metatags OG injetadas no HTML pelo Worker, com imagem PNG de **1200 × 630**, nome e foto autorizada dentro da área central visível em miniaturas quadradas. Em **Administração → Encontristas**, clique em **Publicar nova OG da home** e **Gerar/atualizar prévias** para publicar os PNGs no R2 depois do deploy. A home também possui uma arte moderna autoral, com fallback antigo se não for gerada ainda.
+
+### Alterações de banco e operação
+
+- Migration **`0009_checkout_cart.sql`** cria `checkouts` e adiciona `orders.checkout_id` e `checkout_item_index`, preservando pedidos anteriores.
+- O painel administrativo mostra Pix agrupados e identifica a situação operacional de cada destinatário, sem expor texto, áudio, fotos, composição ou nome do remetente.
+- Os valores não podem ser alterados no browser depois da criação do checkout, nem é possível confirmar individualmente um pedido vinculado a Pix agrupado.
+- Os rascunhos pré-pagamento continuam locais. Não apague os dados do Safari nem troque de aparelho antes de concluir os envios.
+- Antes de publicar: `npm ci && npm run check && npm run build && npm run db:remote`, faça backup do D1, teste Pix real em valor pequeno, revisite a página após pagar, exporte fotos/áudios no Safari e confira OG no WhatsApp.
+
 
 ## Jornada
 
@@ -21,14 +62,17 @@ Aplicação de homenagens digitais: **React 19 + React Router 7 + Vite 7** no fr
 
 | URL | Página | Acesso |
 | --- | --- | --- |
-| `/` | Lista pesquisável de encontristas | Público |
-| `/enviar/:slug` | Editor, gravação, fotos e checkout inicial | Público |
+| `/` | Mural fotográfico em colagem, lista pesquisável e apresentação das funções | Público |
+| `/enviar/:slug` | Editor da cartinha nova ou duplicada | Público |
+| `/carrinho` | Carrinho de cartas com Pix consolidado | Rascunhos locais |
+| `/checkout/:token` | Pix e acesso às cartas após pagamento | Link privado |
 | `/pedido/:token` | Pix, status, rascunho e envio ao mural | Link privado |
 | `/mural/:slug` | Mural secreto | Somente acesso assinado derivado do código pessoal |
 | `/abrir` | Digitar código pessoal do mural | Destinatário |
 | `/admin` | Conferência Pix e situação operacional, sem conteúdo | Administrador |
 | `/admin/pedidos/:id` | Conferência do Pix e metadados do pedido | Administrador |
-| `/admin/encontristas` | Importação e fotos, sem acesso a cartas | Administrador |
+| `/admin/encontristas` | Importação, fotos e OG personalizado | Administrador |
+| `/admin/stickers` | Upload das artes PNG originais para R2 | Administrador |
 | `/admin/configuracoes` | Pix, valor, horários, GA4 | Administrador |
 | `/admin/qrcodes` | Cartazes QR coloridos e impressão A4 | Administrador |
 | `/admin/demo` | Criar/apagar exemplos fictícios | Administrador |
@@ -212,9 +256,9 @@ A política transparente está disponível em `/privacidade` e a coordenação s
 A partir da versão de composição, os participantes podem decorar suas cartinhas
 antes de pagar e ajustar o resultado após o Pix confirmado:
 
-- **20 adesivos católicos originais**, em quatro categorias (Parabéns, Coragem, Fé e Versículos).
+- **Catálogo de 20 opções de adesivos**, em quatro categorias (Parabéns, Coragem, Fé e Versículos). As artes utilizadas são PNGs originais instalados no R2; a seleção mostra apenas as disponíveis.
   Referências no padrão católico: **João 15,9**, **Filipenses 1,6** e **Filipenses 4,13**.
-  As artes são SVG e CSS produzidos no próprio projeto, sem imagens externas.
+  As artes são PNG originais cadastrados no R2 em Administração > Stickers PNG. Editor e exportação usam a mesma arte; sem PNG instalado, o adesivo fica pendente.
 - **4 papéis** (Lavanda, Rosa Chá, Azul Mariano e Pêssego) e **3 opções de fonte**
   (Clássica, Manuscrita e Moderna). Seleção com um toque, sem configurar estilos manualmente.
 - **Assinatura opcional**, com nome personalizado ou envio sem assinatura.
@@ -240,7 +284,7 @@ compatíveis: caso não haja composição, aplica o papel Lavanda e a fonte Clá
 
 ```text
 shared/letter.js                         Catálogo, temas, normalização e layout puro
-client/components/letter/Sticker.jsx      Artes vetoriais
+client/components/letter/Sticker.jsx      Adesivos PNG originais do R2
 client/components/letter/StickerPicker.jsx
 client/components/letter/StickerLayer.jsx
 client/components/letter/LetterControls.jsx
@@ -411,77 +455,20 @@ do Worker com a configuração atualizada. **Sem os secrets definidos, nenhuma
 notificação externa será enviada.** Teste um pedido de demonstração completo
 antes de habilitar a campanha.
 
-## Adesivos ilustrados (coleção em imagens WebP)
+## Carrinho, colagens, PNGs e prévias sociais
 
-A nova coleção de 20 adesivos usa **imagens WebP geradas em estilo colagem,
-papel recortado, tipografia pincel e cores vibrantes**, e não o desenho
-vetorial simplificado do editor antigo. A seleção mantém os IDs originais
-para não quebrar cartinhas já salvas.
+- Home com mural de retratos autorizados, galeria em colagem expansível, pesquisa integral e apresentação das funções.
+- Cartinhas com remetentes independentes, foto, áudio, texto, decoração e rascunho local em IndexedDB.
+- Duplicação de cartinhas para diferentes encontristas, carrinho editável e um único Pix gerado pelo servidor com preço unitário multiplicado pela quantidade.
+- Migração 0009_checkout_cart.sql: tabela de checkouts e vínculos com pedidos individuais. Cada carta tem acesso privado independente, sem acesso ao conteúdo pelo painel administrativo.
+- Conferência do Pix único no painel de coordenação, com valor total e referência bancária. Cartas agrupadas não possuem Pix próprio.
+- OG social personalizado em PNG 1200 x 630, com foto e nome em destaque central seguro. Após publicar, use Admin > Encontristas > Gerar/atualizar prévias para WhatsApp.
+- Upload das artes originais em Admin > Stickers PNG. O histórico do ChatGPT não é acessível automaticamente pelo Worker: os PNGs precisam ser cadastrados uma vez.
+- Cartinhas compartilháveis como arquivos PNG pelo menu nativo do iPhone, permitindo escolher Telegram e outros apps, sem compartilhar o código do mural privado.
+- Animações delicadas na home e ao abrir cartas, respeitando a preferência por movimento reduzido.
 
-1. Baixe o arquivo entregue com a atualização:
-   `XX-EJC-Stickers-20-WebP.zip`.
-2. Depois de publicar o Worker, abra **/admin/adesivos**.
-3. Selecione o ZIP no botão **Instalar coleção de imagens**.
-4. Aguarde a instalação de **20/20** arquivos no armazenamento R2.
-   A página mostra o progresso, o status e a prévia de todos eles.
+### Publicação
 
-O ZIP contém exatamente `public/stickers/<id>.webp`. Caso trabalhe pelo
-Codespaces, também pode descompactá-lo na raiz do repositório e publicar
-novamente, mas a instalação via admin é mais simples.
-
-Os arquivos são validados no servidor por identificador de preset,
-assinatura real WebP e limite de tamanho (600 KiB cada). O endpoint público
-`/api/stickers/<id>.webp` serve **somente artes pré-definidas**, nunca
-fotos ou outros anexos privados das cartinhas. Se uma imagem ainda não estiver
-instalada, o editor utiliza temporariamente o SVG de reserva.
-A exportação em Canvas tenta a imagem WebP original e preserva a proporção.
-
-## Aviso por e-mail e notificações do relay
-
-O serviço de e-mail escolhido é **Resend** (plano gratuito sujeito
-aos limites publicados pelo fornecedor, atualmente 3.000 e-mails por mês
-e 100 por dia). Para ativar o campo opcional no envio:
-
-- Verifique um domínio de e-mail com Resend, configure SPF/DKIM e crie uma chave de API.
-- Configure `RESEND_API_KEY` e `RESEND_FROM` como
-  **secrets** no Cloudflare Worker.
-- O remetente ativa o aviso, informa um endereço e recebe um e-mail para
-  confirmar a propriedade da caixa. Sem confirmação, não enviaremos aviso.
-- A notificação é enviada somente quando a cartinha é **aberta individualmente
-  dentro do mural**, depois da liberação, não quando a lista do mural carrega.
-  Isso confirma a abertura, **não comprova leitura integral**.
-
-As filas ficam em D1 com tentativas de reenvio e verificação de
-idempotência. O endereço do remetente é armazenado criptografado, não é
-exposto no painel da coordenação e pode ter o aviso desativado pelo
-remetente no próprio pedido.
-
-Para o relay existente, configure `RELAY_URL` para
-`https://xtelegram-cf.migos.club/send`; defina `RELAY_TOKEN` como
-secret e `RELAY_CHAT_ID` se precisar escolher o destino. **Nunca
-adicione o token no GitHub, no navegador ou no texto das notificações**.
-Um token compartilhado anteriormente fora de um gerenciador de secrets
-deve ser rotacionado antes do uso em produção.
-
-O relay recebe apenas metadados operacionais: pedido criado, Pix informado,
-Pix confirmado, cartinha enviada, cartinha liberada e primeira abertura.
-**Não recebe texto, foto, áudio, identidade do remetente ou endereço de e-mail**.
-Não existe etapa de moderação ou aprovação do conteúdo. O agendamento
-Cloudflare `*/5 * * * *` processa notificações pendentes, além das
-tentativas disparadas durante as requisições.
-
-### Verificações
-
-```bash
-npm ci
-npm run format
-npm run check
-npm run build
-bash scripts/deploy.sh
-```
-
-Depois do deploy, instale os WebPs na rota `/admin/adesivos`.
-Teste em um pedido real controlado: cadastro, opt-in de e-mail,
-confirmação, Pix, envio de cartinha, liberação e abertura da carta
-pelo encontrista. Cheque no e-mail e no Telegram se chegou apenas
-um aviso por evento.
+Execute npm ci, npm run check, npm run build e bash scripts/deploy.sh. O deploy aplica migrations remotas e publica o Worker junto ao frontend.
+Não considere commits na branch como publicação em ejc.migos.club. Antes de divulgar, teste um Pix real de valor pequeno, confira o valor total e o txid no banco, confirme o checkout, abra cada cartinha, envie anexos e verifique o compartilhamento no Safari.
+Rascunhos com fotos e áudios ficam no navegador que iniciou a compra; não limpe dados nem troque de aparelho antes de concluir.

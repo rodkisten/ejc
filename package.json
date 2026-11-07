@@ -11,7 +11,7 @@
     "deploy": "npm run build && wrangler deploy",
     "db:local": "wrangler d1 migrations apply ejc-mini-mercado --local",
     "db:remote": "wrangler d1 migrations apply ejc-mini-mercado --remote",
-    "check": "node --check src/worker.js && node --check src/pix.js && node --test tests/*.test.js",
+    "check": "node --check src/worker.js && node --check src/notify.js && node --check src/pix.js && node --test tests/*.test.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "deploy:doctor": "node --test tests/deploy.test.js",

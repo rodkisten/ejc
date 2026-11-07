@@ -311,3 +311,102 @@ envio (`/enviar/*`) e os arquivos de imagens OG
 enquanto as APIs privadas, o admin e o conteúdo do mural continuam protegidos.
 O WhatsApp mantém cache próprio; por isso, novas URLs versionadas são
 preferíveis a reenviar um link antigo esperando atualização instantânea.
+
+## Adesivos de colagem do XX EJC
+
+O catálogo de vinte adesivos foi convertido em **arquivos de imagem**.
+O repositório inclui `public/stickers/<id>.svg` com recortes de papel,
+tipografia intensa, coroas, cruzes e cores amarelo, magenta, roxo e azul.
+O aplicativo usa essas artes diretamente no picker, na carta e na exportação
+para feed e stories, no lugar do componente de ícones minimalistas.
+
+Um pacote adicional com **20 imagens WebP de colagem geradas a partir das
+referências visuais** pode ser copiado para `public/stickers/` com os mesmos
+nomes; quando presente, tem prioridade sobre os SVGs de reserva. A distribuição
+dessas imagens depende de incluí-las como arquivos binários no repositório
+antes do build. Não publicar um SVG se o arquivo correspondente faltar.
+
+## Relay e aviso por e-mail (sem moderação)
+
+A equipe **não aprova, rejeita, lê ou ouve** as homenagens. Os eventos de relay
+são operacionais, sem conteúdo, nome do remetente, mídia privada, e-mail ou
+código do mural:
+
+- `order_created`: pedido de cartinha criado
+- `payment_claimed`: comprador informou que fez Pix
+- `payment_confirmed`: coordenação confirmou o Pix no extrato
+- `letter_sent`: cartinha enviada ao mural privado
+- `letter_released`: chegou o horário de liberação
+- `letter_read`: destinatário abriu uma cartinha específica pela primeira vez
+
+A fila `notification_outbox` utiliza D1, chaves únicas por pedido/evento,
+entrega assíncrona imediatamente após a requisição e reconciliação a cada
+cinco minutos por Cron Trigger. Falhas transientes são repetidas com backoff.
+
+### Configurar relay
+
+No Cloudflare Worker, definir como **secrets** (nunca comitar nem colar valores
+reais no código):
+
+```sh
+npx wrangler secret put RELAY_URL
+npx wrangler secret put RELAY_TOKEN
+npx wrangler secret put RELAY_CHAT_ID
+```
+
+`RELAY_URL` deve ser a URL **completa do endpoint HTTPS** que recebe POST JSON.
+O Worker envia um Bearer token no header `Authorization` e um payload
+`{text,chat_id,event,idempotency_key}`. Como o endpoint e o esquema específicos
+do relay externo ainda não foram fornecidos, é preciso confirmar que essa
+API aceita o contrato antes de ativar em produção.
+
+**Nunca utilizar um token previamente compartilhado em conversa.** Rotacione-o
+no serviço do relay antes de configurar o secret.
+
+### E-mail transacional
+
+**Resend** é a implementação principal. O plano gratuito publicado oferece
+3.000 e-mails/mês com limite diário de 100. A alternativa Brevo oferece
+300 e-mails/dia no plano gratuito. Os avisos só aparecem na interface quando
+`RESEND_API_KEY` e `RESEND_FROM` estiverem configurados.
+
+```sh
+npx wrangler secret put RESEND_API_KEY
+npx wrangler secret put RESEND_FROM
+```
+
+Configure e valide o domínio `ejc.migos.club` no Resend, incluindo as entradas
+DNS de autenticação do remetente. Use um endereço como
+`Cartinhas XX EJC <avisos@ejc.migos.club>`.
+
+**Consentimento:** opcional na tela de envio e também disponível no link privado
+do pedido. O sistema envia um e-mail de confirmação com link de fragmento
+(`/confirmar-email#token=...`); a pessoa precisa confirmar o endereço.
+Somente quando **o encontrista toca para abrir o envelope de uma carta específica**
+a API registra `first_read_at` e agenda um único `email_read`.
+Visitar a página do mural ou apenas listar cartas **não** marca leitura.
+
+O e-mail é cifrado com AES-GCM usando uma chave derivada de `SESSION_SECRET`
+e persistido somente na tabela `order_read_receipts`. Não é retornado no
+painel administrativo. Evite alterar o `SESSION_SECRET` em produção sem plano
+de migração das chaves, pois isso tornaria os endereços já armazenados ilegíveis.
+
+O aviso de leitura não compartilha o conteúdo, fotos, áudios ou nome do
+remetente; registra apenas a primeira abertura pelo acesso privado.
+Não é possível verificar se o destinatário leu todas as palavras.
+
+### Aplicar em produção
+
+```sh
+npm ci
+npm run format
+npm run check
+npm run build
+bash scripts/deploy.sh
+```
+
+A migração `0008_read_receipts_notifications.sql` adiciona as tabelas e
+o campo `orders.first_read_at`. O Cron Trigger `*/5 * * * *` exige a publicação
+do Worker com a configuração atualizada. **Sem os secrets definidos, nenhuma
+notificação externa será enviada.** Teste um pedido de demonstração completo
+antes de habilitar a campanha.

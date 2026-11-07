@@ -2,7 +2,7 @@
 
 **Feito com amor por Rod Costa** · EJC Simonésia · novembro de 2026
 
-Aplicação de homenagens digitais: **React 19 + React Router 7 + Vite 7** no frontend; **Cloudflare Worker com API HTTP nativa**, banco **D1** e mídia privada **R2**. O objetivo é vender **uma cartinha, nunca produtos**, com um único encontrista por pedido. Não depende de ações GitHub para publicar.
+Aplicação de homenagens digitais: **React 19 + React Router 7 + Vite 7** no frontend; **Cloudflare Worker com API HTTP nativa**, banco **D1** e mídia privada **R2**. O objetivo é vender **cartinhas, nunca produtos**. O visitante monta um carrinho de uma ou mais homenagens com remetentes individuais e paga **um único Pix** pelo total. Não depende de ações GitHub para publicar.
 
 > **Estado:** alterações de privacidade implementadas. Execute os testes e o build antes de publicar; a nova versão ainda não foi validada no navegador em produção. Não foi possível executar o build completo Vite neste ambiente offline (dependências npm não estão instaladas). Publicar e validar no Safari real e fazer um Pix de teste **antes** de distribuir os QR Codes.
 
@@ -21,14 +21,17 @@ Aplicação de homenagens digitais: **React 19 + React Router 7 + Vite 7** no fr
 
 | URL | Página | Acesso |
 | --- | --- | --- |
-| `/` | Lista pesquisável de encontristas | Público |
-| `/enviar/:slug` | Editor, gravação, fotos e checkout inicial | Público |
+| `/` | Mural fotográfico em colagem, lista pesquisável e apresentação das funções | Público |
+| `/enviar/:slug` | Editor da cartinha nova ou duplicada | Público |
+| `/carrinho` | Carrinho de cartas com Pix consolidado | Rascunhos locais |
+| `/checkout/:token` | Pix e acesso às cartas após pagamento | Link privado |
 | `/pedido/:token` | Pix, status, rascunho e envio ao mural | Link privado |
 | `/mural/:slug` | Mural secreto | Somente acesso assinado derivado do código pessoal |
 | `/abrir` | Digitar código pessoal do mural | Destinatário |
 | `/admin` | Conferência Pix e situação operacional, sem conteúdo | Administrador |
 | `/admin/pedidos/:id` | Conferência do Pix e metadados do pedido | Administrador |
-| `/admin/encontristas` | Importação e fotos, sem acesso a cartas | Administrador |
+| `/admin/encontristas` | Importação, fotos e OG personalizado | Administrador |
+| `/admin/stickers` | Upload das artes PNG originais para R2 | Administrador |
 | `/admin/configuracoes` | Pix, valor, horários, GA4 | Administrador |
 | `/admin/qrcodes` | Cartazes QR coloridos e impressão A4 | Administrador |
 | `/admin/demo` | Criar/apagar exemplos fictícios | Administrador |
@@ -214,7 +217,7 @@ antes de pagar e ajustar o resultado após o Pix confirmado:
 
 - **20 adesivos católicos originais**, em quatro categorias (Parabéns, Coragem, Fé e Versículos).
   Referências no padrão católico: **João 15,9**, **Filipenses 1,6** e **Filipenses 4,13**.
-  As artes são SVG e CSS produzidos no próprio projeto, sem imagens externas.
+  As artes são PNG originais cadastrados no R2 em Administração > Stickers PNG. Editor e exportação usam a mesma arte; sem PNG instalado, o adesivo fica pendente.
 - **4 papéis** (Lavanda, Rosa Chá, Azul Mariano e Pêssego) e **3 opções de fonte**
   (Clássica, Manuscrita e Moderna). Seleção com um toque, sem configurar estilos manualmente.
 - **Assinatura opcional**, com nome personalizado ou envio sem assinatura.
@@ -240,7 +243,7 @@ compatíveis: caso não haja composição, aplica o papel Lavanda e a fonte Clá
 
 ```text
 shared/letter.js                         Catálogo, temas, normalização e layout puro
-client/components/letter/Sticker.jsx      Artes vetoriais
+client/components/letter/Sticker.jsx      Adesivos PNG originais do R2
 client/components/letter/StickerPicker.jsx
 client/components/letter/StickerLayer.jsx
 client/components/letter/LetterControls.jsx
@@ -410,3 +413,21 @@ o campo `orders.first_read_at`. O Cron Trigger `*/5 * * * *` exige a publicaçã
 do Worker com a configuração atualizada. **Sem os secrets definidos, nenhuma
 notificação externa será enviada.** Teste um pedido de demonstração completo
 antes de habilitar a campanha.
+
+## Carrinho, colagens, PNGs e prévias sociais
+
+- Home com mural de retratos autorizados, galeria em colagem expansível, pesquisa integral e apresentação das funções.
+- Cartinhas com remetentes independentes, foto, áudio, texto, decoração e rascunho local em IndexedDB.
+- Duplicação de cartinhas para diferentes encontristas, carrinho editável e um único Pix gerado pelo servidor com preço unitário multiplicado pela quantidade.
+- Migração 0009_checkout_cart.sql: tabela de checkouts e vínculos com pedidos individuais. Cada carta tem acesso privado independente, sem acesso ao conteúdo pelo painel administrativo.
+- Conferência do Pix único no painel de coordenação, com valor total e referência bancária. Cartas agrupadas não possuem Pix próprio.
+- OG social personalizado em PNG 1200 x 630, com foto e nome em destaque central seguro. Após publicar, use Admin > Encontristas > Gerar/atualizar prévias para WhatsApp.
+- Upload das artes originais em Admin > Stickers PNG. O histórico do ChatGPT não é acessível automaticamente pelo Worker: os PNGs precisam ser cadastrados uma vez.
+- Cartinhas compartilháveis como arquivos PNG pelo menu nativo do iPhone, permitindo escolher Telegram e outros apps, sem compartilhar o código do mural privado.
+- Animações delicadas na home e ao abrir cartas, respeitando a preferência por movimento reduzido.
+
+### Publicação
+
+Execute npm ci, npm run check, npm run build e bash scripts/deploy.sh. O deploy aplica migrations remotas e publica o Worker junto ao frontend.
+Não considere commits na branch como publicação em ejc.migos.club. Antes de divulgar, teste um Pix real de valor pequeno, confira o valor total e o txid no banco, confirme o checkout, abra cada cartinha, envie anexos e verifique o compartilhamento no Safari.
+Rascunhos com fotos e áudios ficam no navegador que iniciou a compra; não limpe dados nem troque de aparelho antes de concluir.

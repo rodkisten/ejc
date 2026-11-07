@@ -298,6 +298,39 @@ function serveBrandImage(blob) {
   return new Response(blob.body,{headers});
 }
 
+
+const MURAL_ALPHABET='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function newMuralCode() {
+  const bytes=crypto.getRandomValues(new Uint8Array(6));
+  return Array.from(bytes,b=>MURAL_ALPHABET[b&31]).join('');
+}
+async function nextUniqueMuralCode(env) {
+  for(let i=0;i<16;i++){
+    const code=newMuralCode();
+    if(!await env.DB.prepare('SELECT id FROM recipients WHERE mural_code=?').bind(code).first())return code;
+  }
+  bad('Não foi possível gerar um código exclusivo. Tente novamente.',503);
+}
+async function muralGrant(env,recipient) {
+  const claims={id:recipient.id,version:await digest(recipient.mural_code),exp:Math.floor(Date.now()/1000)+14*86400};
+  const tokenBody='m2.'+b64url(encode.encode(JSON.stringify(claims)));
+  const signature=b64url(new Uint8Array(await crypto.subtle.sign('HMAC',await hmacKey(env),encode.encode(tokenBody))));
+  return tokenBody+'.'+signature;
+}
+async function validMuralGrant(env,grant,recipient) {
+  if(!grant||!grant.startsWith('m2.')||!recipient.mural_code)return false;
+  const parts=grant.split('.');
+  if(parts.length!==3||parts[1].length>500||parts[2].length>200)return false;
+  try {
+    const data=parts[0]+'.'+parts[1];
+    const valid=await crypto.subtle.verify('HMAC',await hmacKey(env),unb64url(parts[2]),encode.encode(data));
+    if(!valid)return false;
+    const payload=JSON.parse(new TextDecoder().decode(unb64url(parts[1])));
+    return payload.id===recipient.id && payload.version===await digest(recipient.mural_code) &&
+      Number.isFinite(payload.exp) && payload.exp>=Math.floor(Date.now()/1000);
+  }catch{return false;}
+}
+
 async function publicRoute(req,env,path) {
   if(path==='/api/health' && req.method==='GET') {
     await env.DB.prepare('SELECT 1 AS ok').first();
@@ -335,12 +368,38 @@ async function publicRoute(req,env,path) {
     const cards=(await env.DB.prepare("SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.public_message=1 AND o.moderation='approved' ORDER BY o.approved_at DESC LIMIT 40").all()).results;
     return result({cards:await Promise.all(cards.map(o=>cardInfo(env,o)))});
   }
+
+  if(path==='/api/mural/redeem'&&req.method==='POST') {
+    const body=await jsonBody(req,300);
+    const code=typeof body.code==='string'?body.code.toUpperCase().replace(/[\\s-]/g,''):'';
+    if(!/^[A-HJ-NP-Z2-9]{6}$/.test(code))bad('Digite os seis caracteres do seu cartão.',400);
+    const fingerprint=await digest((req.headers.get('CF-Connecting-IP')||'local')+':mural:'+env.SESSION_SECRET);
+    const seconds=Math.floor(Date.now()/1000);
+    const attempts=await env.DB.prepare('SELECT attempts,window_start FROM mural_code_attempts WHERE fingerprint=?').bind(fingerprint).first();
+    if(attempts && attempts.window_start>seconds-900 && attempts.attempts>=6)
+      bad('Muitas tentativas. Aguarde 15 minutos.',429);
+    const person=await env.DB.prepare('SELECT id,slug,mural_code FROM recipients WHERE mural_code=? AND active=1').bind(code).first();
+    if(!person) {
+      const active=attempts&&attempts.window_start>seconds-900;
+      await env.DB.prepare('INSERT INTO mural_code_attempts(fingerprint,attempts,window_start) VALUES(?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET attempts=excluded.attempts,window_start=excluded.window_start')
+        .bind(fingerprint,active?attempts.attempts+1:1,active?attempts.window_start:seconds).run();
+      bad('Código não encontrado. Confira os caracteres e tente novamente.',404);
+    }
+    await env.DB.prepare('DELETE FROM mural_code_attempts WHERE fingerprint=?').bind(fingerprint).run();
+    return result({slug:person.slug,grant:await muralGrant(env,person)});
+  }
   const mural=path.match(/^\/api\/mural\/([a-z0-9-]+)$/);
   if (mural && req.method==='GET') {
-    const r=await env.DB.prepare('SELECT id,name,slug,mural_token_hash,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1').bind(mural[1]).first();
+    const r=await env.DB.prepare('SELECT id,name,slug,mural_token_hash,mural_code,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1').bind(mural[1]).first();
     if(!r)bad('Encontrista não encontrado.',404);
     const admin=await isAdmin(req,env);
-    if(!admin){const digestToken=await digest(bearer(req));if(!r.mural_token_hash || r.mural_token_hash!==digestToken)bad('Convite privado inválido.',403);}
+    if(!admin){
+      const access=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
+      const signed=await validMuralGrant(env,access,r);
+      const legacy=/^[A-Za-z0-9_-]{40,100}$/.test(access) &&
+        r.mural_token_hash===await digest(access);
+      if(!signed&&!legacy)bad('Convite ou código de acesso inválido.',403);
+    }
     const rows=(await env.DB.prepare("SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON o.recipient_id=r.id WHERE o.recipient_id=? AND o.moderation='approved' ORDER BY o.approved_at DESC").bind(r.id).all()).results;
     const cards=await Promise.all(rows.filter(o=>admin||moderated(o,config)).map(o=>cardInfo(env,o)));
     return result({recipient:{name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r)},cards,release_at:config.release_at,is_admin:admin,locked:!admin && Date.now()<brazilTimeEnd(config.release_at)});
@@ -436,7 +495,7 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/bootstrap'&&req.method==='GET'){
     const [config,recipients,orders]=await Promise.all([
       settings(env),
-      env.DB.prepare('SELECT id,name,slug,active,created_at,photo_key,photo_consent FROM recipients ORDER BY name COLLATE NOCASE').all(),
+      env.DB.prepare('SELECT id,name,slug,active,created_at,photo_key,photo_consent,mural_code FROM recipients ORDER BY name COLLATE NOCASE').all(),
       env.DB.prepare(`SELECT o.id,o.sender_name,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,o.moderation,o.moderation_note,o.public_message,o.release_override,o.demo,
         r.name AS recipient_name,r.slug AS recipient_slug,(SELECT COUNT(*) FROM media m WHERE m.order_id=o.id AND m.status='ready') AS files
         FROM orders o JOIN recipients r ON o.recipient_id=r.id ORDER BY o.created_at DESC LIMIT 500`).all()
@@ -444,6 +503,28 @@ async function adminRoute(req,env,path) {
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({config:{...config,logo_url:logo?`/api/branding/logo?v=${logo.uploaded?.getTime()||0}`:null},
       recipients:recipients.results.map(r=>({...r,photo_url:recipientPhotoUrl(r)})),orders:orders.results});
+  }
+
+  if(path==='/api/admin/mural-codes/generate'&&req.method==='POST'){
+    const input=await jsonBody(req,500);
+    const overwrite=input.regenerate===true;
+    const people=(await env.DB.prepare('SELECT id,mural_code FROM recipients WHERE active=1').all()).results;
+    let generated=0;
+    for(const person of people){
+      if(person.mural_code&&!overwrite)continue;
+      const code=await nextUniqueMuralCode(env);
+      await env.DB.prepare('UPDATE recipients SET mural_code=? WHERE id=?').bind(code,person.id).run();
+      generated++;
+    }
+    return result({ok:true,generated});
+  }
+  const replaceMuralCode=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/mural-code$/);
+  if(replaceMuralCode&&req.method==='POST'){
+    const person=await env.DB.prepare('SELECT id FROM recipients WHERE id=?').bind(replaceMuralCode[1]).first();
+    if(!person)bad('Encontrista não encontrado.',404);
+    const code=await nextUniqueMuralCode(env);
+    await env.DB.prepare('UPDATE recipients SET mural_code=? WHERE id=?').bind(code,person.id).run();
+    return result({ok:true,code});
   }
   if(path==='/api/admin/settings'&&req.method==='PUT'){
     const data=await jsonBody(req),keys=['pix_key','pix_name','pix_city','deadline','release_at','open','store_title','store_subtitle','message_price_cents','analytics_id'];

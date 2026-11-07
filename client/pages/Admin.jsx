@@ -6,6 +6,7 @@ import QrCode from '../components/QrCode';
 import Labels from './Labels';
 import StickerAdmin from './StickerAdmin';
 import { publishOgImage, publishDefaultOgImage } from '../lib/og';
+import SquarePhotoEditor from '../components/SquarePhotoEditor';
 function useAdmin(){const [info,setInfo]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const reload=useCallback(async()=>{try{setInfo(await api('/api/admin/bootstrap'));setError('');}catch(e){setError(e.message);setInfo(null);}finally{setLoading(false);}},[]);
   useEffect(()=>{reload();},[reload]);return {info,loading,error,reload};}
@@ -239,22 +240,50 @@ function OrderDetail({ reload }) {
     </div>
   );
 }
-function People({info,reload}){const [names,setNames]=useState(''),[notice,setNotice]=useState(''),[error,setError]=useState(''),[uploading,setUploading]=useState(''),[ogProgress,setOgProgress]=useState('');
+function People({info,reload}){const [names,setNames]=useState(''),[notice,setNotice]=useState(''),[error,setError]=useState(''),[uploading,setUploading]=useState(''),[ogProgress,setOgProgress]=useState(''),[photoSelection,setPhotoSelection]=useState(null);
   async function photoUpload(r,file) {
-    if(!file)return;
-    if(!window.confirm(`Confirmo que tenho autorização para divulgar a foto de ${r.name}, inclusive dos responsáveis se menor de idade.`))return;
-    setUploading(r.id);setError('');
+    if (!file) return false;
+    if (!window.confirm(`Confirmo que tenho autorização para divulgar a foto de ${r.name}, inclusive dos responsáveis se menor de idade.`)) return false;
+    setUploading(r.id);
+    setError('');
     try {
+      // The editor sends only a JPEG already cropped to 768 x 768 pixels.
       const response=await fetch(`/api/admin/recipients/${r.id}/photo`,{
-        method:'POST',body:file,credentials:'same-origin',
+        method:'POST',
+        body:file,
+        credentials:'same-origin',
         headers:{'Content-Type':file.type,'X-Photo-Consent':'confirmed'}
       });
       const data=await response.json().catch(()=>({}));
-      if(!response.ok)throw Error(data.error||'Falha ao enviar foto.');
-      await publishOgImage({...r,photo_url:data.photo_url});
-      setNotice(`Foto de ${r.name} atualizada, com imagem de compartilhamento pronta.`);
+      if(!response.ok)throw Error(data.error||'Falha ao salvar a foto quadrada.');
       await reload();
-    }catch(cause){setError(cause.message);}finally{setUploading('');}
+      try {
+        await publishOgImage({...r,photo_url:data.photo_url});
+        setNotice(`Foto quadrada de ${r.name} salva e imagem de compartilhamento atualizada.`);
+      } catch (ogCause) {
+        setNotice(`Foto quadrada de ${r.name} salva. A imagem do WhatsApp não foi atualizada: ${ogCause.message}`);
+      }
+      await reload();
+      return true;
+    } catch(cause) {
+      setError(cause.message);
+      return false;
+    } finally {
+      setUploading('');
+    }
+  }
+  async function editExistingPhoto(r) {
+    if (!r.photo_url) return;
+    setError('');
+    try {
+      const response=await fetch(r.photo_url,{credentials:'same-origin'});
+      if(!response.ok)throw Error('Não foi possível carregar a foto anterior.');
+      const blob=await response.blob();
+      setPhotoSelection({
+        person:r,
+        file:new File([blob], 'foto-existente', {type:blob.type || 'image/jpeg'}),
+      });
+    }catch(cause){setError(cause.message);}
   }
   async function photoRemove(r) {
     if(!window.confirm(`Remover a foto de ${r.name}?`))return;
@@ -328,10 +357,12 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
         <div><strong>{r.name}</strong><small>/enviar/{r.slug}</small></div>
       </div>
       <div className="inline-actions">
-        <label className="btn ghost person-photo-upload"><ImagePlus size={15}/>{uploading===r.id?'Enviando...':'Foto'}
+        <label className="btn ghost person-photo-upload"><ImagePlus size={15}/>{uploading===r.id?'Enviando...':r.photo_url?'Trocar foto':'Adicionar foto'}
           <input type="file" accept="image/jpeg,image/png,image/webp" disabled={!!uploading}
-            onChange={event=>{photoUpload(r,event.target.files?.[0]);event.target.value='';}}/>
+            onChange={event=>{const file=event.target.files?.[0];if(file)setPhotoSelection({person:r,file});event.target.value='';}}/>
         </label>
+        {r.photo_url&&<button className="btn ghost" disabled={!!uploading}
+          onClick={()=>editExistingPhoto(r)}><ImagePlus size={15}/> Reenquadrar</button>}
         {r.photo_url&&<button className="btn outline" onClick={()=>photoRemove(r)}><Trash2 size={15}/> Remover foto</button>}
         <button className="btn outline" disabled={!!ogProgress} onClick={()=>makeOg(r)}>
           <ImagePlus size={15}/> Atualizar imagem
@@ -343,7 +374,18 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
           <img src={r.og_url} alt={`Miniatura WhatsApp de ${r.name}`}
             style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
         </span>}
-        <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}?og=${encodeURIComponent(new URL(r.og_url,location.origin).searchParams.get('v')||'20261107b')}`)}><Copy size={15}/> Link de envio</button></div></div>)}</div></>;
+        <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}?og=${encodeURIComponent(new URL(r.og_url,location.origin).searchParams.get('v')||'20261107b')}`)}><Copy size={15}/> Link de envio</button></div></div>)}</div>
+    {photoSelection&&<SquarePhotoEditor
+      person={photoSelection.person}
+      file={photoSelection.file}
+      onCancel={()=>setPhotoSelection(null)}
+      onSave={async file=>{
+        const success=await photoUpload(photoSelection.person,file);
+        if(success)setPhotoSelection(null);
+        return success;
+      }}
+    />}
+    </>;
 }
 function BrandLogo({ info, reload }) {
   const [busy,setBusy]=useState(false),[message,setMessage]=useState('');

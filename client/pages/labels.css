@@ -1,0 +1,52 @@
+.mural-labels { width: 100%; min-width: 0; }
+.labels-controls { display: grid; gap: 13px; margin-bottom: 20px; }
+.labels-selection { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.labels-person-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; max-height: 240px; overflow: auto; }
+.labels-person-picker label { display: flex; align-items: center; gap: 8px; font-size: .85rem; }
+.labels-sheet { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 66mm; gap: 4mm; margin: 16px auto; width: min(100%, 194mm); padding: 0; }
+.mural-print-label { position: relative; background: linear-gradient(145deg,#fff2df 0%,#fae2ed 56%,#ede6ff 100%); border: 1px dashed #bb9fc7; border-radius: 12px; color: #281938; padding: 11px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; min-width: 0; min-height: 0; }
+.label-topline { font-size: .63rem; letter-spacing: .13em; font-weight: 900; color: #663a85; display: flex; justify-content: space-between; }
+.label-topline span { font-size: 1.1rem; }
+.label-body { display: flex; gap: 10px; align-items: center; justify-content: space-between; min-width: 0; }
+.label-message { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.label-message small { font-size: .55rem; letter-spacing: .08em; font-weight: 800; }
+.label-message strong { font-family: 'Playfair Display',Georgia,serif; font-size: clamp(1.1rem,2vw,1.4rem); overflow-wrap: anywhere; line-height: 1.1; }
+.label-description { font-size: .71rem; line-height: 1.25; }
+.label-profile { height: 38px; width: 38px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: #d4c1ef; font-size: .85rem; font-weight: 800; }
+.label-profile img { width: 100%; height: 100%; object-fit: cover; }
+.label-personal-code { color: #43236c; font-size: 1.2rem; font-weight: 900; letter-spacing: .19em; }
+.label-qr { flex: 0 0 140px; display: grid; justify-items: center; align-items: center; gap: 3px; min-width: 0; }
+.label-qr .qr-code { padding: 2px; margin: 0; }
+.label-qr canvas { display: block; width: min(100%,132px) !important; height: auto !important; }
+.label-qr span { font-size: .61rem; letter-spacing: .04em; font-weight: 900; }
+.label-bottomline { display: flex; gap: 4px; align-items: center; justify-content: space-between; font-size: .57rem; color: #654980; }
+.label-bottomline span { margin-left: auto; }
+.labels-end-note { display: flex; gap: 6px; align-items: center; margin-top: 14px; }
+@media (max-width:680px) {
+  .labels-sheet { grid-template-columns: minmax(0, 1fr); grid-auto-rows: 200px; gap: 12px; max-width: 360px; }
+  .label-qr { flex-basis: 125px; }
+}
+@media print {
+  @page { size: A4 portrait; margin: 8mm; }
+  .labels-sheet {
+    width: 194mm !important;
+    height: 280mm !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    grid-template-columns: repeat(2,95mm) !important;
+    grid-template-rows: repeat(4,66mm) !important;
+    grid-auto-rows: 66mm !important;
+    gap: 4mm !important;
+    page-break-after: always;
+    break-after: page;
+    overflow: hidden;
+  }
+  .labels-sheet:last-of-type { page-break-after: auto; break-after: auto; }
+  .mural-print-label { width:95mm; height:66mm; box-sizing:border-box; border-radius:0; border:0.35mm dashed #ae91c0; padding: 4mm; break-inside: avoid; print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+  .label-message strong { font-size: 15pt; }
+  .label-qr { flex-basis: 36mm; }
+  .label-qr .qr-code canvas { width: 30mm !important; max-height: 30mm !important; }
+  .label-topline { font-size: 7pt; }
+  .label-bottomline { font-size: 6pt; }
+  .label-profile { width: 9mm; height: 9mm; }
+}

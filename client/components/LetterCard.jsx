@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { zipSync, strToU8 } from 'fflate';
 import { Download, FileArchive, Music2, Share2 } from 'lucide-react';
 import VoicePlayer from './VoicePlayer';
@@ -14,6 +14,19 @@ export const safeFilename = (value) => String(value || 'cartinha')
 
 export function LetterCard({ letter, recipient, actions = true, editable = false, onCompositionChange }) {
   const audios = (letter.media || []).filter((media) => media.kind === 'audio');
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  async function runExport(mode) {
+    setBusy(mode);
+    setError('');
+    try {
+      await exportLetter(letter, recipient, mode);
+    } catch (cause) {
+      if (cause?.name !== 'AbortError') setError(cause?.message || 'Falha ao exportar a cartinha.');
+    } finally {
+      setBusy('');
+    }
+  }
   return (
     <article className="letter-card">
       <LetterCanvas letter={letter} recipient={recipient} editable={editable}
@@ -31,14 +44,16 @@ export function LetterCard({ letter, recipient, actions = true, editable = false
         <>
           <div className="letter-actions">
             <button type="button" className="btn ghost"
-              onClick={() => exportLetter(letter, recipient, 'png')}>
+              disabled={!!busy} onClick={() => runExport('png')}>
               <Download size={16} /> Cartinha completa
             </button>
             <button type="button" className="btn"
-              onClick={() => exportLetter(letter, recipient, 'zip')}>
+              disabled={!!busy} onClick={() => runExport('zip')}>
               <FileArchive size={16} /> ZIP com anexos
             </button>
           </div>
+          {busy && <p className="muted small" role="status">Preparando sua cartinha...</p>}
+          {error && <p className="notice error" role="alert">{error}</p>}
           <InstagramExportPanel letter={letter} recipient={recipient} />
         </>
       )}

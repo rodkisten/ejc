@@ -236,3 +236,69 @@ export async function publishOgImage(person) {
   if (!response.ok) throw new Error(data.error || 'Não foi possível publicar a imagem social.');
   return data.url;
 }
+
+
+// Brand-wide OG card when the link points to the home rather than one encontrista.
+// Rendered in the authenticated admin browser and served as PNG from R2.
+export async function createDefaultOgImage() {
+  try { await document.fonts.ready; } catch {}
+  const canvas=document.createElement('canvas');
+  canvas.width=OG_WIDTH;canvas.height=OG_HEIGHT;
+  const ctx=canvas.getContext('2d',{alpha:false});
+  if(!ctx)throw new Error('Canvas indisponível para prévia social.');
+  const bg=ctx.createLinearGradient(0,0,1200,630);
+  bg.addColorStop(0,'#2141DA');bg.addColorStop(.47,'#F7407A');bg.addColorStop(1,'#FFBD37');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,1200,630);
+  ctx.save();ctx.globalAlpha=.27;ctx.strokeStyle='#FFFFFF';ctx.lineWidth=2;
+  for(let x=-250;x<1380;x+=52){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+200,630);ctx.stroke();}
+  ctx.restore();
+  ctx.save();ctx.translate(58,138);ctx.rotate(-.11);
+  ctx.fillStyle='#FFF87B';ctx.font='900 83px "DM Sans",Arial,sans-serif';
+  ctx.fillText('XX',0,0);ctx.font='900 92px "DM Sans",Arial,sans-serif';ctx.fillText('EJC',0,100);
+  ctx.restore();
+  ctx.save();ctx.translate(940,148);ctx.rotate(.14);
+  ctx.fillStyle='#251929';ctx.font='900 51px "DM Sans",Arial,sans-serif';ctx.fillText('💌',0,0);
+  ctx.font='900 29px "DM Sans",Arial,sans-serif';ctx.fillText('SIMONÉSIA',0,80,235);ctx.restore();
+
+  // A square WhatsApp thumbnail still includes all meaningful content.
+  ctx.fillStyle='#201828';rounded(ctx,317,35,566,562,22);ctx.fill();
+  ctx.fillStyle='#FFF9E7';rounded(ctx,327,45,546,542,15);ctx.fill();
+  ctx.fillStyle='#F8DE37';rounded(ctx,341,59,518,53,8);ctx.fill();
+  ctx.fillStyle='#1F1931';ctx.font='900 22px "DM Sans",Arial,sans-serif';ctx.textAlign='center';
+  ctx.fillText('XX EJC  ·  SIMONÉSIA',600,95,494);
+
+  ctx.save();ctx.translate(600,305);ctx.rotate(-.04);
+  ctx.fillStyle='#1744D9';rounded(ctx,-238,-130,476,246,13);ctx.fill();
+  ctx.fillStyle='#FFF';ctx.font='900 69px "DM Sans",Arial,sans-serif';
+  ctx.fillText('CARTINHAS',0,-35,449);
+  ctx.fillStyle='#FDFC7A';ctx.font='900 67px "DM Sans",Arial,sans-serif';
+  ctx.fillText('DE AMOR.',0,50,449);ctx.restore();
+
+  ctx.fillStyle='#F6D4E2';rounded(ctx,341,440,518,108,12);ctx.fill();
+  ctx.fillStyle='#2D1A34';ctx.textAlign='center';
+  ctx.font='900 19px "DM Sans",Arial,sans-serif';
+  ctx.fillText('Crie. Decore. Envie. Guarde.',600,480,488);
+  ctx.font='700 16px "DM Sans",Arial,sans-serif';
+  ctx.fillText('Cartas com fotos, voz e adesivos de fé.',600,515,486);
+  ctx.fillStyle='#BE376B';ctx.font='900 20px "DM Sans",Arial,sans-serif';
+  ctx.fillText('💌  UMA SURPRESA PARA CADA ENCONTRISTA',600,575,490);
+
+  ctx.fillStyle='#FFFD79';ctx.beginPath();ctx.moveTo(115,401);ctx.lineTo(141,439);
+  ctx.lineTo(187,442);ctx.lineTo(154,469);ctx.lineTo(146,514);
+  ctx.lineTo(110,479);ctx.lineTo(70,463);ctx.lineTo(109,444);ctx.closePath();ctx.fill();
+
+  return new Promise((resolve,reject)=>{
+    canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Não foi possível gerar o PNG principal.')),'image/png');
+  });
+}
+
+export async function publishDefaultOgImage() {
+  const blob=await createDefaultOgImage();
+  const response=await fetch('/api/admin/og/default',{
+    method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':'image/png'},body:blob
+  });
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||'Não foi possível publicar a imagem da home.');
+  return data.url;
+}

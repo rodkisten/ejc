@@ -410,3 +410,78 @@ o campo `orders.first_read_at`. O Cron Trigger `*/5 * * * *` exige a publicaçã
 do Worker com a configuração atualizada. **Sem os secrets definidos, nenhuma
 notificação externa será enviada.** Teste um pedido de demonstração completo
 antes de habilitar a campanha.
+
+## Adesivos ilustrados (coleção em imagens WebP)
+
+A nova coleção de 20 adesivos usa **imagens WebP geradas em estilo colagem,
+papel recortado, tipografia pincel e cores vibrantes**, e não o desenho
+vetorial simplificado do editor antigo. A seleção mantém os IDs originais
+para não quebrar cartinhas já salvas.
+
+1. Baixe o arquivo entregue com a atualização:
+   `XX-EJC-Stickers-20-WebP.zip`.
+2. Depois de publicar o Worker, abra **/admin/adesivos**.
+3. Selecione o ZIP no botão **Instalar coleção de imagens**.
+4. Aguarde a instalação de **20/20** arquivos no armazenamento R2.
+   A página mostra o progresso, o status e a prévia de todos eles.
+
+O ZIP contém exatamente `public/stickers/<id>.webp`. Caso trabalhe pelo
+Codespaces, também pode descompactá-lo na raiz do repositório e publicar
+novamente, mas a instalação via admin é mais simples.
+
+Os arquivos são validados no servidor por identificador de preset,
+assinatura real WebP e limite de tamanho (600 KiB cada). O endpoint público
+`/api/stickers/<id>.webp` serve **somente artes pré-definidas**, nunca
+fotos ou outros anexos privados das cartinhas. Se uma imagem ainda não estiver
+instalada, o editor utiliza temporariamente o SVG de reserva.
+A exportação em Canvas tenta a imagem WebP original e preserva a proporção.
+
+## Aviso por e-mail e notificações do relay
+
+O serviço de e-mail escolhido é **Resend** (plano gratuito sujeito
+aos limites publicados pelo fornecedor, atualmente 3.000 e-mails por mês
+e 100 por dia). Para ativar o campo opcional no envio:
+
+- Verifique um domínio de e-mail com Resend, configure SPF/DKIM e crie uma chave de API.
+- Configure `RESEND_API_KEY` e `RESEND_FROM` como
+  **secrets** no Cloudflare Worker.
+- O remetente ativa o aviso, informa um endereço e recebe um e-mail para
+  confirmar a propriedade da caixa. Sem confirmação, não enviaremos aviso.
+- A notificação é enviada somente quando a cartinha é **aberta individualmente
+  dentro do mural**, depois da liberação, não quando a lista do mural carrega.
+  Isso confirma a abertura, **não comprova leitura integral**.
+
+As filas ficam em D1 com tentativas de reenvio e verificação de
+idempotência. O endereço do remetente é armazenado criptografado, não é
+exposto no painel da coordenação e pode ter o aviso desativado pelo
+remetente no próprio pedido.
+
+Para o relay existente, configure `RELAY_URL` para
+`https://xtelegram-cf.migos.club/send`; defina `RELAY_TOKEN` como
+secret e `RELAY_CHAT_ID` se precisar escolher o destino. **Nunca
+adicione o token no GitHub, no navegador ou no texto das notificações**.
+Um token compartilhado anteriormente fora de um gerenciador de secrets
+deve ser rotacionado antes do uso em produção.
+
+O relay recebe apenas metadados operacionais: pedido criado, Pix informado,
+Pix confirmado, cartinha enviada, cartinha liberada e primeira abertura.
+**Não recebe texto, foto, áudio, identidade do remetente ou endereço de e-mail**.
+Não existe etapa de moderação ou aprovação do conteúdo. O agendamento
+Cloudflare `*/5 * * * *` processa notificações pendentes, além das
+tentativas disparadas durante as requisições.
+
+### Verificações
+
+```bash
+npm ci
+npm run format
+npm run check
+npm run build
+bash scripts/deploy.sh
+```
+
+Depois do deploy, instale os WebPs na rota `/admin/adesivos`.
+Teste em um pedido real controlado: cadastro, opt-in de e-mail,
+confirmação, Pix, envio de cartinha, liberação e abertura da carta
+pelo encontrista. Cheque no e-mail e no Telegram se chegou apenas
+um aviso por evento.

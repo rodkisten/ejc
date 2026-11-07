@@ -113,7 +113,7 @@ export default function Send() {
 
   async function sharePage() {
     if (!found) return;
-    const url = new URL('/enviar/' + encodeURIComponent(slug), location.origin).toString();
+    const url = new URL('/enviar/' + encodeURIComponent(slug), window.location.origin).toString();
     try {
       if (navigator.share) await navigator.share({
         title: 'Uma cartinha para ' + found.name + ' · XX EJC Simonésia',

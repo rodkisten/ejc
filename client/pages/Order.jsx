@@ -33,7 +33,6 @@ export default function Order() {
     [busy, setBusy] = useState(false),
     [saved, setSaved] = useState(false);
   const [html, setHtml] = useState(''),
-    [publicMessage, setPublicMessage] = useState(false),
     [assets, setAssets] = useState([]),
     [progress, setProgress] = useState('');
   const reload = useCallback(async () => {
@@ -55,7 +54,6 @@ export default function Order() {
   useEffect(() => {
     if (!order || saved) return;
     setHtml(order.rich_html || '');
-    setPublicMessage(!!order.public_message);
     setSaved(true);
   }, [order, saved]);
   useEffect(() => {
@@ -66,7 +64,6 @@ export default function Order() {
       .then((d) => {
         if (!d) return;
         setHtml((h) => h || d.html || '');
-        setPublicMessage((v) => v || !!d.publicMessage);
         setAssets((current) =>
           current.length
             ? current
@@ -109,7 +106,7 @@ export default function Order() {
       await api('/api/order/message', {
         method: 'PUT',
         token,
-        data: { rich_html: html, public_message: publicMessage },
+        data: { rich_html: html },
       });
       for (const a of assets) {
         setProgress(`Enviando ${a.file.name}...`);
@@ -125,7 +122,7 @@ export default function Order() {
         track('letter_submitted');
       }
       await reload();
-      setProgress(withSubmit ? 'Enviada para moderação!' : 'Rascunho salvo com sucesso!');
+      setProgress(withSubmit ? 'Cartinha enviada! Ela ficará no mural privado após o horário de liberação.' : 'Rascunho salvo com sucesso!');
     } catch (e) {
       setError(e.message);
     } finally {
@@ -355,19 +352,10 @@ export default function Order() {
                   ))}
               </div>
             </div>
-            <div className="form-card">
-              <label className="toggle-line">
-                <input
-                  type="checkbox"
-                  disabled={ended}
-                  checked={publicMessage}
-                  onChange={(e) => setPublicMessage(e.target.checked)}
-                />
-                <span>
-                  Permitir que minha cartinha também seja pública após a aprovação{' '}
-                  <strong>(desativado por padrão)</strong>
-                </span>
-              </label>
+            <div className="notice">
+              <LockKeyhole size={18} />
+              Sua cartinha é privada: não aparece em uma galeria pública nem passa por leitura ou escuta da coordenação.
+              O painel da equipe acompanha somente o pagamento e a situação do envio.
             </div>
             {error && <div className="notice error">{error}</div>}
             {progress && <div className="notice success">{progress}</div>}
@@ -376,20 +364,13 @@ export default function Order() {
                 <Save size={17} /> Salvar rascunho
               </button>
               <button className="btn" disabled={busy || ended} onClick={() => save(true)}>
-                <Send size={17} /> {busy ? 'Enviando...' : 'Enviar para moderação'}
+                <Send size={17} /> {busy ? 'Enviando...' : 'Enviar ao mural privado'}
               </button>
             </div>
-            <div className="notice">
-              Estado da moderação:{' '}
-              <strong>
-                {{
-                  draft: 'Rascunho',
-                  pending: 'Aguardando análise',
-                  approved: 'Aprovada',
-                  rejected: 'Revisão solicitada',
-                }[order.moderation] || order.moderation}
-              </strong>
-              . Se editar após uma aprovação, a cartinha precisará de nova revisão.
+            <div className="notice success">
+              {order.submitted
+                ? 'Cartinha enviada. Somente quem tiver acesso privado ao mural poderá vê-la, após a liberação.'
+                : 'Sua cartinha ainda é um rascunho. Você pode revisar antes de enviar.'}
             </div>
             <h2 className="spaced">Prévia da cartinha</h2>
             <LetterCard
@@ -398,7 +379,6 @@ export default function Order() {
               letter={{
                 ...order,
                 rich_html: html,
-                public_message: publicMessage,
                 media: [...(order.media || []), ...assets],
               }}
             />

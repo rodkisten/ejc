@@ -108,8 +108,8 @@ function drawStickers(ctx, stickers, limit, width, height) {
   const chosen = stickers.slice(0, limit);
   const positions = [
     [width * .21, height * .79, -.06],
-    [width * .79, height * .83, .08],
-    [width * .53, height * .87, -.04],
+    [width * .53, height * .81, .08],
+    [width * .81, height * .79, -.04],
   ];
   chosen.forEach((sticker, index) => {
     const preset = STICKERS_BY_ID[sticker.presetId];
@@ -198,9 +198,11 @@ export async function renderLetterImages(letter, recipient, mode = 'letter') {
 
   const probe = document.createElement('canvas').getContext('2d');
   let fontSize = social ? (mode === 'story' ? 47 : 38) : Math.max(26, Math.min(44, layout.fontSize + 13));
-  const maxLines = social ? (mode === 'story' ? 23 : 13) :
-    (photos.length || composition.stickers.length ? 12 : 17);
-  const maxWidth = width - 210;
+  // Reserve a bottom band for stickers, pictures and the signature.
+  // Text on full letters flows onto additional pages rather than being clipped.
+  const decorated = photos.length > 0 || composition.stickers.length > 0 || (letter?.media || []).some((m) => m.kind === 'audio');
+  const maxLines = social ? (mode === 'story' ? 23 : 13) : (decorated ? 10 : 17);
+  const maxWidth = social && photos.length ? 590 : width - 210;
   let lines = [];
   if (social) {
     for (; fontSize >= 27; fontSize -= 2) {
@@ -231,7 +233,7 @@ export async function renderLetterImages(letter, recipient, mode = 'letter') {
     ctx.fillStyle = theme.ink;
     ctx.textAlign = 'left';
     const group = groups[page];
-    const maxBodyHeight = social ? (mode === 'story' ? 1110 : 650) : 805;
+    const maxBodyHeight = social ? (mode === 'story' ? 1110 : 650) : (decorated ? 520 : 805);
     let size = fontSize;
     const fitLines = group;
     const availableLines = Math.max(1, fitLines.length);
@@ -250,12 +252,14 @@ export async function renderLetterImages(letter, recipient, mode = 'letter') {
         const bitmap = await imageBitmap(photos[0].url);
         if (bitmap) {
           const px = width - 355;
-          const py = social && mode === 'story' ? height - 660 : height - 405;
+          const py = social
+            ? mode === 'story' ? height - 660 : 490
+            : composition.stickers.length ? height - 475 : height - 405;
           drawPhoto(ctx, bitmap, px, py, 220, 170);
           bitmap.close?.();
         }
       }
-      drawStickers(ctx, composition.stickers, social ? 3 : 3, width, height);
+      drawStickers(ctx, composition.stickers, 3, width, height);
       if ((letter?.media || []).some((m) => m.kind === 'audio')) {
         ctx.fillStyle = theme.accent; ctx.textAlign = 'left';
         ctx.font = '700 20px "DM Sans",Arial,sans-serif';

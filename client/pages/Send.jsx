@@ -64,11 +64,11 @@ export default function Send(){
         }catch(err){if(err?.name!=='AbortError')setError('Não foi possível compartilhar o link.');}
       }}
     >
-      <Share2 size={16}/> Compartilhar link pelo WhatsApp ou redes sociais
+      <Share2 size={16}/> Compartilhar link
     </button>
     <p className="muted">Você pode gravar quantas vezes quiser e ouvir antes de guardar. Tudo fica como rascunho neste aparelho até a confirmação do Pix.</p>
     <section className="form-card"><label htmlFor="sender">Como quer assinar? <span className="muted">(opcional)</span></label><input id="sender" value={sender} onChange={e=>setSender(e.target.value.slice(0,100))} placeholder="Seu nome ou uma pessoa especial"/></section>
-    <section className="form-card"><div className="row between"><h2>01. Suas palavras ✍️</h2><span className="micro-label">editor de texto rico</span></div><RichEditor value={html} onChange={setHtml}/></section>
+    <section className="form-card"><div className="row between"><h2>01. Suas palavras ✍️</h2><span className="micro-label">pode escrever à vontade 💕</span></div><RichEditor value={html} onChange={setHtml}/></section>
     <section className="form-card"><h2>02. Sua voz 🎙️</h2><p className="muted small">Regrave até gostar do resultado. Você também pode adicionar mais de um áudio.</p><Recorder onAdd={f=>add(f,'audio')}/>
       {!!audios.length && <div className="asset-list">{audios.map(a=><div key={a.url} className="asset-row"><VoicePlayer src={a.url} title={a.file.name} compact/><button type="button" className="icon-button danger" aria-label="Remover áudio" onClick={()=>remove(assets.indexOf(a))}><Trash2 size={17}/></button></div>)}</div>}
     </section>

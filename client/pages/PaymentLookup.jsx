@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Check, ClipboardCheck, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import { api, money } from '../lib/api';
 
@@ -178,7 +179,9 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
                       <div className="admin-payment-letter" key={item.id}>
                         <span>
                           <strong>{item.recipient_name}</strong>
-                          <small>{item.id}</small>
+                          <Link className="text-button" to={'/admin/pedidos/' + item.id}>
+                            Ver registro {item.id}
+                          </Link>
                         </span>
                         <span>{item.submitted ? 'Cartinha enviada' : 'Ainda não enviada'}</span>
                       </div>

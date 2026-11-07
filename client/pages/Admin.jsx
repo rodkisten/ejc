@@ -165,7 +165,7 @@ function OrderDetail({ reload }) {
     </div>
   );
 }
-function People({info,reload}){const [names,setNames]=useState(''),[notice,setNotice]=useState(''),[error,setError]=useState(''),[invite,setInvite]=useState(null),[uploading,setUploading]=useState(''),[ogProgress,setOgProgress]=useState('');
+function People({info,reload}){const [names,setNames]=useState(''),[notice,setNotice]=useState(''),[error,setError]=useState(''),[uploading,setUploading]=useState(''),[ogProgress,setOgProgress]=useState('');
   async function photoUpload(r,file) {
     if(!file)return;
     if(!window.confirm(`Confirmo que tenho autorização para divulgar a foto de ${r.name}, inclusive dos responsáveis se menor de idade.`))return;
@@ -216,8 +216,7 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
     } finally { setOgProgress(''); }
   }
   const add=async()=>{try{const r=await api('/api/admin/recipients/import',{method:'POST',data:{names:names.split(/\r?\n/).filter(Boolean)}});setNotice(`${r.inserted} nomes importados.`);setNames('');await reload();}catch(e){setError(e.message);}};
-  const createInvite=async r=>{if(!confirm(`Gerar novo link privado de ${r.name}? Isso invalida o anterior.`))return;try{const data=await api(`/api/admin/recipients/${r.id}/invite`,{method:'POST',data:{}});setInvite({name:r.name,url:data.url});}catch(e){setError(e.message);}};
-  return <><div className="section-head"><div><span className="eyebrow">ENCONTRISTAS</span><h1>Nomes, fotos e links exclusivos</h1><p>O link para enviar é público. O link de leitura do mural é privado e precisa ser entregue pessoalmente.</p></div></div><section className="form-card"><label>Importar nomes (um por linha)</label><textarea rows={4} value={names} onChange={e=>setNames(e.target.value)} placeholder={'Maria Eduarda\nJoão Pedro\nAna Clara'}/><button className="btn" onClick={add}>Adicionar encontristas</button></section>
+  return <><div className="section-head"><div><span className="eyebrow">ENCONTRISTAS</span><h1>Nomes, fotos e links exclusivos</h1><p>A coordenação gerencia os nomes, fotos e QR Codes, mas não lê nem escuta as cartinhas. Entregue os códigos dos murais individualmente.</p></div></div><section className="form-card"><label>Importar nomes (um por linha)</label><textarea rows={4} value={names} onChange={e=>setNames(e.target.value)} placeholder={'Maria Eduarda\nJoão Pedro\nAna Clara'}/><button className="btn" onClick={add}>Adicionar encontristas</button></section>
     <section className="form-card">
       <h2>Imagens para redes sociais</h2>
       <p className="muted small">Gere prévias PNG com nome e foto autorizada para WhatsApp, Instagram, X, Facebook e Telegram.</p>
@@ -226,7 +225,7 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
       </button>
       {ogProgress&&<p className="notice">{ogProgress}</p>}
     </section>
-    {error&&<div className="notice error">{error}</div>}{notice&&<div className="notice success">{notice}</div>}{invite&&<div className="notice success"><strong>Link privado de {invite.name}</strong><p className="small">Este link é mostrado apenas agora. Guarde-o com segurança.</p><div className="inline-actions"><button className="btn ghost" onClick={()=>copy(invite.url)}><Copy size={16}/> Copiar link privado</button></div></div>}
+    {error&&<div className="notice error">{error}</div>}{notice&&<div className="notice success">{notice}</div>}
     <div className="people-list">{info.recipients.map(r=><div className="form-card person-row" key={r.id}>
       <div className="person-with-photo">
         <div className="recipient-avatar lavender">
@@ -244,7 +243,7 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
           <ImagePlus size={15}/> Atualizar imagem
         </button>
         {r.og_url&&<a className="btn ghost" href={r.og_url} target="_blank" rel="noreferrer">Ver prévia</a>}
-        <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}`)}><Copy size={15}/> Link de envio</button><button className="btn outline" onClick={()=>createInvite(r)}><Eye size={16}/> Link secreto</button></div></div>)}</div></>;
+        <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}`)}><Copy size={15}/> Link de envio</button></div></div>)}</div></>;
 }
 function BrandLogo({ info, reload }) {
   const [busy,setBusy]=useState(false),[message,setMessage]=useState('');

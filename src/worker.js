@@ -298,7 +298,84 @@ function serveBrandImage(blob) {
   return new Response(blob.body,{headers});
 }
 
+
+const MURAL_ALPHABET='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function newMuralCode() {
+  const bytes=crypto.getRandomValues(new Uint8Array(6));
+  return Array.from(bytes,b=>MURAL_ALPHABET[b&31]).join('');
+}
+async function nextUniqueMuralCode(env) {
+  for(let i=0;i<16;i++){
+    const code=newMuralCode();
+    if(!await env.DB.prepare('SELECT id FROM recipients WHERE mural_code=?').bind(code).first())return code;
+  }
+  bad('Não foi possível gerar um código exclusivo. Tente novamente.',503);
+}
+async function muralGrant(env,recipient) {
+  const claims={id:recipient.id,version:await digest(recipient.mural_code),exp:Math.floor(Date.now()/1000)+14*86400};
+  const tokenBody='m2.'+b64url(encode.encode(JSON.stringify(claims)));
+  const signature=b64url(new Uint8Array(await crypto.subtle.sign('HMAC',await hmacKey(env),encode.encode(tokenBody))));
+  return tokenBody+'.'+signature;
+}
+async function validMuralGrant(env,grant,recipient) {
+  if(!grant||!grant.startsWith('m2.')||!recipient.mural_code)return false;
+  const parts=grant.split('.');
+  if(parts.length!==3||parts[1].length>500||parts[2].length>200)return false;
+  try {
+    const data=parts[0]+'.'+parts[1];
+    const valid=await crypto.subtle.verify('HMAC',await hmacKey(env),unb64url(parts[2]),encode.encode(data));
+    if(!valid)return false;
+    const payload=JSON.parse(new TextDecoder().decode(unb64url(parts[1])));
+    return payload.id===recipient.id && payload.version===await digest(recipient.mural_code) &&
+      Number.isFinite(payload.exp) && payload.exp>=Math.floor(Date.now()/1000);
+  }catch{return false;}
+}
+
+function escapeMeta(value){
+  return String(value||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');
+}
+function buildSocialMeta(origin,recipient,kind){
+  const title=(kind==='mural'?'Mural secreto de ':'Envie uma cartinha para ')+recipient.name+' · XX EJC Simonésia';
+  const description=kind==='mural'
+    ?'Suas cartinhas, fotos e áudios, guardados em um mural privado e liberados no horário do encontro.'
+    :'Grave um áudio e envie fotos e palavras especiais para '+recipient.name+' no XX EJC Simonésia.';
+  const canonical=origin+'/'+kind+'/'+encodeURIComponent(recipient.slug);
+  const image=recipient.og_key && (!recipient.photo_key||recipient.photo_consent)
+    ?origin+'/api/og/'+recipient.slug+'.png?v='+encodeURIComponent(recipient.og_key.split('/').pop())
+    :null;
+  const fields=[
+    ['property','og:type','website'],['property','og:locale','pt_BR'],
+    ['property','og:site_name','Cartinhas do XX EJC Simonésia'],
+    ['property','og:title',title],['property','og:description',description],
+    ['property','og:url',canonical],
+    ['name','twitter:card',image?'summary_large_image':'summary'],
+    ['name','twitter:title',title],['name','twitter:description',description],
+  ];
+  if(image)fields.push(
+    ['property','og:image',image],['property','og:image:secure_url',image],
+    ['property','og:image:type','image/png'],
+    ['property','og:image:width','1200'],['property','og:image:height','630'],
+    ['property','og:image:alt','Cartinhas para '+recipient.name+' no XX EJC Simonésia'],
+    ['name','twitter:image',image]
+  );
+  return {title,description,tags:fields.map(([attr,key,value])=>
+    '<meta '+attr+'="'+escapeMeta(key)+'" content="'+escapeMeta(value)+'" />').join('\n')};
+}
+
 async function publicRoute(req,env,path) {
+  const ogImage=path.match(/^\/api\/og\/([a-z0-9-]+)\.png$/);
+  if(ogImage&&req.method==='GET'){
+    const r=await env.DB.prepare(
+      'SELECT og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
+    ).bind(ogImage[1]).first();
+    if(!r||!r.og_key||(r.photo_key&&!r.photo_consent))bad('Imagem não disponível.',404);
+    const object=await env.MEDIA.get(r.og_key);
+    if(!object)bad('Imagem não disponível.',404);
+    return new Response(object.body,{headers:{
+      ...BASE_HEADERS,'Content-Type':'image/png','Cache-Control':'public, max-age=300'
+    }});
+  }
   if(path==='/api/health' && req.method==='GET') {
     await env.DB.prepare('SELECT 1 AS ok').first();
     await env.MEDIA.head('healthcheck/does-not-exist');
@@ -319,7 +396,7 @@ async function publicRoute(req,env,path) {
   }
   const config=await settings(env);
   if (path==='/api/public' && req.method==='GET') {
-    const recipients=(await env.DB.prepare('SELECT id,name,slug,photo_key,photo_consent FROM recipients WHERE active=1 ORDER BY name COLLATE NOCASE').all()).results.map(r=>({id:r.id,name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r)}));
+    const recipients=(await env.DB.prepare('SELECT id,name,slug,photo_key,photo_consent,og_key FROM recipients WHERE active=1 ORDER BY name COLLATE NOCASE').all()).results.map(r=>({id:r.id,name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r),og_url:r.og_key?'/api/og/'+r.slug+'.png':null}));
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({recipients,config:{deadline:config.deadline,release_at:config.release_at,
       open:config.open==='true',store_title:config.store_title,store_subtitle:config.store_subtitle,
@@ -335,12 +412,38 @@ async function publicRoute(req,env,path) {
     const cards=(await env.DB.prepare("SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.public_message=1 AND o.moderation='approved' ORDER BY o.approved_at DESC LIMIT 40").all()).results;
     return result({cards:await Promise.all(cards.map(o=>cardInfo(env,o)))});
   }
+
+  if(path==='/api/mural/redeem'&&req.method==='POST') {
+    const body=await jsonBody(req,300);
+    const code=typeof body.code==='string'?body.code.toUpperCase().replace(/[\s-]/g,''):'';
+    if(!/^[A-HJ-NP-Z2-9]{6}$/.test(code))bad('Digite os seis caracteres do seu cartão.',400);
+    const fingerprint=await digest((req.headers.get('CF-Connecting-IP')||'local')+':mural:'+env.SESSION_SECRET);
+    const seconds=Math.floor(Date.now()/1000);
+    const attempts=await env.DB.prepare('SELECT attempts,window_start FROM mural_code_attempts WHERE fingerprint=?').bind(fingerprint).first();
+    if(attempts && attempts.window_start>seconds-900 && attempts.attempts>=6)
+      bad('Muitas tentativas. Aguarde 15 minutos.',429);
+    const person=await env.DB.prepare('SELECT id,slug,mural_code FROM recipients WHERE mural_code=? AND active=1').bind(code).first();
+    if(!person) {
+      const active=attempts&&attempts.window_start>seconds-900;
+      await env.DB.prepare('INSERT INTO mural_code_attempts(fingerprint,attempts,window_start) VALUES(?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET attempts=excluded.attempts,window_start=excluded.window_start')
+        .bind(fingerprint,active?attempts.attempts+1:1,active?attempts.window_start:seconds).run();
+      bad('Código não encontrado. Confira os caracteres e tente novamente.',404);
+    }
+    await env.DB.prepare('DELETE FROM mural_code_attempts WHERE fingerprint=?').bind(fingerprint).run();
+    return result({slug:person.slug,grant:await muralGrant(env,person)});
+  }
   const mural=path.match(/^\/api\/mural\/([a-z0-9-]+)$/);
   if (mural && req.method==='GET') {
-    const r=await env.DB.prepare('SELECT id,name,slug,mural_token_hash,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1').bind(mural[1]).first();
+    const r=await env.DB.prepare('SELECT id,name,slug,mural_token_hash,mural_code,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1').bind(mural[1]).first();
     if(!r)bad('Encontrista não encontrado.',404);
     const admin=await isAdmin(req,env);
-    if(!admin){const digestToken=await digest(bearer(req));if(!r.mural_token_hash || r.mural_token_hash!==digestToken)bad('Convite privado inválido.',403);}
+    if(!admin){
+      const access=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
+      const signed=await validMuralGrant(env,access,r);
+      const legacy=/^[A-Za-z0-9_-]{40,100}$/.test(access) &&
+        r.mural_token_hash===await digest(access);
+      if(!signed&&!legacy)bad('Convite ou código de acesso inválido.',403);
+    }
     const rows=(await env.DB.prepare("SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON o.recipient_id=r.id WHERE o.recipient_id=? AND o.moderation='approved' ORDER BY o.approved_at DESC").bind(r.id).all()).results;
     const cards=await Promise.all(rows.filter(o=>admin||moderated(o,config)).map(o=>cardInfo(env,o)));
     return result({recipient:{name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r)},cards,release_at:config.release_at,is_admin:admin,locked:!admin && Date.now()<brazilTimeEnd(config.release_at)});
@@ -416,34 +519,74 @@ async function adminRoute(req,env,path) {
     await env.MEDIA.delete('branding/ejc-market-logo');
     return result({ok:true});
   }
+  const ogUpload=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/og$/);
+  if(ogUpload&&req.method==='POST'){
+    const r=await env.DB.prepare('SELECT id,slug,og_key,photo_key,photo_consent FROM recipients WHERE id=? AND active=1').bind(ogUpload[1]).first();
+    if(!r)bad('Encontrista não encontrado.',404);
+    if(r.photo_key&&!r.photo_consent)bad('Foto sem autorização de publicação.',403);
+    const image=await receiveSafeImage(req,5*1024*1024);
+    if(image.type!=='image/png')bad('A prévia deve ser PNG.',415);
+    const dimensions=new DataView(image.bytes.buffer,image.bytes.byteOffset,image.bytes.byteLength);
+    if(image.bytes.byteLength<24||dimensions.getUint32(16)!==1200||dimensions.getUint32(20)!==630)
+      bad('A imagem deve ter 1200 x 630 pixels.',400);
+    const key='og/'+r.id+'/'+newId()+'.png';
+    await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:'image/png'}});
+    await env.DB.prepare('UPDATE recipients SET og_key=? WHERE id=?').bind(key,r.id).run();
+    if(r.og_key)await env.MEDIA.delete(r.og_key);
+    return result({ok:true,url:'/api/og/'+r.slug+'.png'});
+  }
   const photoUpload=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/photo$/);
   if(photoUpload && (req.method==='POST'||req.method==='DELETE')) {
-    const r=await env.DB.prepare('SELECT id,photo_key FROM recipients WHERE id=?').bind(photoUpload[1]).first();
+    const r=await env.DB.prepare('SELECT id,photo_key,og_key FROM recipients WHERE id=?').bind(photoUpload[1]).first();
     if(!r)bad('Encontrista não encontrado.',404);
     if(req.method==='DELETE') {
-      await env.DB.prepare('UPDATE recipients SET photo_key=NULL,photo_consent=0 WHERE id=?').bind(r.id).run();
+      await env.DB.prepare('UPDATE recipients SET photo_key=NULL,photo_consent=0,og_key=NULL WHERE id=?').bind(r.id).run();
       if(r.photo_key)await env.MEDIA.delete(r.photo_key);
+      if(r.og_key)await env.MEDIA.delete(r.og_key);
       return result({ok:true});
     }
     if(req.headers.get('X-Photo-Consent')!=='confirmed')bad('Confirme a autorização para divulgação da foto.',403);
     const image=await receiveSafeImage(req,5*1024*1024);
     const key=`recipients/${r.id}/${newId()}`;
     await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:image.type}});
-    await env.DB.prepare('UPDATE recipients SET photo_key=?,photo_consent=1 WHERE id=?').bind(key,r.id).run();
+    await env.DB.prepare('UPDATE recipients SET photo_key=?,photo_consent=1,og_key=NULL WHERE id=?').bind(key,r.id).run();
     if(r.photo_key)await env.MEDIA.delete(r.photo_key);
+    if(r.og_key)await env.MEDIA.delete(r.og_key);
     return result({ok:true,photo_url:`/api/recipients/${r.id}/photo?v=${key.split('/').pop()}`});
   }
   if(path==='/api/admin/bootstrap'&&req.method==='GET'){
     const [config,recipients,orders]=await Promise.all([
       settings(env),
-      env.DB.prepare('SELECT id,name,slug,active,created_at,photo_key,photo_consent FROM recipients ORDER BY name COLLATE NOCASE').all(),
+      env.DB.prepare('SELECT id,name,slug,active,created_at,photo_key,photo_consent,og_key,mural_code FROM recipients ORDER BY name COLLATE NOCASE').all(),
       env.DB.prepare(`SELECT o.id,o.sender_name,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,o.moderation,o.moderation_note,o.public_message,o.release_override,o.demo,
         r.name AS recipient_name,r.slug AS recipient_slug,(SELECT COUNT(*) FROM media m WHERE m.order_id=o.id AND m.status='ready') AS files
         FROM orders o JOIN recipients r ON o.recipient_id=r.id ORDER BY o.created_at DESC LIMIT 500`).all()
     ]);
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({config:{...config,logo_url:logo?`/api/branding/logo?v=${logo.uploaded?.getTime()||0}`:null},
-      recipients:recipients.results.map(r=>({...r,photo_url:recipientPhotoUrl(r)})),orders:orders.results});
+      recipients:recipients.results.map(r=>({...r,photo_url:recipientPhotoUrl(r),og_url:r.og_key?'/api/og/'+r.slug+'.png':null})),orders:orders.results});
+  }
+
+  if(path==='/api/admin/mural-codes/generate'&&req.method==='POST'){
+    const input=await jsonBody(req,500);
+    const overwrite=input.regenerate===true;
+    const people=(await env.DB.prepare('SELECT id,mural_code FROM recipients WHERE active=1').all()).results;
+    let generated=0;
+    for(const person of people){
+      if(person.mural_code&&!overwrite)continue;
+      const code=await nextUniqueMuralCode(env);
+      await env.DB.prepare('UPDATE recipients SET mural_code=? WHERE id=?').bind(code,person.id).run();
+      generated++;
+    }
+    return result({ok:true,generated});
+  }
+  const replaceMuralCode=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/mural-code$/);
+  if(replaceMuralCode&&req.method==='POST'){
+    const person=await env.DB.prepare('SELECT id FROM recipients WHERE id=?').bind(replaceMuralCode[1]).first();
+    if(!person)bad('Encontrista não encontrado.',404);
+    const code=await nextUniqueMuralCode(env);
+    await env.DB.prepare('UPDATE recipients SET mural_code=? WHERE id=?').bind(code,person.id).run();
+    return result({ok:true,code});
   }
   if(path==='/api/admin/settings'&&req.method==='PUT'){
     const data=await jsonBody(req),keys=['pix_key','pix_name','pix_city','deadline','release_at','open','store_title','store_subtitle','message_price_cents','analytics_id'];
@@ -619,6 +762,11 @@ export default {
         if (stream && request.method==='GET') return await signedMedia(request,env,stream[1],url);
         return await publicRoute(request,env,path);
       }
+      // OG tags must be in the server's HTML so social bots can read them without JS.
+      const social=path.match(/^\/(enviar|mural)\/([a-z0-9-]+)$/);
+      const socialRecipient=social?await env.DB.prepare(
+        'SELECT name,slug,og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
+      ).bind(social[2]).first():null;
       // Static files, hosted in the same Worker.
       const response=await env.ASSETS.fetch(request);
       const headers=new Headers(response.headers);
@@ -628,6 +776,18 @@ export default {
       headers.set('Permissions-Policy','microphone=(self), camera=(self), geolocation=()');
       if ((headers.get('Content-Type')||'').includes('text/html')) {
         headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+      }
+      if(path==='/abrir'||path.startsWith('/mural/')||path.startsWith('/pedido/')||path.startsWith('/admin')){
+        headers.set('X-Robots-Tag','noindex, nofollow, noarchive');
+      }
+      if(socialRecipient && (headers.get('Content-Type')||'').includes('text/html')){
+        const meta=buildSocialMeta(url.origin,socialRecipient,social[1]);
+        const html=(await response.text())
+          .replace(/<title>[\s\S]*?<\/title>/i,'<title>'+escapeMeta(meta.title)+'</title>')
+          .replace(/<meta\s+name="description"[^>]*>/i,'')
+          .replace('</head>','<meta name="description" content="'+escapeMeta(meta.description)+'" />'+meta.tags+'</head>');
+        headers.set('Cache-Control','public, max-age=120');
+        return new Response(html,{status:response.status,headers});
       }
       return new Response(response.body,{status:response.status,headers});
     } catch(e) {

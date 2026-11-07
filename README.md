@@ -138,3 +138,59 @@ Para diagnosticar o script sem Cloudflare, execute `npm run deploy:doctor`.
 A conta Mercado Pago PF pode ser usada como ponto de partida para configurar uma aplicação de pagamentos, sujeito à liberação de credenciais e produtos para a conta. A API Pix Checkout Transparente exige criar **uma cobrança por pedido**, vinculada a uma referência externa e a dados mínimos do comprador (incluindo e-mail), e configurar webhooks assinados para acompanhar `approved`.
 
 O **QR Pix estático configurado hoje** não ganha confirmação automática só por ser uma chave Mercado Pago. Até implantar e homologar a API, a coordenação confere e aprova manualmente cada transferência. Não inclua credenciais do Mercado Pago em GitHub nem no navegador; use Wrangler Secrets.
+
+## Murais secretos, códigos curtos e etiquetas (versão 3)
+
+**Acesso do encontrista:** o admin abre `/admin/etiquetas` e gera códigos
+alfanuméricos únicos de **6 caracteres**. A ferramenta apresenta **8 etiquetas
+em cada folha A4 vertical**, com nome, foto autorizada, código e QR Code.
+O QR leva a `/abrir?codigo=XXXXXX`. O encontrista também pode abrir
+`/abrir` e digitar o código manualmente. O código é retirado da barra de
+endereços após a leitura.
+
+Ao trocar um código, QR Codes antigos e acessos concedidos com aquele código
+deixam de funcionar. Os links privados longos existentes continuam separados.
+Há limitação de tentativas erradas por IP para proteger os códigos de 6
+caracteres. Os murais exibem as mensagens aprovadas **somente após o horário
+de liberação configurado**, respeitando a exceção de liberação administrativa.
+
+**Compartilhamento social:** o Worker injeta OpenGraph e Twitter Card diretamente
+no HTML das URLs `/enviar/:slug` e `/mural/:slug`. Portanto, os robôs de
+prévia do WhatsApp, Telegram, Facebook e X recebem os metadados sem executar
+JavaScript. A imagem PNG verdadeira, de **1200 × 630 pixels**, é criada no
+navegador administrativo e armazenada no R2. Isso evita gerar imagens pesadas
+em cada visita pública.
+
+Depois de importar encontristas, clique em **Encontristas → Gerar imagens de
+todos os encontristas** para criar as prévias com nome e foto. Ao cadastrar
+uma foto, a prévia individual é gerada automaticamente. Enquanto não houver
+imagem gerada, o link continua compartilhável com título e descrição, mas
+sem a foto no cartão social. A autorização para divulgação da foto é
+obrigatória, inclusive autorização dos responsáveis se houver menores.
+
+Instagram não oferece uma API web pública que permita publicar uma história
+diretamente em qualquer conta. O botão de compartilhar abre a folha de
+compartilhamento do dispositivo; a plataforma de destino decide como exibe
+o link. As mesmas metatags OG servem aos apps que suportam prévias.
+
+### Migrações e validação
+
+```bash
+git pull --ff-only
+npm install
+npm run format
+npm run check
+npm run build
+bash scripts/deploy.sh
+```
+
+O script `deploy.sh` aplica automaticamente as migrações remotas
+`0004_mural_codes.sql` e `0005_og_images.sql`.
+Reveja o formato das etiquetas no **Safari → Imprimir → A4, escala 100%**,
+e teste URLs `/enviar/<slug>` no depurador de compartilhamento das redes.
+Sem executar esses passos na conta Cloudflare, o repositório atualizado não
+significa que o site em produção já mudou.
+
+**Importante:** não coloque tokens privados em Analytics, OG tags ou links
+públicos. As prévias do mural mostram apenas dados autorizados (nome e foto),
+nunca textos, áudios, mensagens ou códigos secretos.

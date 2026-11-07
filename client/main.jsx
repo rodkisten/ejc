@@ -9,6 +9,7 @@ import Order from './pages/Order';
 import Mural from './pages/Mural';
 import PublicLetters from './pages/PublicLetters';
 import Admin from './pages/Admin';
+import Unlock from './pages/Unlock';
 import './styles.css';
 import './legacy-theme.css';
 
@@ -43,6 +44,7 @@ function App(){
       <Route path="/enviar/:slug" element={<Send/>}/>
       <Route path="/pedido/:token" element={<Order/>}/>
       <Route path="/mural/:slug" element={<Mural/>}/>
+      <Route path="/abrir" element={<Unlock/>}/>
       <Route path="/publicas" element={<PublicLetters/>}/>
       <Route path="/admin/*" element={<Admin/>}/>
       <Route path="*" element={<div className="empty"><h1>Essa página não existe.</h1><Link className="btn" to="/">Voltar ao início</Link></div>}/>

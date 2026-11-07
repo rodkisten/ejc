@@ -155,7 +155,14 @@ export default function Order() {
           <p>Este link é privado. Guarde-o para continuar depois.</p>
         </div>
         <span className={`status-pill ${paid ? 'success' : 'pending'}`}>
-          {paid ? 'Pix confirmado' : 'Aguardando Pix'}
+          {({
+          pending:'Aguardando pagamento',
+          claimed:'Pagamento informado · em conferência',
+          paid:'Pagamento confirmado',
+          preparing:'Homenagem em preparação',
+          delivered:'Homenagem entregue',
+          cancelled:'Pedido cancelado'
+        })[order.status] || 'Aguardando conferência'}
         </span>
       </div>
       {!paid ? (
@@ -172,7 +179,7 @@ export default function Order() {
 
           <div className="pix-ticket">
             <div className="pix-ticket-top">
-              <span>CONTRIBUIÇÃO PARA UMA CARTINHA</span>
+              <span>VALOR DA HOMENAGEM</span>
               <span className="pix-ticket-heart" aria-hidden="true">♡</span>
             </div>
             <strong className="pix-amount">{money(order.amount_cents)}</strong>
@@ -209,8 +216,8 @@ export default function Order() {
             <summary>Visualizar o código Pix completo</summary>
             <code>{order.pix_code}</code>
           </details>
-          <button className="btn outline wide" disabled={busy} onClick={claim}>
-            {busy ? 'Aguarde...' : 'Já paguei · solicitar conferência'}
+          <button className="btn outline wide" disabled={busy || order.status === "claimed"} onClick={claim}>
+            {busy ? 'Aguarde...' : order.status === 'claimed' ? 'Pagamento informado · aguardando conferência' : 'Já paguei · solicitar conferência'}
           </button>
           <button className="btn ghost wide" onClick={reload}>
             <RefreshCw size={16} /> Atualizar situação do pagamento

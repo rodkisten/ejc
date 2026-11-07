@@ -1,6 +1,6 @@
 import React,{useEffect,useMemo,useState} from 'react';
 import { useNavigate,useParams,Link } from 'react-router-dom';
-import { ArrowRight, ImagePlus, Trash2, LockKeyhole, Info, CreditCard, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, ImagePlus, Trash2, LockKeyhole, Info, CreditCard, CheckCircle2, Share2 } from 'lucide-react';
 import { useApp } from '../main';
 import { api, money, track } from '../lib/api';
 import { draftGet,draftSet,draftKey } from '../lib/drafts';
@@ -30,6 +30,25 @@ export default function Send(){
   if(!found)return <div className="empty"><h2>Encontrista não encontrado.</h2><Link to="/">Voltar à lista</Link></div>;
   return <div className="compose-layout"><div className="compose-main">
     <div className="step-label">ETAPA 02 / CRIE SUA HOMENAGEM</div>{found.photo_url&&<div className="send-recipient"><img src={found.photo_url} alt={`Foto de ${found.name}`}/><span>Para {found.name}</span></div>}<h1>Uma cartinha para <em>{found.name}.</em></h1>
+    <button
+      className="btn ghost"
+      type="button"
+      onClick={async () => {
+        const url=location.origin+'/enviar/'+encodeURIComponent(found.slug);
+        const title='Uma cartinha para '+found.name+' · XX EJC Simonésia';
+        try{
+          if(navigator.share){
+            await navigator.share({title,text:'Envie uma mensagem, foto ou áudio para '+found.name+'.',url});
+          }else{
+            await navigator.clipboard.writeText(url);
+            setError('');
+            alert('Link de envio copiado!');
+          }
+        }catch(err){if(err?.name!=='AbortError')setError('Não foi possível compartilhar o link.');}
+      }}
+    >
+      <Share2 size={16}/> Compartilhar link pelo WhatsApp ou redes sociais
+    </button>
     <p className="muted">Você pode gravar quantas vezes quiser e ouvir antes de guardar. Tudo fica como rascunho neste aparelho até a confirmação do Pix.</p>
     <section className="form-card"><label htmlFor="sender">Como quer assinar? <span className="muted">(opcional)</span></label><input id="sender" value={sender} onChange={e=>setSender(e.target.value.slice(0,100))} placeholder="Seu nome ou uma pessoa especial"/></section>
     <section className="form-card"><div className="row between"><h2>01. Suas palavras ✍️</h2><span className="micro-label">editor de texto rico</span></div><RichEditor value={html} onChange={setHtml}/></section>

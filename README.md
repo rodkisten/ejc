@@ -260,3 +260,54 @@ no Codespaces. Verifique na prática o Safari do iPhone, tanto em portrait quant
 landscape, especialmente o arrastar dos adesivos e o compartilhamento de imagens.
 O deploy existente aplica a migração D1 de forma incremental. Sem aprovação dos
 testes, não publique a versão nova.
+
+## Prévias do WhatsApp, Facebook e Telegram
+
+O Cloudflare Worker gera as metatags `og:title`, `og:description`, `og:url`,
+`og:image`, `og:image:secure_url`, `og:image:type`, `og:image:width`,
+`og:image:height`, `og:image:alt` e as Twitter Cards diretamente no HTML.
+O robô social **não precisa executar React** e as rotas de destinatários usam o
+documento HTML base `/` para não depender dos cabeçalhos de navegação de SPA.
+
+- A prévia personalizada é um PNG **1200×630**, com nome e foto autorizada,
+  visualmente contidos no centro seguro (x=320…880). Isso evita cortes em
+  miniaturas quadradas de WhatsApp.
+- Se ainda não houver arte personalizada, o site entrega a imagem genérica
+  real `/og-ejc-default.png` (PNG **600×315**) em vez de omitir `og:image`.
+- URLs de imagem e os links de compartilhamento incluem um parâmetro de
+  versão `?v=` / `?og=`. Isso diminui o risco de o WhatsApp reutilizar
+  a miniatura antiga após a atualização.
+- Os cartões sociais mostram somente nome/foto autorizada e informações
+  genéricas do evento. **Não incluem conteúdo de cartinhas, fotos privadas,
+  áudios, tokens de pedido nem códigos de mural.**
+
+### Atualizar as imagens antigas
+
+Depois do deploy, no admin abra **Encontristas → Imagens para redes sociais**
+e clique em **Gerar/atualizar prévias para WhatsApp**.
+A nova versão de PNG é identificada internamente pelo prefixo `og/v2/`.
+O admin mostra quantas artes anteriores precisam ser renovadas e uma simulação
+da miniatura quadrada. As imagens armazenadas antes desta atualização não
+são modificadas automaticamente pelo deploy.
+
+### Validar uma URL real
+
+No Codespaces, depois de executar o deploy:
+
+```bash
+npm run og:check -- 'https://ejc.migos.club/enviar/ana-clara?og=REVISAO'
+```
+
+Substitua o slug pelo de um encontrista existente e use o **link versionado
+copiado pelo admin** em vez de `REVISAO`. O verificador simula o
+`facebookexternalhit` (utilizado pelos serviços de prévia da Meta), confere
+HTTP 200, um único `og:image`, MIME PNG verdadeiro, dimensões coincidentes e
+ausência de redirects para autenticação.
+
+**Importante:** se Cloudflare Access, Bot Fight Mode ou regras WAF bloquearem
+os crawlers, uma metatag correta não será suficiente. As rotas públicas de
+envio (`/enviar/*`) e os arquivos de imagens OG
+(`/api/og/*`, `/og-ejc-default.png`) precisam ser acessíveis sem sessão,
+enquanto as APIs privadas, o admin e o conteúdo do mural continuam protegidos.
+O WhatsApp mantém cache próprio; por isso, novas URLs versionadas são
+preferíveis a reenviar um link antigo esperando atualização instantânea.

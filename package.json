@@ -14,7 +14,8 @@
     "check": "node --check src/worker.js && node --check src/pix.js && node --test tests/*.test.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "deploy:doctor": "node --test tests/deploy.test.js"
+    "deploy:doctor": "node --test tests/deploy.test.js",
+    "og:check": "node scripts/check-og.mjs"
   },
   "dependencies": {
     "dompurify": "^3.2.7",

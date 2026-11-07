@@ -431,7 +431,8 @@ async function createCheckout(req,env,config) {
   if(!Number.isSafeInteger(unit)||unit<100||unit>5000000)bad('Valor unitário inválido.',503);
   const amount=unit*input.items.length;
   if(!Number.isSafeInteger(amount)||amount>5000000)bad('O total Pix excede o limite permitido.',400);
-  const slugs=input.items.map(item=>assertText(item.recipient_slug||'',65,'Encontrista'));
+  const slugs=input.items.map(item=>assertText(item?.recipient_slug||'',65,'Encontrista'));
+  if(input.items.some(item=>!item||typeof item!=='object'||Array.isArray(item)))bad('Item inválido no carrinho.',400);
   const found=(await env.DB.prepare('SELECT id,name,slug FROM recipients WHERE active=1').all()).results;
   const bySlug=new Map(found.map(r=>[r.slug,r]));
   const recipients=slugs.map(slug=>bySlug.get(slug));
@@ -592,9 +593,10 @@ async function publicRoute(req,env,path) {
   if (path==='/api/checkout/claim'&&req.method==='POST'){
     const {checkout}=await checkoutBuyer(req,env);
     if(checkout.status==='paid')return result({ok:true,status:'paid'});
+    if(checkout.status==='claimed')return result({ok:true,status:'claimed'});
     if(checkout.status==='cancelled')bad('Compra cancelada.',409);
     const changed=await env.DB.prepare(
-      "UPDATE checkouts SET status='claimed',claimed_at=COALESCE(claimed_at,?) WHERE id=? AND status IN ('pending','claimed')"
+      "UPDATE checkouts SET status='claimed',claimed_at=COALESCE(claimed_at,?) WHERE id=? AND status='pending'"
     ).bind(now(),checkout.id).run();
     if(changed.meta.changes){
       await env.DB.prepare("UPDATE orders SET status='claimed',payment_claimed_at=COALESCE(payment_claimed_at,?),updated_at=? WHERE checkout_id=? AND status IN ('pending','claimed')")
@@ -644,6 +646,7 @@ async function publicRoute(req,env,path) {
       return result(await enableReceipt(env,o.id,data.email));
     }
     if(path==='/api/order/claim'&&req.method==='POST') {
+      if(o.checkout_id)bad('Confirme o Pix da compra agrupada, não da cartinha individual.',409);
       if(activeOrder(o))return result({ok:true,status:o.status});
       if(o.status==='cancelled')bad('Pedido cancelado.',409);
       await env.DB.prepare("UPDATE orders SET status='claimed',payment_claimed_at=?,updated_at=? WHERE id=? AND status IN ('pending','claimed')").bind(now(),now(),o.id).run();

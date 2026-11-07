@@ -1,5 +1,5 @@
 import { generatePix } from './pix.js';
-import { normalizeComposition } from '../shared/letter.js';
+import { normalizeComposition, STICKERS_BY_ID } from '../shared/letter.js';
 import { enqueue, enableReceipt, disableReceipt, confirmReceipt, markRead, queueRelease, dispatch, validateEmail, emailsReady } from './notify.js';
 
 const PART_SIZE = 8 * 1024 * 1024;
@@ -400,6 +400,17 @@ function buildSocialMeta(origin, recipient, kind = 'enviar') {
 }
 
 async function publicRoute(req,env,path) {
+  const stickerPath=path.match(/^\/api\/stickers\/([a-z0-9-]+)\.webp$/);
+  if(stickerPath && (req.method==='GET'||req.method==='HEAD')){
+    if(!STICKERS_BY_ID[stickerPath[1]])bad('Adesivo desconhecido.',404);
+    const image=await env.MEDIA.get('stickers/v1/'+stickerPath[1]+'.webp');
+    if(!image)bad('Adesivo ainda não instalado.',404);
+    return new Response(req.method==='HEAD'?null:image.body,{headers:{
+      ...BASE_HEADERS,'Content-Type':'image/webp',
+      'Cache-Control':'public, max-age=120',
+      'Content-Length':String(image.size)
+    }});
+  }
   const ogImage=path.match(/^\/api\/og\/([a-z0-9-]+)\.png$/);
   if(ogImage&&(req.method==='GET'||req.method==='HEAD')){
     const r=await env.DB.prepare(
@@ -577,6 +588,22 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
   await requireAdmin(req,env);
   if(path==='/api/admin/me')return result({authenticated:true});
+  const stickerUpload=path.match(/^\/api\/admin\/stickers\/([a-z0-9-]+)\.webp$/);
+  if(stickerUpload && req.method==='PUT'){
+    if(!STICKERS_BY_ID[stickerUpload[1]])bad('Adesivo não faz parte da coleção.',404);
+    const image=await receiveSafeImage(req,600*1024);
+    if(image.type!=='image/webp')bad('Somente arquivos WebP.',415);
+    await env.MEDIA.put('stickers/v1/'+stickerUpload[1]+'.webp',image.bytes,{
+      httpMetadata:{contentType:'image/webp'}
+    });
+    return result({ok:true,id:stickerUpload[1]});
+  }
+  if(path==='/api/admin/stickers'&&req.method==='GET'){
+    const found=await Promise.all(Object.keys(STICKERS_BY_ID).map(async id=>({
+      id,installed:!!(await env.MEDIA.head('stickers/v1/'+id+'.webp'))
+    })));
+    return result({stickers:found});
+  }
   if(path==='/api/admin/branding/logo' && req.method==='POST') {
     const image=await receiveSafeImage(req,2*1024*1024);
     await env.MEDIA.put('branding/ejc-market-logo',image.bytes,{httpMetadata:{contentType:image.type}});

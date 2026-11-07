@@ -416,3 +416,34 @@ test('pedido com e-mail inválido e opt-in não é criado',async()=>{
   assert.equal(result.status,400);
   assert.equal((await env.DB.prepare('SELECT COUNT(*) AS c FROM orders').first()).c,0);
 });
+
+test('pacote WebP: envio só no admin e leitura pública por adesivo cadastrado',async()=>{
+  const env=fixture(),{admin}=await setup(env);
+  const bytes=new Uint8Array([82,73,70,70,16,0,0,0,87,69,66,80,86,80,56,32,0,0,0,0]);
+  const endpoint='/api/admin/stickers/ejc-parabens.webp';
+  const unauthorized=await worker.fetch(new Request('https://ejc.test'+endpoint,{
+    method:'PUT',headers:{Origin:'https://ejc.test','Content-Type':'image/webp'},body:bytes
+  }),env);
+  assert.equal(unauthorized.status,401);
+  const upload=await worker.fetch(new Request('https://ejc.test'+endpoint,{
+    method:'PUT',headers:{Origin:'https://ejc.test','Content-Type':'image/webp',Cookie:admin.cookie},body:bytes
+  }),env);
+  assert.equal(upload.status,200);
+  const listing=await call(env,'/api/admin/stickers','GET',undefined,admin);
+  assert.equal(listing.status,200);
+  assert.equal(listing.data.stickers.length,20);
+  assert.equal(listing.data.stickers.find(x=>x.id==='ejc-parabens').installed,true);
+  const img=await worker.fetch(new Request('https://ejc.test/api/stickers/ejc-parabens.webp'),env);
+  assert.equal(img.status,200);
+  assert.equal(img.headers.get('Content-Type'),'image/webp');
+  assert.equal((await img.arrayBuffer()).byteLength,bytes.byteLength);
+  const missing=await worker.fetch(new Request('https://ejc.test/api/stickers/alegria.webp'),env);
+  assert.equal(missing.status,404);
+  const unknown=await worker.fetch(new Request('https://ejc.test/api/stickers/unlisted.webp'),env);
+  assert.equal(unknown.status,404);
+  const invalid=await worker.fetch(new Request('https://ejc.test'+endpoint,{
+    method:'PUT',headers:{Origin:'https://ejc.test','Content-Type':'image/webp',Cookie:admin.cookie},
+    body:new Uint8Array([10,11,12,13])
+  }),env);
+  assert.equal(invalid.status,415);
+});

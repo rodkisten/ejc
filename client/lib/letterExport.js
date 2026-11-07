@@ -149,14 +149,19 @@ async function drawStickers(ctx, stickers, limit, width, height, mode) {
     const bandTop = mode === 'story' ? height - 510 : height - 480;
     const y = bandTop + sticker.y / 100 * 180;
     const angle = (sticker.rotate || 0) * Math.PI / 180;
-    const artwork=await imageBitmap('/stickers/'+encodeURIComponent(preset.id)+'.webp') ||
+    const artwork=await imageBitmap('/api/stickers/'+encodeURIComponent(preset.id)+'.webp') ||
       await imageBitmap('/stickers/'+encodeURIComponent(preset.id)+'.svg');
     ctx.save();
     ctx.translate(x,y);
     ctx.rotate(angle);
     if(artwork){
-      const side=Math.max(sw,sh)*1.38;
-      ctx.drawImage(artwork,-side/2,-side/2,side,side);
+      const aw=artwork.width||artwork.naturalWidth||1;
+      const ah=artwork.height||artwork.naturalHeight||1;
+      const maxW=Math.max(sw,sh)*1.5;
+      const maxH=Math.max(sw,sh)*1.1;
+      const fit=Math.min(maxW/aw,maxH/ah);
+      const imageW=aw*fit, imageH=ah*fit;
+      ctx.drawImage(artwork,-imageW/2,-imageH/2,imageW,imageH);
       artwork.close?.();
       ctx.restore();
       continue;

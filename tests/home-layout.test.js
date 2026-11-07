@@ -15,7 +15,9 @@ test('o mural mostra todos os encontristas, sem paginação ou limite de 18', ()
   const home = fs.readFileSync(new URL('../client/pages/Home.jsx', import.meta.url), 'utf8');
   assert.match(home, /people\.map\(/);
   assert.doesNotMatch(home, /visibleCount|setVisibleCount|slice\(0,\s*18\)|Mostrar mais encontristas/);
-  assert.doesNotMatch(home, /recipient-grid/); // One wall, not two duplicate lists.
+  assert.equal((home.match(/className="recipient-grid classic-recipient-grid"/g)||[]).length,1);
+  assert.match(home,/className="hero"/);
+  assert.match(home,/className="paper paper-front"/);
 });
 
 test('cores dos avatares parecem aleatórias, mas são estáveis ao pesquisar', () => {
@@ -46,17 +48,22 @@ test('nomes longos e acentuados são encontrados sem cortar resultados', () => {
   assert.equal(avatarInitials('Maria'), 'MA');
 });
 
-test('CSS da home tem contenção da arte, bordas e breakpoints para Safari móvel', () => {
+test('CSS mantém a identidade anterior e evita transbordar no Safari móvel', () => {
   const css = fs.readFileSync(new URL('../client/styles/home.css', import.meta.url), 'utf8');
   const main = fs.readFileSync(new URL('../client/main.jsx', import.meta.url), 'utf8');
-  assert.match(main, /import '\.\/styles\/home\.css'/);
+  const theme = fs.readFileSync(new URL('../client/legacy-theme.css', import.meta.url), 'utf8');
+  assert.match(main, /import '\\.\\/styles\\/home\\.css'/);
   for (const selector of [
-    '.ejc-new-hero', '.ejc-hero-letters', '.ejc-hero-paper-main',
-    '.ejc-portrait-wall', '.ejc-polaroid', '.ejc-polaroid-photo',
-    '.ejc-mural-search', '.ejc-recipient-mural',
+    '.classic-ejc-home .hero',
+    '.classic-ejc-home .hero-art',
+    '.classic-recipient-grid',
+    '.classic-recipient-card',
+    '.classic-recipient-avatar',
+    '.classic-search-box',
   ]) assert.ok(css.includes(selector), selector + ' não tem estilo');
-  assert.match(css, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
-  assert.match(css, /@media \(max-width: 480px\)/);
-  assert.match(css, /overflow:\s*hidden/);
-  assert.match(css, /border:\s*2px solid var\(--avatar-edge/);
+  assert.match(css, /@media \\(max-width: 640px\\)/);
+  assert.match(css, /overflow:\\s*hidden/);
+  assert.match(css, /aspect-ratio:\\s*1 \\/ 1/);
+  assert.match(css, /border:\\s*2px solid var\\(--recipient-border/);
+  assert.ok(theme.includes('#ffefdc') && theme.includes('#f9d3de') && theme.includes('#e5dcfb'));
 });

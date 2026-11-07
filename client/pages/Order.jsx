@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { api, btime, money, privateOrder, uploadMedia, track } from '../lib/api';
 import { draftGet, draftRemove, draftKey } from '../lib/drafts';
+import { cartDraftKey } from '../lib/cart';
 import RichEditor from '../components/RichEditor';
 import Recorder from '../components/Recorder';
 import VoicePlayer from '../components/VoicePlayer';
@@ -66,8 +67,9 @@ export default function Order() {
   useEffect(() => {
     if (!order || !['paid', 'preparing', 'delivered'].includes(order.status)) return;
     const slug = localStorage.getItem(`ejc-order-slug-${token}`);
-    if (!slug) return;
-    draftGet(draftKey(slug))
+    const cartId = localStorage.getItem('ejc-cart-order-' + token);
+    if (!slug && !cartId) return;
+    draftGet(cartId ? cartDraftKey(cartId) : draftKey(slug))
       .then((d) => {
         if (!d) return;
         setHtml((h) => h || d.html || '');

@@ -249,10 +249,12 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
           <ImagePlus size={15}/> Atualizar imagem
         </button>
         {r.og_url&&<a className="btn ghost" href={r.og_url} target="_blank" rel="noreferrer">Ver PNG</a>}
-        <a className="btn ghost" target="_blank" rel="noreferrer"
-          href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(`${location.origin}/enviar/${r.slug}`)}`}>
-          Testar prévia
-        </a>
+        {r.og_url&&<span title="Simulação do recorte quadrado do WhatsApp"
+          style={{display:'block',width:72,height:72,borderRadius:12,overflow:'hidden',
+            border:'2px solid #d9c5e5',flexShrink:0}}>
+          <img src={r.og_url} alt={`Miniatura WhatsApp de ${r.name}`}
+            style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
+        </span>}
         <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}?og=${encodeURIComponent(new URL(r.og_url,location.origin).searchParams.get('v')||'20261107b')}`)}><Copy size={15}/> Link de envio</button></div></div>)}</div></>;
 }
 function BrandLogo({ info, reload }) {

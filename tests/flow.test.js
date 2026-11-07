@@ -543,3 +543,33 @@ test('prévia social da home usa PNG 1200x630 gerado e publicado no R2',async()=
   assert.match(image.headers.get('Content-Type'),/image\/png/);
   assert.equal((await image.arrayBuffer()).byteLength,128);
 });
+
+test('fotos de encontristas exigem recorte quadrado antes de serem salvas',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const endpoint='https://ejc.test/api/admin/recipients/'+list[0].id+'/photo';
+  const jpeg=(width,height)=>new Uint8Array([
+    255,216,255,225,0,4,0,0,255,192,0,17,8,
+    height>>8,height&255,width>>8,width&255,
+    3,1,17,0,2,17,0,3,17,0,255,217,
+  ]);
+  const upload=(bytes,type='image/jpeg',authorized=true)=>worker.fetch(new Request(endpoint,{
+    method:'POST',
+    headers:{
+      Origin:'https://ejc.test',
+      Cookie:admin.cookie,
+      'Content-Type':type,
+      ...(authorized?{'X-Photo-Consent':'confirmed'}:{}),
+    },
+    body:bytes,
+  }),env);
+  assert.equal((await upload(jpeg(1200,700))).status,422);
+  assert.equal((await upload(jpeg(768,768), 'image/png')).status,415);
+  assert.equal((await upload(jpeg(768,768),'image/jpeg',false)).status,403);
+  const square=await upload(jpeg(768,768));
+  assert.equal(square.status,200);
+  const data=await square.json();
+  assert.match(data.photo_url,/^\/api\/recipients\//);
+  const photo=await worker.fetch(new Request('https://ejc.test'+data.photo_url),env);
+  assert.equal(photo.status,200);
+  assert.equal((await photo.arrayBuffer()).byteLength,jpeg(768,768).byteLength);
+});

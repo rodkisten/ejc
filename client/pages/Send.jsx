@@ -159,7 +159,7 @@ export default function Send() {
           </div>
         )}
         <h1>
-          Uma cartinha para <em>{found.name}.</em>
+          Uma cartinha para <br/> <em>{found.name}.</em>
         </h1>
         <button
           className="btn ghost"

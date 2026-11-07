@@ -525,3 +525,73 @@ dimensões JPEG, bordas e área quadrada das prévias.
 
 Teste o Safari em 320px, 375px, 390px e 430px, incluindo gesto de
 arrastar, zoom, publicação e um nome de encontrista longo.
+
+## Conferência por código Pix, nome de controle e edição após gerar o pagamento
+
+### Localização de pagamentos no admin
+
+Em **Admin → Pedidos → Localizar um Pix e suas cartinhas**, a coordenação
+pode pesquisar pelo código mostrado na tela do Pix (`EJCB-XXXXXXXXXXXX`
+para carrinhos, `EJC-XXXXXXXXXXXX` para pedidos antigos), pelo TXID
+incluído no Pix Copia e Cola, por nome do encontrista ou pelo **nome para
+conferência** informado pelo comprador. Também pode filtrar por situação
+do pagamento e por cartinhas enviadas.
+
+O resultado exibe um pagamento e **todos os encontristas vinculados àquele
+Pix**, com identificadores individuais, valores e estados de entrega.
+A busca está disponível só após autenticação de admin e **não retorna
+texto, áudio, fotos, assinatura pública ou tokens privados**.
+
+O campo **Nome para conferência do Pix** aparece no carrinho antes de gerar
+o pagamento, separado da **assinatura** da cartinha. Ele não aparece no
+mural, nos destinatários, nas imagens sociais ou no link público.
+Compras anteriores à migração podem aparecer com “Não informado”.
+O nome fica fixo naquele Pix quando o código é criado.
+
+O identificador bancário E2E pode ser usado na busca **depois que tiver
+sido associado ao pedido** na conferência. Um comprovante fornecido por
+terceiros **não confirma automaticamente o pagamento**; a coordenação
+continua responsável por conferir o crédito e o valor no extrato.
+Um único recebimento confirmado libera todas as cartinhas daquele Pix.
+
+### Rascunhos preservados após gerar o Pix
+
+O botão **Gerar Pix** não esvazia o carrinho nem remove os rascunhos,
+fotos, áudios ou a decoração do IndexedDB. Na tela do Pix há links
+**Editar rascunho** para voltar ao editor usando o mesmo ID local.
+Ao voltar ao carrinho, o usuário encontra o pagamento já criado.
+O sistema bloqueia gerar outro Pix para as mesmas cartinhas e protege
+os itens associados contra remoção acidental.
+
+Depois da confirmação, a página privada de cada pedido recupera a última
+versão do rascunho e permite atualizar a assinatura, o texto e a
+decoração até o prazo de encerramento. Anexos já enviados são marcados
+localmente para não serem reenviados em duplicidade. Não apagamos os
+originais do IndexedDB após o envio.
+
+**Importante:** como fotos e áudios permanecem no armazenamento
+**do próprio navegador**, os dados só podem ser recuperados naquele
+perfil/aparelho. Limpar dados do Safari, usar modo privado ou mudar
+de dispositivo pode impedir essa recuperação. Guarde também o link
+privado gerado no Pix. A equipe do Mini Mercado não recebe acesso
+ao conteúdo dos rascunhos.
+
+### Migração e publicação
+
+A migração `migrations/0010_private_payer_name.sql` adiciona
+`payer_name` em `checkouts` e `orders`, sem alterar pedidos
+existentes ou os valores já pagos. O deploy aplica migrations da D1
+antes de publicar o Worker:
+
+```bash
+git switch main
+git pull --ff-only
+npm ci
+npm run check
+npm run build
+bash scripts/deploy.sh
+```
+
+Faça uma compra de teste no Safari com duas cartinhas, gere o Pix,
+volte e edite ambas, confirme o crédito no banco usando o código
+`EJCB-...` no admin e conclua o envio sem perder fotos ou áudios.

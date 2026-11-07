@@ -75,15 +75,12 @@ function safeRich(input) {
   // Escaping malformed constructs is handled before dangerouslySetInnerHTML on the client with DOMPurify.
   return stripped;
 }
-function released(o,config) { return Number(o.release_override)===1 || Date.now()>=brazilTimeEnd(config.release_at); }
-function moderated(o,config){ return o.moderation==='approved' && released(o,config); }
-async function resetModeration(env,id) {
-  await env.DB.prepare("UPDATE orders SET moderation='draft',approved_at=NULL,release_override=0,updated_at=? WHERE id=? AND moderation!='draft'").bind(now(),id).run();
-}
+// A coordenação não modera nem acessa o conteúdo das homenagens.
+function released(config) { return Date.now()>=brazilTimeEnd(config.release_at); }
 async function cardInfo(env,o) {
   const assets=(await env.DB.prepare("SELECT id,kind,filename,content_type,bytes FROM media WHERE order_id=? AND status='ready' ORDER BY created_at").bind(o.id).all()).results;
-  return {id:o.id,recipient_name:o.recipient_name,sender_name:o.sender_name||'Uma pessoa especial',rich_html:o.rich_html,public_message:!!o.public_message,
-    media:await Promise.all(assets.map(async m=>({...m,url:await mediaUrl(env,m.id,o.id)}))),created_at:o.created_at,approved_at:o.approved_at};
+  return {id:o.id,recipient_name:o.recipient_name,sender_name:o.sender_name||'Uma pessoa especial',rich_html:o.rich_html,
+    media:await Promise.all(assets.map(async m=>({...m,url:await mediaUrl(env,m.id,o.id)}))),created_at:o.created_at};
 }
 async function orderWithRecipient(env,id) { return env.DB.prepare('SELECT o.*,r.name AS recipient_name,r.slug AS recipient_slug FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.id=?').bind(id).first(); }
 
@@ -131,7 +128,7 @@ async function buyer(req,env) {
   return row;
 }
 async function mediaUrl(env, mediaId, orderId) {
-  const blob=b64url(encode.encode(JSON.stringify({mediaId,orderId,exp:Math.floor(Date.now()/1000)+14400})));
+  const blob=b64url(encode.encode(JSON.stringify({mediaId,orderId,v:2,exp:Math.floor(Date.now()/1000)+14400})));
   const sig=b64url(new Uint8Array(await crypto.subtle.sign('HMAC',await hmacKey(env),encode.encode(blob))));
   return `/api/media/${mediaId}?access=${blob}.${sig}`;
 }
@@ -143,7 +140,7 @@ async function signedMedia(req,env,id,url) {
     if (!await crypto.subtle.verify('HMAC',await hmacKey(env),unb64url(sig),encode.encode(blob))) bad('Assinatura inválida.',403);
     payload=JSON.parse(new TextDecoder().decode(unb64url(blob)));
   } catch { bad('Link de arquivo inválido.',403); }
-  if (payload.mediaId!==id || payload.exp<=Date.now()/1000) bad('Link de arquivo expirado.',403);
+  if (payload.v!==2 || payload.mediaId!==id || payload.exp<=Date.now()/1000) bad('Link de arquivo expirado ou revogado.',403);
   const media=await getMedia(env,id);
   if (media.order_id!==payload.orderId) bad('Acesso negado.',403);
   const order=await env.DB.prepare('SELECT status FROM orders WHERE id=?').bind(media.order_id).first();
@@ -158,7 +155,7 @@ async function orderInfo(env,o) {
     amount_cents:o.total_cents,pix_code:o.pix_payload,txid:o.txid,
     pix_receiver:config.pix_name||'',pix_city:config.pix_city||'',
     rich_html:activeOrder(o)?o.rich_html:'',
-    public_message:!!o.public_message,moderation:o.moderation,moderation_note:o.moderation_note,
+    submitted:!!o.submitted_at,
     payment_claimed_at:o.payment_claimed_at,created_at:o.created_at,media:visible};
 }
 async function getMedia(env,id) {
@@ -240,7 +237,6 @@ async function mediaWrite(req,env,o,params,path) {
     let object=await env.MEDIA.head(media.object_key);
     if (!object) object=await env.MEDIA.resumeMultipartUpload(media.object_key,media.upload_id).complete(rows.map(r=>({partNumber:r.part_number,etag:r.etag})));
     await env.DB.prepare('UPDATE media SET status=?,bytes=? WHERE id=?').bind('ready',object.size,media.id).run();
-    await resetModeration(env,o.id);
     await event(env,o.id,'media_uploaded',media.kind);
     return result({ok:true,id:media.id,bytes:object.size});
   }
@@ -251,7 +247,6 @@ async function mediaWrite(req,env,o,params,path) {
       env.DB.prepare('DELETE FROM media_parts WHERE media_id=?').bind(media.id),
       env.DB.prepare('DELETE FROM media WHERE id=?').bind(media.id)
     ]);
-    await resetModeration(env,o.id);
     await event(env,o.id,'media_deleted',media.kind);
     return result({ok:true});
   }
@@ -404,15 +399,7 @@ async function publicRoute(req,env,path) {
       logo_url:logo?`/api/branding/logo?v=${logo.uploaded?.getTime()||0}`:null,
       payments_ready:!!(config.pix_key && config.pix_name && config.pix_city)}});
   }
-  if (path==='/api/publicas' && req.method==='GET') {
-    if(Date.now()<brazilTimeEnd(config.release_at)) {
-      const current=(await env.DB.prepare("SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.public_message=1 AND o.moderation='approved' AND o.release_override=1 ORDER BY o.approved_at DESC LIMIT 30").all()).results;
-      return result({cards:await Promise.all(current.map(o=>cardInfo(env,o)))});
-    }
-    const cards=(await env.DB.prepare("SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.public_message=1 AND o.moderation='approved' ORDER BY o.approved_at DESC LIMIT 40").all()).results;
-    return result({cards:await Promise.all(cards.map(o=>cardInfo(env,o)))});
-  }
-
+  if(path==='/api/publicas')bad('Todas as cartinhas são privadas.',410);
   if(path==='/api/mural/redeem'&&req.method==='POST') {
     const body=await jsonBody(req,300);
     const code=typeof body.code==='string'?body.code.toUpperCase().replace(/[\s-]/g,''):'';
@@ -434,19 +421,21 @@ async function publicRoute(req,env,path) {
   }
   const mural=path.match(/^\/api\/mural\/([a-z0-9-]+)$/);
   if (mural && req.method==='GET') {
-    const r=await env.DB.prepare('SELECT id,name,slug,mural_token_hash,mural_code,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1').bind(mural[1]).first();
+    const r=await env.DB.prepare('SELECT id,name,slug,mural_code,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1').bind(mural[1]).first();
     if(!r)bad('Encontrista não encontrado.',404);
-    const admin=await isAdmin(req,env);
-    if(!admin){
-      const access=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
-      const signed=await validMuralGrant(env,access,r);
-      const legacy=/^[A-Za-z0-9_-]{40,100}$/.test(access) &&
-        r.mural_token_hash===await digest(access);
-      if(!signed&&!legacy)bad('Convite ou código de acesso inválido.',403);
-    }
-    const rows=(await env.DB.prepare("SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON o.recipient_id=r.id WHERE o.recipient_id=? AND o.moderation='approved' ORDER BY o.approved_at DESC").bind(r.id).all()).results;
-    const cards=await Promise.all(rows.filter(o=>admin||moderated(o,config)).map(o=>cardInfo(env,o)));
-    return result({recipient:{name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r)},cards,release_at:config.release_at,is_admin:admin,locked:!admin && Date.now()<brazilTimeEnd(config.release_at)});
+    const access=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
+    const signed=await validMuralGrant(env,access,r);
+    if(!signed)bad('Código de acesso inválido.',403);
+    // O remetente envia quando quiser; o destinatário só vê após a liberação.
+    const locked=!released(config);
+    if(locked)return result({recipient:{name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r)},
+      cards:[],release_at:config.release_at,locked:true});
+    const rows=(await env.DB.prepare(
+      "SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON o.recipient_id=r.id WHERE o.recipient_id=? AND o.submitted_at IS NOT NULL AND o.status IN ('paid','preparing','delivered') ORDER BY o.submitted_at DESC"
+    ).bind(r.id).all()).results;
+    const cards=await Promise.all(rows.map(o=>cardInfo(env,o)));
+    return result({recipient:{name:r.name,slug:r.slug,photo_url:recipientPhotoUrl(r)},
+      cards,release_at:config.release_at,locked:false});
   }
   if (path==='/api/orders' && req.method==='POST') {
     if(config.open!=='true')bad('As homenagens estão temporariamente fechadas.',403);
@@ -483,7 +472,7 @@ async function publicRoute(req,env,path) {
       if(!activeOrder(o))bad('Pagamento não confirmado.',403);
       editable(config);
       const data=await jsonBody(req,40000),html=safeRich(data.rich_html||'');
-      await env.DB.prepare("UPDATE orders SET rich_html=?,public_message=?,moderation='draft',approved_at=NULL,release_override=0,updated_at=? WHERE id=?").bind(html,data.public_message===true?1:0,now(),o.id).run();
+      await env.DB.prepare("UPDATE orders SET rich_html=?,public_message=0,updated_at=? WHERE id=?").bind(html,now(),o.id).run();
       await event(env,o.id,'message_saved');return result({ok:true});
     }
     if(path==='/api/order/submit'&&req.method==='POST') {
@@ -491,8 +480,8 @@ async function publicRoute(req,env,path) {
       editable(config);
       const count=await env.DB.prepare("SELECT COUNT(*) AS count FROM media WHERE order_id=? AND status='ready'").bind(o.id).first();
       if(!excerpt(o.rich_html)&&!count.count)bad('Escreva uma mensagem ou adicione uma foto ou áudio antes de enviar.');
-      await env.DB.prepare("UPDATE orders SET moderation='pending',moderation_note='',submitted_at=?,updated_at=? WHERE id=?").bind(now(),now(),o.id).run();
-      await event(env,o.id,'submitted');return result({ok:true,moderation:'pending'});
+      await env.DB.prepare("UPDATE orders SET moderation='approved',public_message=0,moderation_note='',submitted_at=?,approved_at=?,release_override=0,updated_at=? WHERE id=?").bind(now(),now(),now(),o.id).run();
+      await event(env,o.id,'letter_sent');return result({ok:true,submitted:true});
     }
     if(path.startsWith('/api/order/media/')){
       const file=path.match(/^\/api\/order\/media\/([a-f0-9-]{36})\/file$/);
@@ -558,8 +547,9 @@ async function adminRoute(req,env,path) {
     const [config,recipients,orders]=await Promise.all([
       settings(env),
       env.DB.prepare('SELECT id,name,slug,active,created_at,photo_key,photo_consent,og_key,mural_code FROM recipients ORDER BY name COLLATE NOCASE').all(),
-      env.DB.prepare(`SELECT o.id,o.sender_name,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,o.moderation,o.moderation_note,o.public_message,o.release_override,o.demo,
-        r.name AS recipient_name,r.slug AS recipient_slug,(SELECT COUNT(*) FROM media m WHERE m.order_id=o.id AND m.status='ready') AS files
+      env.DB.prepare(`SELECT o.id,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,
+        CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted,o.demo,
+        r.name AS recipient_name,r.slug AS recipient_slug
         FROM orders o JOIN recipients r ON o.recipient_id=r.id ORDER BY o.created_at DESC LIMIT 500`).all()
     ]);
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
@@ -627,25 +617,23 @@ async function adminRoute(req,env,path) {
     await env.DB.prepare('UPDATE recipients SET name=?,active=? WHERE id=?').bind(name,data.active!==false?1:0,recipient[1]).run();
     return result({ok:true});
   }
-  const invite=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/invite$/);
-  if(invite&&req.method==='POST'){
-    const recipient=await env.DB.prepare('SELECT slug FROM recipients WHERE id=?').bind(invite[1]).first();if(!recipient)bad('Encontrista não encontrado.',404);
-    const secret=token();await env.DB.prepare('UPDATE recipients SET mural_token_hash=? WHERE id=?').bind(await digest(secret),invite[1]).run();
-    return result({url:`${new URL(req.url).origin}/mural/${recipient.slug}#token=${secret}`});
-  }
   const detail=path.match(/^\/api\/admin\/orders\/(EJC-[A-F0-9]{12})$/);
   if(detail&&req.method==='GET'){
-    const o=await orderWithRecipient(env,detail[1]);if(!o)bad('Pedido inexistente.',404);
-    const info=await orderInfo(env,o);
-    const media=(await env.DB.prepare('SELECT id,kind,filename,content_type,bytes,status FROM media WHERE order_id=? ORDER BY created_at').bind(o.id).all()).results;
-    const history=(await env.DB.prepare('SELECT type,detail,created_at FROM order_events WHERE order_id=? ORDER BY created_at').bind(o.id).all()).results;
-    return result({...info,media:await Promise.all(media.map(async m=>({...m,url:m.status==='ready'?await mediaUrl(env,m.id,o.id):null}))),history,bank_reference:o.bank_reference,confirmed_at:o.confirmed_at});
+    const o=await env.DB.prepare(
+      "SELECT o.id,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted,r.name AS recipient_name FROM orders o JOIN recipients r ON o.recipient_id=r.id WHERE o.id=?"
+    ).bind(detail[1]).first();
+    if(!o)bad('Pedido inexistente.',404);
+    // Sem texto, identidade do remetente, lista de anexos ou links de mídia.
+    const events=(await env.DB.prepare(
+      "SELECT type,created_at FROM order_events WHERE order_id=? ORDER BY created_at"
+    ).bind(o.id).all()).results;
+    return result({...o,history:events});
   }
   const status=path.match(/^\/api\/admin\/orders\/(EJC-[A-F0-9]{12})\/status$/);
   if(status&&req.method==='PATCH'){
     const data=await jsonBody(req),order=await env.DB.prepare('SELECT id,status FROM orders WHERE id=?').bind(status[1]).first();
     if(!order)bad('Pedido inexistente.',404);
-    if(data.status!=='paid')bad('Use o fluxo de moderação para gerenciar cartinhas.',409);
+    if(data.status!=='paid')bad('A coordenação só pode confirmar o pagamento Pix.',409);
     if(!['pending','claimed'].includes(order.status))bad('Pedido não está aguardando Pix.',409);
     const ref=assertText(data.bank_reference||'',128,'Identificador bancário').toUpperCase();
     if(!/^[A-Z0-9:/._-]{8,128}$/.test(ref))bad('Informe o identificador bancário completo.');
@@ -658,20 +646,8 @@ async function adminRoute(req,env,path) {
     }catch(e){if(String(e).includes('UNIQUE constraint'))bad('Transação já utilizada.',409);throw e;}
     await event(env,order.id,'payment_confirmed',ref);return result({ok:true,status:'paid'});
   }
-  const moderation=path.match(/^\/api\/admin\/orders\/(EJC-[A-F0-9]{12})\/moderation$/);
-  if(moderation&&req.method==='PATCH'){
-    const data=await jsonBody(req),o=await orderWithRecipient(env,moderation[1]);
-    if(!o||!activeOrder(o))bad('Pedido não pago.',409);
-    if(!['approved','rejected'].includes(data.moderation))bad('Moderação inválida.');
-    if(data.moderation==='approved'&&o.moderation!=='pending')bad('Somente cartinhas enviadas podem ser aprovadas.',409);
-    const note=assertText(data.note||'',500,'Observação',false);
-    await env.DB.prepare('UPDATE orders SET moderation=?,moderation_note=?,approved_at=?,release_override=?,updated_at=? WHERE id=?').bind(data.moderation,note,data.moderation==='approved'?now():null,data.moderation==='approved'&&data.release_now===true?1:0,now(),o.id).run();
-    await event(env,o.id,`moderation_${data.moderation}`,note);return result({ok:true});
-  }
   if(path==='/api/admin/demo/seed'&&req.method==='POST')return seedDemo(env);
   if(path==='/api/admin/demo/clear'&&req.method==='DELETE')return clearDemo(env);
-  const media=path.match(/^\/api\/admin\/media\/([a-f0-9-]{36})\/file$/);
-  if(media&&req.method==='GET')return fetchMedia(req,env,await getMedia(env,media[1]));
   bad('Rota administrativa não encontrada.',404);
 }
 function wavTone(freq=440,duration=2){
@@ -721,9 +697,9 @@ async function seedDemo(env){
     const r=await env.DB.prepare('SELECT id,slug FROM recipients WHERE name=?').bind(people[i]).first();
     let id=r?.id; if(!id){id=newId();const slug=`${slugify(people[i])}-demo`;await env.DB.prepare('INSERT INTO recipients(id,name,slug) VALUES(?,?,?)').bind(id,people[i],slug).run();}
     const orderId=`EJC-${randomCode()}`;
-    const state=i===0?'approved':i===1?'pending':i===2?'approved':i===3?'rejected':'draft';
+    const state='approved';
     await env.DB.prepare(`INSERT INTO orders(id,token_hash,recipient_id,sender_name,status,total_cents,pix_payload,txid,rich_html,moderation,moderation_note,public_message,release_override,demo,submitted_at,approved_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(orderId,await digest(token()),id,['Sua mãe','Um amigo','Tia Clara','Seus colegas','Sua família'][i],'paid',1000,'DEMO_NAO_PAGAR',`DEMO${randomCode()}`,`<p><strong>${letters[i]}</strong></p><p>Com carinho 💜</p>`,state,state==='rejected'?'Revisar conteúdo antes de publicar.':'',i===2?1:0,i===0?1:0,1,now(),state==='approved'?now():null).run();
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(orderId,await digest(token()),id,['Sua mãe','Um amigo','Tia Clara','Seus colegas','Sua família'][i],'paid',1000,'DEMO_NAO_PAGAR',`DEMO${randomCode()}`,`<p><strong>${letters[i]}</strong></p><p>Com carinho 💜</p>`,state,'',0,0,1,now(),now()).run();
     const mediaId=newId(),key=`demo/${orderId}/som.wav`;
     const wav=wavTone(250+i*83,2.5);
     await env.MEDIA.put(key,wav,{httpMetadata:{contentType:'audio/wav'}});

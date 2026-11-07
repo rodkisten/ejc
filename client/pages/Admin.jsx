@@ -5,27 +5,167 @@ import { api, money, btime, track,download } from '../lib/api';
 import QrCode from '../components/QrCode';
 import Labels from './Labels';
 import { publishOgImage } from '../lib/og';
-import {LetterCard} from '../components/LetterCard';
 function useAdmin(){const [info,setInfo]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const reload=useCallback(async()=>{try{setInfo(await api('/api/admin/bootstrap'));setError('');}catch(e){setError(e.message);setInfo(null);}finally{setLoading(false);}},[]);
   useEffect(()=>{reload();},[reload]);return {info,loading,error,reload};}
 const copy=t=>navigator.clipboard.writeText(t);
-function AdminDashboard({info,reload}){const navigate=useNavigate();const counts={claimed:0,pending:0,paid:0,review:0,approved:0};for(const o of info.orders){if(o.status==='pending'||o.status==='claimed')counts[o.status]++;if(o.moderation==='pending')counts.review++;if(o.moderation==='approved')counts.approved++;}
-  return <><div className="section-head"><div><span className="eyebrow">COORDENAÇÃO / AO VIVO</span><h1>Painel de homenagens</h1><p>Primeiro confira o Pix. Depois, modere a cartinha.</p></div><button className="btn ghost" onClick={reload}><RefreshCw size={17}/> Atualizar</button></div><div className="stats-grid"><div><span>Pix a conferir</span><strong>{counts.pending+counts.claimed}</strong></div><div><span>Em moderação</span><strong>{counts.review}</strong></div><div><span>Aprovadas</span><strong>{counts.approved}</strong></div><div><span>Total</span><strong>{info.orders.length}</strong></div></div><OrderList orders={info.orders} navigate={navigate}/></>}
-function OrderList({orders,navigate}){const [q,setQ]=useState(''),[status,setStatus]=useState('all');const rows=orders.filter(o=>(status==='all'||(status==='pix'?['pending','claimed'].includes(o.status):status==='review'?o.moderation==='pending':o.moderation===status))&&`${o.id} ${o.recipient_name} ${o.sender_name}`.toLowerCase().includes(q.toLowerCase()));
-  return <section className="form-card"><div className="row between"><h2>Pedidos e cartinhas</h2><span className="muted">{rows.length} registros</span></div><div className="row filters"><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar pedido ou encontrista"/><select value={status} onChange={e=>setStatus(e.target.value)}><option value="all">Todos</option><option value="pix">Conferir Pix</option><option value="review">Moderar</option><option value="approved">Aprovadas</option><option value="draft">Rascunhos</option><option value="rejected">Rejeitadas</option></select></div><div className="admin-order-list">{rows.map(o=><button key={o.id} className="admin-order" onClick={()=>navigate(`/admin/pedidos/${o.id}`)}><span><strong>{o.recipient_name}</strong><small>{o.sender_name||'Anônimo'} · {o.id}</small></span><span className="order-tags"><b>{money(o.total_cents)}</b><small>{o.status==='paid'?'Pago':o.status==='claimed'?'Conferir Pix':o.status==='pending'?'Aguardando Pix':o.status} · {o.moderation}</small></span></button>)}</div></section>}
-function OrderDetail({reload}){const {id}=useParams(),navigate=useNavigate(),[order,setOrder]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[bank,setBank]=useState(''),[bankChecked,setBankChecked]=useState(false),[amountChecked,setAmountChecked]=useState(false),[note,setNote]=useState(''),[releaseNow,setReleaseNow]=useState(false);
-  const load=useCallback(async()=>{try{const o=await api(`/api/admin/orders/${id}`);setOrder(o);setError('');}catch(e){setError(e.message);}},[id]);useEffect(()=>{load();},[load]);
-  async function act(path,data){setBusy(true);try{await api(`/api/admin/orders/${id}/${path}`,{method:'PATCH',data});await load();await reload();}catch(e){setError(e.message);}finally{setBusy(false);}}
-  if(!order)return <div className="loading">{error||'Carregando pedido...'}</div>;
-  return <div className="admin-detail"><button className="text-button" onClick={()=>navigate('/admin')}>← Voltar aos pedidos</button><div className="section-head"><div><span className="eyebrow">{order.id}</span><h1>{order.recipient_name}</h1><p>De {order.sender_name||'um remetente anônimo'} · {money(order.amount_cents)}</p></div><span className="status-pill">{order.status} / {order.moderation}</span></div>
-    {error&&<div className="notice error">{error}</div>}
-    {!['paid','preparing','delivered'].includes(order.status)&&<section className="form-card"><h2>Conferir Pix no extrato</h2><p className="muted">Não aprove só pela captura de tela ou pela afirmação do comprador. Compare o valor e identifique uma transação ainda não utilizada.</p><div className="field"><label>Identificador bancário completo</label><input value={bank} onChange={e=>setBank(e.target.value)} placeholder="E2E ID ou ID da transferência"/></div><label className="toggle-line"><input type="checkbox" checked={bankChecked} onChange={e=>setBankChecked(e.target.checked)}/> Confirmei o crédito no extrato</label><label className="toggle-line"><input type="checkbox" checked={amountChecked} onChange={e=>setAmountChecked(e.target.checked)}/> Confirmei o valor de {money(order.amount_cents)}</label><button className="btn" disabled={busy||!bankChecked||!amountChecked||bank.length<8} onClick={()=>act('status',{status:'paid',bank_reference:bank,bank_checked:bankChecked,amount_checked:amountChecked})}><Check size={18}/> Marcar Pix como pago</button></section>}
-    {['paid','preparing','delivered'].includes(order.status)&&<section className="form-card"><h2>Moderação da mensagem</h2><div className="mural-cards"><LetterCard letter={order} recipient={order.recipient_name} actions={false}/></div><label>Observações (se recusar)</label><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Por que a cartinha precisa de revisão?"/><label className="toggle-line"><input type="checkbox" checked={releaseNow} onChange={e=>setReleaseNow(e.target.checked)}/> Liberar imediatamente ao encontrista, antes do horário geral (admin)</label><div className="inline-actions"><button className="btn" disabled={busy||order.moderation!=='pending'} onClick={()=>act('moderation',{moderation:'approved',release_now:releaseNow,note:''})}><Check size={18}/> Aprovar cartinha</button><button className="btn danger-btn" disabled={busy||order.moderation==='rejected'} onClick={()=>act('moderation',{moderation:'rejected',note})}>Pedir revisão</button></div></section>}
-    <section className="form-card"><h2>Histórico do pedido</h2><div className="timeline">{(order.history||[]).map((ev,i)=><div key={i}><strong>{ev.type}</strong> <span className="muted">{new Date(ev.created_at).toLocaleString('pt-BR')}</span><p className="small">{ev.detail}</p></div>)}</div></section>
-  </div>;
+// O painel não renderiza nem solicita texto, áudio, fotos ou nome do remetente.
+function AdminDashboard({ info, reload }) {
+  const navigate = useNavigate();
+  const pending = info.orders.filter((order) => ['pending', 'claimed'].includes(order.status));
+  const paid = info.orders.filter((order) => ['paid', 'preparing', 'delivered'].includes(order.status));
+  const sent = info.orders.filter((order) => order.submitted);
+  return (
+    <>
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">COORDENAÇÃO / AO VIVO</span>
+          <h1>Painel de pagamentos</h1>
+          <p>Confira o Pix e acompanhe os pedidos. As cartinhas são privadas e não podem ser lidas ou ouvidas neste painel.</p>
+        </div>
+        <button className="btn ghost" onClick={reload}><RefreshCw size={17} /> Atualizar</button>
+      </div>
+      <div className="stats-grid">
+        <div><span>Pix a conferir</span><strong>{pending.length}</strong></div>
+        <div><span>Pagamentos confirmados</span><strong>{paid.length}</strong></div>
+        <div><span>Cartinhas enviadas</span><strong>{sent.length}</strong></div>
+        <div><span>Total de pedidos</span><strong>{info.orders.length}</strong></div>
+      </div>
+      <div className="notice">
+        <ShieldCheck size={19} />
+        A coordenação acessa apenas dados operacionais de pagamento e envio. Mensagens, fotos e áudios não são exibidos.
+      </div>
+      <OrderList orders={info.orders} navigate={navigate} />
+    </>
+  );
 }
-function People({info,reload}){const [names,setNames]=useState(''),[notice,setNotice]=useState(''),[error,setError]=useState(''),[invite,setInvite]=useState(null),[uploading,setUploading]=useState(''),[ogProgress,setOgProgress]=useState('');
+function OrderList({ orders, navigate }) {
+  const [q, setQ] = useState('');
+  const [filter, setFilter] = useState('all');
+  const rows = orders.filter((order) => {
+    const matches = `${order.id} ${order.recipient_name}`.toLocaleLowerCase('pt-BR').includes(q.toLocaleLowerCase('pt-BR'));
+    if (filter === 'pix') return matches && ['pending', 'claimed'].includes(order.status);
+    if (filter === 'paid') return matches && ['paid', 'preparing', 'delivered'].includes(order.status);
+    if (filter === 'sent') return matches && Boolean(order.submitted);
+    return matches;
+  });
+  return (
+    <section className="form-card">
+      <div className="row between"><h2>Pedidos e pagamentos</h2><span className="muted">{rows.length} registros</span></div>
+      <div className="row filters">
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar pedido ou encontrista" />
+        <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+          <option value="all">Todos os pedidos</option>
+          <option value="pix">Conferir Pix</option>
+          <option value="paid">Pagamentos confirmados</option>
+          <option value="sent">Cartinhas enviadas</option>
+        </select>
+      </div>
+      <div className="admin-order-list">
+        {rows.map((order) => (
+          <button key={order.id} className="admin-order" onClick={() => navigate(`/admin/pedidos/${order.id}`)}>
+            <span><strong>{order.recipient_name}</strong><small>{order.id}</small></span>
+            <span className="order-tags">
+              <b>{money(order.total_cents)}</b>
+              <small>{order.status === 'claimed' ? 'Conferir Pix' :
+                order.status === 'pending' ? 'Aguardando Pix' :
+                'Pagamento confirmado'} · {order.submitted ? 'Cartinha enviada' : 'Ainda não enviada'}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+function OrderDetail({ reload }) {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [order, setOrder] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [bank, setBank] = useState('');
+  const [bankChecked, setBankChecked] = useState(false);
+  const [amountChecked, setAmountChecked] = useState(false);
+  const load = useCallback(async () => {
+    try {
+      setOrder(await api(`/api/admin/orders/${id}`));
+      setError('');
+    } catch (cause) {
+      setError(cause.message);
+    }
+  }, [id]);
+  useEffect(() => { load(); }, [load]);
+  async function confirmPayment() {
+    setBusy(true);
+    try {
+      await api(`/api/admin/orders/${id}/status`, {
+        method: 'PATCH',
+        data: {
+          status: 'paid', bank_reference: bank,
+          bank_checked: bankChecked, amount_checked: amountChecked,
+        },
+      });
+      await load();
+      await reload();
+    } catch (cause) {
+      setError(cause.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (!order) return <div className="loading">{error || 'Carregando pedido...'}</div>;
+  const paid = ['paid', 'preparing', 'delivered'].includes(order.status);
+  return (
+    <div className="admin-detail">
+      <button className="text-button" onClick={() => navigate('/admin')}>← Voltar aos pedidos</button>
+      <div className="section-head">
+        <div><span className="eyebrow">{order.id}</span><h1>{order.recipient_name}</h1><p>{money(order.total_cents)}</p></div>
+        <span className={`status-pill ${paid ? 'success' : 'pending'}`}>
+          {paid ? 'Pagamento confirmado' : 'Aguardando Pix'}
+        </span>
+      </div>
+      <div className="notice">
+        <ShieldCheck size={19} />
+        Conteúdo privado. A coordenação não visualiza o texto, as imagens ou os áudios da cartinha.
+      </div>
+      {error && <div className="notice error">{error}</div>}
+      {!paid && (
+        <section className="form-card">
+          <h2>Conferir Pix no extrato</h2>
+          <p className="muted">Confira a entrada do dinheiro no banco. Não libere apenas com um comprovante enviado pelo comprador.</p>
+          <label htmlFor="bank-id">Identificador bancário completo</label>
+          <input id="bank-id" value={bank} onChange={(e) => setBank(e.target.value)} placeholder="E2E ID ou identificador da transferência" />
+          <label className="toggle-line"><input type="checkbox" checked={bankChecked} onChange={(e) => setBankChecked(e.target.checked)} /> Confirmei a entrada do dinheiro no banco</label>
+          <label className="toggle-line"><input type="checkbox" checked={amountChecked} onChange={(e) => setAmountChecked(e.target.checked)} /> Confirmei o valor de {money(order.total_cents)}</label>
+          <button className="btn" disabled={busy || !bankChecked || !amountChecked || bank.length < 8} onClick={confirmPayment}>
+            <Check size={18} /> Confirmar pagamento Pix
+          </button>
+        </section>
+      )}
+      <section className="form-card">
+        <h2>Situação do envio</h2>
+        <p>{order.submitted ? 'A cartinha foi enviada e aguarda somente o horário de liberação do mural.' :
+          'O comprador ainda não concluiu o envio da cartinha.'}</p>
+      </section>
+      <section className="form-card">
+        <h2>Histórico operacional</h2>
+        <div className="timeline">
+          {(order.history || []).map((record, i) => (
+            <div key={i}><strong>{({
+              created: 'Pedido criado',
+              payment_claimed: 'Pagamento informado',
+              payment_confirmed: 'Pagamento confirmado',
+              letter_sent: 'Cartinha enviada',
+            })[record.type] || 'Atividade do pedido'}</strong>
+              <span className="muted"> {new Date(record.created_at).toLocaleString('pt-BR')}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+function People({info,reload}){const [names,setNames]=useState(''),[notice,setNotice]=useState(''),[error,setError]=useState(''),[uploading,setUploading]=useState(''),[ogProgress,setOgProgress]=useState('');
   async function photoUpload(r,file) {
     if(!file)return;
     if(!window.confirm(`Confirmo que tenho autorização para divulgar a foto de ${r.name}, inclusive dos responsáveis se menor de idade.`))return;
@@ -76,8 +216,7 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
     } finally { setOgProgress(''); }
   }
   const add=async()=>{try{const r=await api('/api/admin/recipients/import',{method:'POST',data:{names:names.split(/\r?\n/).filter(Boolean)}});setNotice(`${r.inserted} nomes importados.`);setNames('');await reload();}catch(e){setError(e.message);}};
-  const createInvite=async r=>{if(!confirm(`Gerar novo link privado de ${r.name}? Isso invalida o anterior.`))return;try{const data=await api(`/api/admin/recipients/${r.id}/invite`,{method:'POST',data:{}});setInvite({name:r.name,url:data.url});}catch(e){setError(e.message);}};
-  return <><div className="section-head"><div><span className="eyebrow">ENCONTRISTAS</span><h1>Nomes, fotos e links exclusivos</h1><p>O link para enviar é público. O link de leitura do mural é privado e precisa ser entregue pessoalmente.</p></div></div><section className="form-card"><label>Importar nomes (um por linha)</label><textarea rows={4} value={names} onChange={e=>setNames(e.target.value)} placeholder={'Maria Eduarda\nJoão Pedro\nAna Clara'}/><button className="btn" onClick={add}>Adicionar encontristas</button></section>
+  return <><div className="section-head"><div><span className="eyebrow">ENCONTRISTAS</span><h1>Nomes, fotos e links exclusivos</h1><p>A coordenação gerencia os nomes, fotos e QR Codes, mas não lê nem escuta as cartinhas. Entregue os códigos dos murais individualmente.</p></div></div><section className="form-card"><label>Importar nomes (um por linha)</label><textarea rows={4} value={names} onChange={e=>setNames(e.target.value)} placeholder={'Maria Eduarda\nJoão Pedro\nAna Clara'}/><button className="btn" onClick={add}>Adicionar encontristas</button></section>
     <section className="form-card">
       <h2>Imagens para redes sociais</h2>
       <p className="muted small">Gere prévias PNG com nome e foto autorizada para WhatsApp, Instagram, X, Facebook e Telegram.</p>
@@ -86,7 +225,7 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
       </button>
       {ogProgress&&<p className="notice">{ogProgress}</p>}
     </section>
-    {error&&<div className="notice error">{error}</div>}{notice&&<div className="notice success">{notice}</div>}{invite&&<div className="notice success"><strong>Link privado de {invite.name}</strong><p className="small">Este link é mostrado apenas agora. Guarde-o com segurança.</p><div className="inline-actions"><button className="btn ghost" onClick={()=>copy(invite.url)}><Copy size={16}/> Copiar link privado</button></div></div>}
+    {error&&<div className="notice error">{error}</div>}{notice&&<div className="notice success">{notice}</div>}
     <div className="people-list">{info.recipients.map(r=><div className="form-card person-row" key={r.id}>
       <div className="person-with-photo">
         <div className="recipient-avatar lavender">
@@ -104,7 +243,7 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
           <ImagePlus size={15}/> Atualizar imagem
         </button>
         {r.og_url&&<a className="btn ghost" href={r.og_url} target="_blank" rel="noreferrer">Ver prévia</a>}
-        <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}`)}><Copy size={15}/> Link de envio</button><button className="btn outline" onClick={()=>createInvite(r)}><Eye size={16}/> Link secreto</button></div></div>)}</div></>;
+        <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}`)}><Copy size={15}/> Link de envio</button></div></div>)}</div></>;
 }
 function BrandLogo({ info, reload }) {
   const [busy,setBusy]=useState(false),[message,setMessage]=useState('');
@@ -152,7 +291,7 @@ function QrPrint({info}){const [person,setPerson]=useState(''),[color,setColor]=
   return <><div className="section-head no-print"><div><span className="eyebrow">MATERIAL IMPRESSO</span><h1>QR Codes decorados</h1><p>Para plaquinhas, cartazes e distribuição nas ruas.</p></div><button className="btn" onClick={()=>window.print()}><Printer size={16}/> Imprimir A4</button></div><div className="form-card no-print"><div className="row filters"><select value={person} onChange={e=>setPerson(e.target.value)}><option value="">QR geral: lista de encontristas</option>{info.recipients.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select><select value={color} onChange={e=>setColor(e.target.value)}><option value="rose">Rosa</option><option value="blue">Azul</option><option value="mint">Verde</option><option value="orange">Laranja</option></select></div><p className="muted small">Os QR Codes são links para o formulário, não para o Pix bancário nem para o mural secreto.</p></div><div className="qr-print-grid"><DecorQr value={url} title={selected?`Para ${selected.name}`:'Cartinhas do XX EJC'} subtitle="Suas palavras. Sua voz. Um encontro especial." color={color} logoUrl={info.config.logo_url} photoUrl={selected?.photo_url}/><DecorQr value={url} title={selected?`Um carinho para ${selected.name}`:'Uma mensagem de coração'} subtitle="Grave sua voz, adicione fotos, mande uma cartinha." color={color} logoUrl={info.config.logo_url} photoUrl={selected?.photo_url}/></div></>;
 }
 function Demo({reload}){const [message,setMessage]=useState(''),[busy,setBusy]=useState(false);async function run(action){if(action==='clear'&&!confirm('Apagar todos os pedidos de DEMONSTRAÇÃO?'))return;setBusy(true);try{const data=await api(`/api/admin/demo/${action}`,{method:action==='seed'?'POST':'DELETE',data:action==='seed'?{}:undefined});setMessage(`Concluído: ${data.inserted??data.deleted} demonstrações.`);await reload();}catch(e){setMessage(e.message);}finally{setBusy(false);}}
-  return <><div className="section-head"><div><span className="eyebrow">AMBIENTE DE TESTE</span><h1>Demonstração</h1><p>Dados fictícios para explorar os estados do sistema. Nunca são cobrados por Pix.</p></div></div><section className="form-card"><h2>Exemplos de cartinhas e moderação</h2><div className="inline-actions"><button className="btn" disabled={busy} onClick={()=>run('seed')}><Sparkles size={16}/> Criar exemplos</button><button className="btn danger-btn" disabled={busy} onClick={()=>run('clear')}><Trash2 size={16}/> Apagar exemplos</button></div>{message&&<div className="notice">{message}</div>}</section></>;
+  return <><div className="section-head"><div><span className="eyebrow">AMBIENTE DE TESTE</span><h1>Demonstração</h1><p>Dados fictícios para explorar os estados do sistema. Nunca são cobrados por Pix.</p></div></div><section className="form-card"><h2>Exemplos de pedidos e situações de pagamento</h2><div className="inline-actions"><button className="btn" disabled={busy} onClick={()=>run('seed')}><Sparkles size={16}/> Criar exemplos</button><button className="btn danger-btn" disabled={busy} onClick={()=>run('clear')}><Trash2 size={16}/> Apagar exemplos</button></div>{message&&<div className="notice">{message}</div>}</section></>;
 }
 export default function Admin(){const [authenticated,setAuthenticated]=useState(null),[password,setPassword]=useState(''),[loginError,setLoginError]=useState(''),[busy,setBusy]=useState(false),{info,loading,error,reload}=useAdmin();
   useEffect(()=>{if(!loading)setAuthenticated(!!info);},[loading,info]);

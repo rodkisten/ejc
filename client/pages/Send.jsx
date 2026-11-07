@@ -153,7 +153,10 @@ export default function Send() {
         <section className="form-card">
           <label htmlFor="sender">Quem assina esta cartinha? <span className="muted">(opcional)</span></label>
           <input id="sender" autoComplete="name" value={sender}
-            onChange={(event) => setSender(event.target.value.slice(0, 100))}
+            onChange={(event) => {
+              setSender(event.target.value.slice(0,100));
+              setComposition(previous => ({...previous,authorName:''}));
+            }}
             placeholder="Seu nome, sua família, seus amigos..." />
           <p className="muted small">O remetente é independente em cada cartinha. Você pode mudar ao duplicar.</p>
         </section>

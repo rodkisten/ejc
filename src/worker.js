@@ -202,6 +202,13 @@ async function mediaWrite(req,env,o,params,path) {
     if (kind==='audio' && !/^audio\/(mp4|webm|ogg|mpeg|aac|x-m4a|wav)(;[\w=, .-]+)?$/.test(mime)) bad('Formato de áudio não suportado.');
     if (kind==='image' && !/^image\/(jpeg|png|webp|heic|heif|gif|avif)$/.test(mime)) bad('Formato de foto não suportado.');
     const filename=assertText(data.filename||`arquivo-${Date.now()}`,160,'Nome do arquivo');
+    if (!activeOrder(o)) {
+      // Before bank approval, prevent arbitrary storage consumption by unpaid checkouts.
+      const usage=await env.DB.prepare(
+        "SELECT COUNT(*) AS files FROM media WHERE order_id=? AND status IN ('uploading','ready')"
+      ).bind(o.id).first();
+      if (usage.files>=12) bad('Até 12 anexos por cartinha antes da confirmação do Pix.',413);
+    }
     const id=newId(), objectKey=`orders/${o.id}/${id}`;
     const upload=await env.MEDIA.createMultipartUpload(objectKey,{httpMetadata:{contentType:mime}});
     await env.DB.prepare('INSERT INTO media(id,order_id,kind,filename,content_type,object_key,upload_id) VALUES(?,?,?,?,?,?,?)').bind(id,o.id,kind,filename,mime,objectKey,upload.uploadId).run();
@@ -216,6 +223,7 @@ async function mediaWrite(req,env,o,params,path) {
     const part=Number(match[2]);
     const declared=Number(req.headers.get('Content-Length')||0);
     if (!Number.isSafeInteger(part) || part<1 || part>10000 || declared>PART_SIZE) bad('Parte inválida.',413);
+    if (!activeOrder(o) && part>6) bad('Cada anexo pode ter até 48 MB antes do pagamento.',413);
     // Don't depend on Content-Length: some browsers/proxies stream uploads without it.
     // Read incrementally and reject oversized parts before holding them in memory.
     if (!req.body) bad('Parte vazia.',400);
@@ -243,6 +251,21 @@ async function mediaWrite(req,env,o,params,path) {
     if (!rows.length || rows.length>10000) bad('Nenhuma parte enviada.');
     for (let i=0;i<rows.length;i++) {
       if (rows[i].part_number!==i+1 || (i<rows.length-1 && rows[i].bytes<MIN_PART) || (i<rows.length-1 && rows[i].bytes!==PART_SIZE)) bad('Partes incompletas ou incorretas.',409);
+    }
+    if (!activeOrder(o)) {
+      const incoming=rows.reduce((size,row)=>size+row.bytes,0);
+      const individual=await env.DB.prepare(
+        "SELECT COALESCE(SUM(bytes),0) AS bytes FROM media WHERE order_id=? AND status='ready'"
+      ).bind(o.id).first();
+      if (incoming+individual.bytes>48*1024*1024)
+        bad('O limite de 48 MB de anexos desta cartinha foi atingido antes do pagamento.',413);
+      if (o.checkout_id) {
+        const grouped=await env.DB.prepare(
+          "SELECT COALESCE(SUM(m.bytes),0) AS bytes FROM media m JOIN orders o ON m.order_id=o.id WHERE o.checkout_id=? AND m.status='ready'"
+        ).bind(o.checkout_id).first();
+        if (incoming+grouped.bytes>160*1024*1024)
+          bad('O carrinho atingiu o limite de 160 MB de anexos antes do pagamento.',413);
+      }
     }
     let object=await env.MEDIA.head(media.object_key);
     if (!object) object=await env.MEDIA.resumeMultipartUpload(media.object_key,media.upload_id).complete(rows.map(r=>({partNumber:r.part_number,etag:r.etag})));

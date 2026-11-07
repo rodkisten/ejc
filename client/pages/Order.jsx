@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Copy,
   RefreshCw,
@@ -31,12 +31,14 @@ function sameDraft(a, b) {
 }
 export default function Order() {
   const { recipients, config } = useApp();
+  const navigate = useNavigate();
   const { composition, setComposition } = useLetterComposer();
   const { token } = useParams(),
     [order, setOrder] = useState(null),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [saved, setSaved] = useState(false);
+  const [sender, setSender] = useState('');
   const [html, setHtml] = useState(''),
     [assets, setAssets] = useState([]),
     [progress, setProgress] = useState('');
@@ -61,11 +63,13 @@ export default function Order() {
   useEffect(() => {
     if (!order || saved) return;
     setHtml(order.rich_html || '');
+    setSender(order.sender_name || '');
     setComposition(order.composition);
     setSaved(true);
   }, [order, saved]);
+  // The checkout draft is canonical in D1; don't overwrite edits with an older IndexedDB copy.
   useEffect(() => {
-    if (!order || !['paid', 'preparing', 'delivered'].includes(order.status)) return;
+    if (!order || order.checkout_id || !['paid', 'preparing', 'delivered'].includes(order.status)) return;
     const slug = localStorage.getItem(`ejc-order-slug-${token}`);
     const cartId = localStorage.getItem('ejc-cart-order-' + token);
     if (!slug && !cartId) return;
@@ -116,7 +120,7 @@ export default function Order() {
       await api('/api/order/message', {
         method: 'PUT',
         token,
-        data: { rich_html: html, composition },
+        data: { rich_html: html, sender_name: sender, composition },
       });
       for (const a of assets) {
         setProgress(`Enviando ${a.file.name}...`);
@@ -132,7 +136,13 @@ export default function Order() {
         track('letter_submitted');
       }
       await reload();
-      setProgress(withSubmit ? 'Cartinha enviada! Ela ficará no mural privado após o horário de liberação.' : 'Rascunho salvo com sucesso!');
+      setProgress(withSubmit ? 'Cartinha enviada! Ela ficará no mural privado após o horário de liberação.' : 'Alterações confirmadas e salvas!');
+      if (!withSubmit && !paid && order.checkout_id) {
+        const checkoutToken = localStorage.getItem('ejc-checkout-' + order.checkout_id);
+        if (checkoutToken) navigate('/checkout/' + checkoutToken, {
+          state: { notice: 'Alterações de ' + order.recipient_name + ' confirmadas! O mesmo Pix continua válido.' }
+        });
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -225,15 +235,7 @@ export default function Order() {
           )}
         </section>
       )}
-      {!paid && order.checkout_id ? (
-        <section className="form-card">
-          <h2>Esta cartinha faz parte de um Pix com várias homenagens.</h2>
-          <p>O QR Code correto contém a soma de todas as cartinhas do carrinho. Por segurança, o pagamento não é gerado individualmente nesta página.</p>
-          {localStorage.getItem('ejc-checkout-' + order.checkout_id) &&
-            <Link className="btn" to={'/checkout/' + localStorage.getItem('ejc-checkout-' + order.checkout_id)}>Ver o Pix deste carrinho</Link>}
-          <button className="btn ghost" type="button" onClick={reload}>Atualizar pagamento</button>
-        </section>
-      ) : !paid ? (
+      {!paid && !order.checkout_id ? (
       <div className="payment-layout">
         <section className="form-card pix-checkout">
           <div className="pix-headline">
@@ -319,8 +321,22 @@ export default function Order() {
         <div className="compose-layout">
           <div className="compose-main">
             <div className="notice success">
-              <CheckCircle2 size={18} /> Pix confirmado. Você pode criar e atualizar sua homenagem{' '}
-              {ended ? 'até o horário de encerramento, que já passou.' : `até ${btime(order.deadline)}.`}
+              <CheckCircle2 size={18} />
+              {paid ? 'Pix confirmado. Você pode criar e atualizar sua homenagem' :
+                'Seu Pix já foi gerado. Edite, salve e confirme suas alterações agora, mesmo antes de pagar'}
+              {' '}{ended ? 'O prazo de edição terminou.' : `até ${btime(order.deadline)}.`}
+              {!paid && <span> O envio ao mural será liberado após a conferência bancária.</span>}
+            </div>
+            {order.checkout_id && localStorage.getItem('ejc-checkout-' + order.checkout_id) && (
+              <Link className="btn ghost" to={'/checkout/' + localStorage.getItem('ejc-checkout-' + order.checkout_id)}>
+                <ArrowRight size={16} /> Voltar para o Pix deste pedido
+              </Link>
+            )}
+            <div className="form-card">
+              <label htmlFor="checkout-letter-sender">Quem assina esta cartinha? (opcional)</label>
+              <input id="checkout-letter-sender" type="text" autoComplete="name" maxLength={100}
+                disabled={ended} value={sender} onChange={(event) => setSender(event.target.value)} />
+              <p className="muted small">O remetente pode ser alterado sem gerar outro Pix.</p>
             </div>
             <div className="form-card">
               <div className="row between">
@@ -423,7 +439,7 @@ export default function Order() {
                   ))}
               </div>
             </div>
-            {!ended && <LetterControls composition={composition} onChange={setComposition} senderName={order.sender_name || ''} />}
+            {!ended && <LetterControls composition={composition} onChange={setComposition} senderName={sender} />}
             <div className="notice">
               <LockKeyhole size={18} />
               Sua cartinha é privada: não aparece em uma galeria pública nem passa por leitura ou escuta da coordenação.
@@ -432,17 +448,18 @@ export default function Order() {
             {error && <div className="notice error">{error}</div>}
             {progress && <div className="notice success">{progress}</div>}
             <div className="inline-actions spaced">
-              <button className="btn outline" disabled={busy || ended} onClick={() => save(false)}>
-                <Save size={17} /> Salvar rascunho
+              <button className={paid ? 'btn outline' : 'btn'} disabled={busy || ended} onClick={() => save(false)}>
+                <Save size={17} /> {busy ? 'Salvando...' : paid ? 'Salvar rascunho' : 'Confirmar alterações'}
               </button>
-              <button className="btn" disabled={busy || ended} onClick={() => save(true)}>
+              {paid && <button className="btn" disabled={busy || ended} onClick={() => save(true)}>
                 <Send size={17} /> {busy ? 'Enviando...' : 'Enviar ao mural privado'}
-              </button>
+              </button>}
             </div>
             <div className="notice success">
               {order.submitted
                 ? 'Cartinha enviada. Somente quem tiver acesso privado ao mural poderá vê-la, após a liberação.'
-                : 'Sua cartinha ainda é um rascunho. Você pode revisar antes de enviar.'}
+                : paid ? 'Sua cartinha ainda é um rascunho. Você pode revisar antes de enviar.' :
+                  'As alterações salvas ficarão disponíveis para qualquer pessoa com este link privado, inclusive em outro aparelho.'}
             </div>
             <h2 className="spaced">Prévia da cartinha</h2>
             <LetterCard
@@ -452,13 +469,14 @@ export default function Order() {
               recipient={order.recipient_name}
               letter={{
                 ...order,
+                sender_name: sender,
                 rich_html: html,
                 composition,
                 media: [...(order.media || []), ...assets],
               }}
             />
             <InstagramExportPanel
-              letter={{ ...order, rich_html: html, composition, media: [...(order.media || []), ...assets] }}
+              letter={{ ...order, sender_name: sender, rich_html: html, composition, media: [...(order.media || []), ...assets] }}
               recipient={order.recipient_name}
             />
           </div>

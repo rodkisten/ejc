@@ -49,10 +49,8 @@ export default function Mural() {
   async function downloadAll() {
     setBusy(true);
     try {
-      for (const envelope of data.cards) {
-        if (!opened[envelope.id]) await openLetter(envelope.id);
-      }
-      // Resolve the full set directly to avoid React state races.
+      // Downloading the full archive explicitly opens each included letter.
+      // Reading an individual letter remains idempotent on the server.
       const cards = await Promise.all(data.cards.map(async (envelope) => {
         if (opened[envelope.id]) return opened[envelope.id];
         const response = await api(
@@ -60,6 +58,9 @@ export default function Mural() {
           { token: muralToken() || undefined },
         );
         return response.card;
+      }));
+      setOpened((previous) => ({
+        ...previous, ...Object.fromEntries(cards.map((card) => [card.id, card])),
       }));
       await saveAllCards(cards, data.recipient.name);
     } catch (cause) {

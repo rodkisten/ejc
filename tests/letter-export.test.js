@@ -51,8 +51,12 @@ const letter = {
 
 test('geração de PNG respeita resoluções e uma página para textos curtos', async () => {
   const original = globalThis.document;
+  const originalFetch = globalThis.fetch;
+  const originalBitmap = globalThis.createImageBitmap;
   const mock = mockCanvas();
   globalThis.document = mock.document;
+  globalThis.fetch = async () => ({ ok: true, blob: async () => new Blob(['sticker-png'], { type: 'image/png' }) });
+  globalThis.createImageBitmap = async () => ({ width: 400, height: 300, close() {} });
   try {
     const pages = await renderLetterImages(letter, 'Ana Clara', 'letter');
     const feed = await renderLetterImages(letter, 'Ana Clara', 'feed');
@@ -63,6 +67,8 @@ test('geração de PNG respeita resoluções e uma página para textos curtos', 
     assert.deepEqual(mock.sizes, [[1080, 1350], [1080, 1350], [1080, 1920]]);
   } finally {
     globalThis.document = original;
+    globalThis.fetch = originalFetch;
+    globalThis.createImageBitmap = originalBitmap;
   }
 });
 

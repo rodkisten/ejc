@@ -236,6 +236,29 @@ test('metatags OG de WhatsApp aparecem mesmo antes de gerar imagem personalizada
   assert.match(mural.headers.get('X-Robots-Tag'),/noindex/);
 });
 
+test('metadados personalizados substituem o fallback estático sem duplicar og:image',async()=>{
+  const env=fixture(),{list}=await setup(env);
+  const index=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
+  env.ASSETS.fetch=async(req)=>{
+    if(new URL(req.url).pathname==='/og-ejc-default.png') {
+      const png=fs.readFileSync(new URL('../public/og-ejc-default.png',import.meta.url));
+      return new Response(png,{headers:{'Content-Type':'image/png'}});
+    }
+    return new Response(index,{headers:{'Content-Type':'text/html'}});
+  };
+  const page=await worker.fetch(new Request('https://ejc.test/enviar/'+list[0].slug+'?og=20261107b'),env);
+  const html=await page.text();
+  assert.equal(page.status,200);
+  assert.equal((html.match(/property="og:image"/g)||[]).length,1);
+  assert.equal((html.match(/property="og:title"/g)||[]).length,1);
+  assert.ok(!html.includes('EJC-OG-START'));
+  assert.match(html,/property="og:image" content="https:\/\/ejc\.test\/og-ejc-default\.png/);
+  const image=await worker.fetch(new Request('https://ejc.test/og-ejc-default.png'),env);
+  assert.equal(image.status,200);
+  assert.match(image.headers.get('content-type'),/image\/png/);
+  assert.equal((await image.arrayBuffer()).byteLength,1958);
+});
+
 test('imagens OG são PNG servidos para robôs sociais e metadados chegam no HTML',async()=>{
   const env=fixture(),{admin,list}=await setup(env);
   const person=list[0];

@@ -881,20 +881,18 @@ select:focus-visible {
   min-width: 0;
 }
 .upload-label {
-  display: inline-flex;
-  align-items: center;
-
-  flex-direction: row-reverse;
-  
-  gap: 10px;
-  padding: 13px 18px;
-  border: 1px dashed #c48ca4;
-  color: #954165;
-  background: #faeef2;
-  border-radius: 13px;
-  font-size: 0.9rem;
-  font-weight: 800;
-  cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    flex-direction: row;
+    gap: 10px;
+    padding: 13px 18px;
+    border: 1px dashed #677bb4;
+    color: rgb(59 130 246);
+    background: #d1ebff;
+    border-radius: 13px;
+    font-size: .9rem;
+    font-weight: 800;
+    cursor: pointer;
 }
 .upload-label input {
   position: absolute;

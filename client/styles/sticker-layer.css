@@ -1,0 +1,12 @@
+.letter-sticker-area{position:relative;width:100%;margin:16px 0;min-width:0}
+.letter-sticker-board{position:relative;height:175px;min-height:175px;width:100%;min-width:0;overflow:hidden;border-radius:18px;background:linear-gradient(130deg,transparent,#ffffff35,transparent)}
+.letter-placed-sticker{position:absolute;display:block;z-index:1;transform-origin:center;will-change:transform}
+.letter-placed-sticker.is-editable{cursor:grab;touch-action:none;outline-offset:4px;border-radius:12px}
+.letter-placed-sticker.is-editable:active{cursor:grabbing}
+.letter-placed-sticker.is-selected{outline:2px dashed #885ab2}
+.letter-placed-sticker .ejc-sticker{pointer-events:none}
+.letter-sticker-empty{margin:0;position:absolute;inset:0;display:grid;place-items:center;color:#9985a6;font-size:.88rem;text-align:center;pointer-events:none}
+.letter-sticker-edit-controls{display:flex;gap:8px;align-items:center;justify-content:center;padding:7px}
+.letter-sticker-edit-controls button{display:grid;place-items:center;width:38px;height:38px;border:1px solid #d6c2e5;background:white;border-radius:10px;color:#623889}
+@media(max-width:500px){.letter-sticker-board{height:210px}.letter-placed-sticker .ejc-sticker{width:115px;min-height:80px}.letter-sticker-area{margin:10px 0}}
+@media print{.letter-sticker-edit-controls{display:none}}

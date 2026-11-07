@@ -790,7 +790,7 @@ export default {
         'SELECT name,slug,og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
       ).bind(social[2]).first():null;
       const sharePage=!!social || path==='/' || path==='/abrir';
-      const assetRequest=social
+      const assetRequest=sharePage && path!=='/'
         ?new Request(new URL('/',url.origin),request)
         :request;
       // Static files are always fetched through the Assets binding.
@@ -810,6 +810,7 @@ export default {
         const publicOrigin=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
         const meta=buildSocialMeta(publicOrigin,socialRecipient,social?.[1]||'enviar');
         const html=(await response.text())
+          .replace(/<!-- EJC-OG-START:[\s\S]*?<!-- EJC-OG-END -->/i,'')
           .replace(/<title>[\s\S]*?<\/title>/i,'<title>'+escapeMeta(meta.title)+'</title>')
           .replace(/<meta\s+name="description"[^>]*>/i,'')
           .replace('</head>','<meta name="description" content="'+escapeMeta(meta.description)+'" />'+meta.tags+'</head>');

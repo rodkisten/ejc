@@ -9,35 +9,42 @@ Aplicação de homenagens digitais: **React 19 + React Router 7 + Vite 7** no fr
 
 ## Novidade: home de colagens, cartinhas múltiplas e artes PNG (07/11/2026)
 
-A versão de carrinho foi implementada na branch \`feat/cartinhas-carrinho-colagem\`. **Ainda não é um deploy em produção.**
+A versão de carrinho foi implementada na branch `feat/cartinhas-carrinho-colagem`. **Ainda não é um deploy em produção.**
 
-### Jornada do comprador
+#
+### Avisos de leitura e relay
 
-1. A home apresenta um mural de retratos autorizados, cada um clicável, e mantém a **lista completa com busca por nome**. Clicar em qualquer encontrista abre \`/enviar/:slug\`.
-2. Em \`/enviar/:slug\`, a pessoa escolhe o remetente **daquela cartinha**, escreve a mensagem e adiciona áudios, fotos e adesivos PNG instalados. O rascunho, inclusive as mídias, é salvo em IndexedDB do navegador.
-3. \`/carrinho\` permite **editar**, **remover**, **duplicar para outro encontrista** e **criar cartas novas**. A assinatura é independente. Uma mesma pessoa pode receber mais de uma cartinha.
-4. \`POST /api/checkouts\` recebe de 1 a 20 itens e valida o valor unitário **exclusivamente no servidor**. A API cria um \`checkout\` e múltiplos \`orders\` privativos, em transação D1. O único BR Code Pix inclui a **soma correta** com um \`txid\` da compra.
-5. Em \`/checkout/:token\`, o comprador vê o Pix consolidado, informa o pagamento e acompanha a confirmação. A coordenação aprova **uma transferência**, em \`/admin\`, verificando entrada no extrato, identificador e valor total. Nenhuma carta é aprovada individualmente antes disso.
-6. Depois do Pix, \`/pedido/:token\` permite enviar **cada** carta ao mural com suas fotos e áudios. O navegador recupera os rascunhos correspondentes. O mural continua privado e as cartas são liberadas no horário do encontro.
+A conexão já existente com **Resend** permanece: para receber aviso de primeira abertura da cartinha, o remetente confirma o próprio e-mail, e a notificação é gerada apenas após a abertura individual no mural. Isso não comprova leitura integral. Configure `RESEND_API_KEY` e `RESEND_FROM` **somente como segredos no Worker**. O endereço não aparece no painel.
+
+O relay da coordenação recebe eventos operacionais de pedido e Pix, nunca o texto ou a mídia das cartinhas. Use `RELAY_URL=https://xtelegram-cf.migos.club/send`, `RELAY_TOKEN` em secrets e `RELAY_CHAT_ID` conforme a configuração do bot. Rotacione qualquer credencial que tenha sido exposta anteriormente e nunca inclua tokens no código ou nos logs.
+
+## Jornada do comprador
+
+1. A home apresenta um mural de retratos autorizados, cada um clicável, e mantém a **lista completa com busca por nome**. Clicar em qualquer encontrista abre `/enviar/:slug`.
+2. Em `/enviar/:slug`, a pessoa escolhe o remetente **daquela cartinha**, escreve a mensagem e adiciona áudios, fotos e adesivos PNG instalados. O rascunho, inclusive as mídias, é salvo em IndexedDB do navegador.
+3. `/carrinho` permite **editar**, **remover**, **duplicar para outro encontrista** e **criar cartas novas**. A assinatura é independente. Uma mesma pessoa pode receber mais de uma cartinha.
+4. `POST /api/checkouts` recebe de 1 a 20 itens e valida o valor unitário **exclusivamente no servidor**. A API cria um `checkout` e múltiplos `orders` privativos, em transação D1. O único BR Code Pix inclui a **soma correta** com um `txid` da compra.
+5. Em `/checkout/:token`, o comprador vê o Pix consolidado, informa o pagamento e acompanha a confirmação. A coordenação aprova **uma transferência**, em `/admin`, verificando entrada no extrato, identificador e valor total. Nenhuma carta é aprovada individualmente antes disso.
+6. Depois do Pix, `/pedido/:token` permite enviar **cada** carta ao mural com suas fotos e áudios. O navegador recupera os rascunhos correspondentes. O mural continua privado e as cartas são liberadas no horário do encontro.
 7. O encontrista abre o envelope, pode baixar a carta PNG, o ZIP com mídias e usar **Telegram / Compartilhar** na folha de compartilhamento nativa do iPhone. Não existe postagem automática por bot no Telegram nem exposição do token do mural.
 
 ### Artes PNG originais
 
-Foram recuperados **seis arquivos PNG originais já produzidos para o EJC**. Eles não foram substituídos por SVG. O pacote \`XX_EJC_Artes_Originais_PNG.zip\` deve ser importado em **Administração → Stickers PNG → Importar artes originais**. O formulário aceita esse ZIP ou arquivos individuais, e relaciona os seis nomes de arquivo aos adesivos predefinidos. A biblioteca permite acrescentar outras artes PNG. O seletor público mostra somente PNGs realmente instalados, e a exportação usa **exatamente a mesma URL /api/stickers/:id.png** que o editor.
+Foram recuperados **seis arquivos PNG originais já produzidos para o EJC**. Eles não foram substituídos por SVG. O pacote `XX_EJC_Artes_Originais_PNG.zip` deve ser importado em **Administração → Stickers PNG → Importar artes originais**. O formulário aceita esse ZIP ou arquivos individuais, e relaciona os seis nomes de arquivo aos adesivos predefinidos. A biblioteca permite acrescentar outras artes PNG. O seletor público mostra somente PNGs realmente instalados, e a exportação usa **exatamente a mesma URL /api/stickers/:id.png** que o editor.
 
 A plataforma não publica os arquivos em R2 automaticamente a partir de conversas do ChatGPT. Eles precisam ser importados pelo formulário administrativo após deploy. Não divulgue o editor com adesivos antes de instalar e conferir as seis artes.
 
 ### Imagens de compartilhamento
 
-As rotas \`/enviar/:slug\` e \`/mural/:slug\` recebem metatags OG injetadas no HTML pelo Worker, com imagem PNG de **1200 × 630**, nome e foto autorizada dentro da área central visível em miniaturas quadradas. Em **Administração → Encontristas**, clique em **Publicar nova OG da home** e **Gerar/atualizar prévias** para publicar os PNGs no R2 depois do deploy. A home também possui uma arte moderna autoral, com fallback antigo se não for gerada ainda.
+As rotas `/enviar/:slug` e `/mural/:slug` recebem metatags OG injetadas no HTML pelo Worker, com imagem PNG de **1200 × 630**, nome e foto autorizada dentro da área central visível em miniaturas quadradas. Em **Administração → Encontristas**, clique em **Publicar nova OG da home** e **Gerar/atualizar prévias** para publicar os PNGs no R2 depois do deploy. A home também possui uma arte moderna autoral, com fallback antigo se não for gerada ainda.
 
 ### Alterações de banco e operação
 
-- Migration **\`0009_checkout_cart.sql\`** cria \`checkouts\` e adiciona \`orders.checkout_id\` e \`checkout_item_index\`, preservando pedidos anteriores.
+- Migration **`0009_checkout_cart.sql`** cria `checkouts` e adiciona `orders.checkout_id` e `checkout_item_index`, preservando pedidos anteriores.
 - O painel administrativo mostra Pix agrupados e identifica a situação operacional de cada destinatário, sem expor texto, áudio, fotos, composição ou nome do remetente.
 - Os valores não podem ser alterados no browser depois da criação do checkout, nem é possível confirmar individualmente um pedido vinculado a Pix agrupado.
 - Os rascunhos pré-pagamento continuam locais. Não apague os dados do Safari nem troque de aparelho antes de concluir os envios.
-- Antes de publicar: \`npm ci && npm run check && npm run build && npm run db:remote\`, faça backup do D1, teste Pix real em valor pequeno, revisite a página após pagar, exporte fotos/áudios no Safari e confira OG no WhatsApp.
+- Antes de publicar: `npm ci && npm run check && npm run build && npm run db:remote`, faça backup do D1, teste Pix real em valor pequeno, revisite a página após pagar, exporte fotos/áudios no Safari e confira OG no WhatsApp.
 
 
 ## Jornada

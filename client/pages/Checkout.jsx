@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, Clock3, Copy, LockKeyhole, Pencil, RefreshCw } from 'lucide-react';
 import { api, money, track, uploadMedia } from '../lib/api';
 import { draftGet } from '../lib/drafts';
@@ -9,10 +9,11 @@ import QrCode from '../components/QrCode';
 
 export default function Checkout() {
   const { token } = useParams();
+  const location = useLocation();
   const { config } = useApp();
   const [order, setOrder] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(location.state?.notice || '');
   const [error, setError] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
   const [syncError, setSyncError] = useState('');
@@ -21,6 +22,7 @@ export default function Checkout() {
     try {
       const data = await api('/api/checkout', { token });
       setOrder(data);
+      localStorage.setItem('ejc-checkout-' + data.id, token);
       setError('');
     } catch (cause) { setError(cause.message); }
   }, [token]);

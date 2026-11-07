@@ -219,9 +219,15 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
   return <><div className="section-head"><div><span className="eyebrow">ENCONTRISTAS</span><h1>Nomes, fotos e links exclusivos</h1><p>A coordenação gerencia os nomes, fotos e QR Codes, mas não lê nem escuta as cartinhas. Entregue os códigos dos murais individualmente.</p></div></div><section className="form-card"><label>Importar nomes (um por linha)</label><textarea rows={4} value={names} onChange={e=>setNames(e.target.value)} placeholder={'Maria Eduarda\nJoão Pedro\nAna Clara'}/><button className="btn" onClick={add}>Adicionar encontristas</button></section>
     <section className="form-card">
       <h2>Imagens para redes sociais</h2>
-      <p className="muted small">Gere prévias PNG com nome e foto autorizada para WhatsApp, Instagram, X, Facebook e Telegram.</p>
+      <p className="muted small">Os nomes e as fotos devem ficar dentro da área central visível mesmo quando o WhatsApp recortar a miniatura.</p>
+      {info.recipients.filter(p=>p.active!==0&&!p.og_safe).length>0&&
+        <div className="notice warning">
+          {info.recipients.filter(p=>p.active!==0&&!p.og_safe).length} imagens ainda precisam ser
+          geradas ou atualizadas para o novo enquadramento. Use o botão abaixo
+          depois do deploy para renovar as prévias antigas.
+        </div>}
       <button className="btn outline" disabled={!!ogProgress} onClick={makeAllOg}>
-        <ImagePlus size={16}/> Gerar imagens de todos os encontristas
+        <ImagePlus size={16}/> Gerar/atualizar prévias para WhatsApp
       </button>
       {ogProgress&&<p className="notice">{ogProgress}</p>}
     </section>
@@ -242,8 +248,12 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
         <button className="btn outline" disabled={!!ogProgress} onClick={()=>makeOg(r)}>
           <ImagePlus size={15}/> Atualizar imagem
         </button>
-        {r.og_url&&<a className="btn ghost" href={r.og_url} target="_blank" rel="noreferrer">Ver prévia</a>}
-        <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}`)}><Copy size={15}/> Link de envio</button></div></div>)}</div></>;
+        {r.og_url&&<a className="btn ghost" href={r.og_url} target="_blank" rel="noreferrer">Ver PNG</a>}
+        <a className="btn ghost" target="_blank" rel="noreferrer"
+          href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(`${location.origin}/enviar/${r.slug}`)}`}>
+          Testar prévia
+        </a>
+        <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}?og=${encodeURIComponent(new URL(r.og_url,location.origin).searchParams.get('v')||'20261107b')}`)}><Copy size={15}/> Link de envio</button></div></div>)}</div></>;
 }
 function BrandLogo({ info, reload }) {
   const [busy,setBusy]=useState(false),[message,setMessage]=useState('');

@@ -563,7 +563,7 @@ async function adminRoute(req,env,path) {
     const dimensions=new DataView(image.bytes.buffer,image.bytes.byteOffset,image.bytes.byteLength);
     if(image.bytes.byteLength<24||dimensions.getUint32(16)!==1200||dimensions.getUint32(20)!==630)
       bad('A imagem deve ter 1200 x 630 pixels.',400);
-    const key='og/'+r.id+'/'+newId()+'.png';
+    const key='og/v2/'+r.id+'/'+newId()+'.png';
     await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:'image/png'}});
     await env.DB.prepare('UPDATE recipients SET og_key=? WHERE id=?').bind(key,r.id).run();
     if(r.og_key)await env.MEDIA.delete(r.og_key);
@@ -599,7 +599,12 @@ async function adminRoute(req,env,path) {
     ]);
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({config:{...config,logo_url:logo?`/api/branding/logo?v=${logo.uploaded?.getTime()||0}`:null},
-      recipients:recipients.results.map(r=>({...r,photo_url:recipientPhotoUrl(r),og_url:socialImage(r).path})),orders:orders.results});
+      recipients:recipients.results.map(r=>({
+        ...r,
+        photo_url:recipientPhotoUrl(r),
+        og_url:socialImage(r).path,
+        og_safe:typeof r.og_key==='string'&&r.og_key.startsWith('og/v2/')
+      })),orders:orders.results});
   }
 
   if(path==='/api/admin/mural-codes/generate'&&req.method==='POST'){

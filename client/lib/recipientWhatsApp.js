@@ -25,7 +25,7 @@ export function muralInvitationMessage({ name, url, count=1 }) {
     '🔐 *Seu acesso pessoal ao mural:*',
     url,
     '',
-    '_Este link é só seu. Guarde com carinho e não compartilhe._',
+    '_Este link é só seu, válido por 14 dias. Guarde com carinho e não compartilhe._',
     '_Se ainda aparecer fechado, ele abrirá no horário de liberação do Encontro._',
     '',
     '💗 *Com muito amor, equipe do Mini Mercado do XX EJC Simonésia:*',

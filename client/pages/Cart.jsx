@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Copy, Heart, Plus, ShoppingBag, Trash2 } from 'lucide-react';
 import { useApp } from '../main';
 import { useCart, cartDraftKey, localCheckouts, rememberCheckout } from '../lib/cart';
-import { draftGet } from '../lib/drafts';
+import { draftGet, draftSet } from '../lib/drafts';
+import CheckoutSupport from '../components/CheckoutSupport';
 import { api, money, track } from '../lib/api';
 
 export default function Cart() {
@@ -66,7 +67,9 @@ export default function Cart() {
         id: checkout.id, token: checkout.token, payerName: payerName.trim(),
         itemIds: cart.items.map(item => item.id), created_at: new Date().toISOString(),
       });
-      // Clear only the active cart index. The underlying IndexedDB drafts and files remain.
+      // Preserve the full checkout snapshot and every IndexedDB letter/attachment.
+      await draftSet('ejc-checkout-cart-' + checkout.id, cart.items);
+      // Only the active shopping index is reset, so new purchases remain possible.
       await cart.clear();
       track('checkout_created', { letters: checkout.items.length });
       navigate('/checkout/' + checkout.token);
@@ -80,6 +83,7 @@ export default function Cart() {
       <div className="step-label">SEU CARRINHO / XX EJC SIMONÉSIA</div>
       <h1>Todo carinho <em>num só lugar.</em></h1>
       <p className="muted">Uma carta para cada encontrista, com remetente e decoração independentes. Duplique uma para presentear outras pessoas.</p>
+      <CheckoutSupport step="Carrinho · antes do Pix" recipientNames={cart.items.map(item => getPerson(item.recipient_slug)?.name || item.recipient_slug)} checkoutId={linked?.id} />
       {!cart.ready ? <p className="notice">Carregando suas cartinhas...</p> :
         cart.items.length === 0 ? (
           <section className="cart-empty">
@@ -147,7 +151,8 @@ export default function Cart() {
                   <ShoppingBag size={18} /> {busy ? 'Criando seu Pix...' : alreadyLinked ? 'Pix já gerado' : 'Gerar Pix de ' + money(total)}
                   <ArrowRight size={18} />
                 </button>
-                {!config?.payments_ready && <p className="notice warning">A coordenação ainda precisa configurar a chave Pix.</p>}
+                <p className="muted small">O pagamento será confirmado manualmente pela coordenação no extrato. Guarde o código da compra para facilitar a conferência; não solicitamos comprovantes bancários pelo site.</p>
+                {!config?.payments_ready && <p className="notice warning">A coordenação ainda precisa configurar a chave Pix.</p>
               </div>
             </div>
           </>

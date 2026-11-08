@@ -6,6 +6,14 @@ import StickerLayer from '../components/letter/StickerLayer';
 import { THEMES } from '../../shared/letter.js';
 
 const paid = (status) => ['paid', 'preparing', 'delivered'].includes(status);
+function createdAt(value) {
+  const raw = String(value || '').trim().replace(' ', 'T');
+  const normalized = /(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(raw) ? raw : raw + 'Z';
+  const date = new Date(normalized);
+  return Number.isNaN(date.valueOf()) ? '' : date.toLocaleString('pt-BR', {
+    dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo',
+  });
+}
 function statusText(letter) {
   if (letter.status === 'cancelled') return 'Pedido cancelado';
   if (paid(letter.status)) return letter.submitted ? 'Pago · enviada' : 'Pago · rascunho';
@@ -134,7 +142,7 @@ export default function AdminLetters() {
                   className="admin-letter-recipient">{letter.recipient_name}</Link>}
                 {slug && <strong className="admin-letter-recipient">{letter.recipient_name}</strong>}
                 <p>De: <strong>{letter.sender_name}</strong></p>
-                <small>{letter.id} · {new Date(letter.created_at + (letter.created_at.includes('Z') ? '' : 'Z')).toLocaleString('pt-BR')}</small>
+                <small>{letter.id} · {createdAt(letter.created_at)}</small>
               </div>
               <div className="admin-letter-summary-actions">
                 <span className={'admin-letter-status ' + (paid(letter.status) ? 'is-paid' : 'is-pending')}>

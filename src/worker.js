@@ -597,13 +597,13 @@ async function publicRoute(req,env,path) {
   const mural=path.match(/^\/api\/mural\/([a-z0-9-]+)$/);
   if((mural||cardPath)&&req.method==='GET'){
     const slug=mural?mural[1]:cardPath[1];
-    const person=await env.DB.prepare('SELECT id,name,slug,mural_code,photo_key,photo_consent FROM recipients WHERE slug=?')
+    const person=await env.DB.prepare('SELECT id,name,slug,mural_code,photo_key,photo_consent,active FROM recipients WHERE slug=?')
       .bind(slug).first();
     if(!person)bad('Encontrista não encontrado.',404);
     const grant=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
     if(!await validMuralGrant(env,grant,person))bad('Código de acesso inválido.',403);
     if(!released(config))return result({
-      recipient:{name:person.name,slug:person.slug,photo_url:recipientPhotoUrl(person)},
+      recipient:{name:person.name,slug:person.slug,photo_url:person.active?recipientPhotoUrl(person):null},
       cards:[],release_at:config.release_at,locked:true
     });
     if(cardPath){
@@ -618,7 +618,7 @@ async function publicRoute(req,env,path) {
     const rows=(await env.DB.prepare(
       "SELECT o.id,o.submitted_at FROM orders o WHERE o.recipient_id=? AND o.submitted_at IS NOT NULL AND o.status IN ('paid','preparing','delivered') ORDER BY o.submitted_at DESC"
     ).bind(person.id).all()).results;
-    return result({recipient:{name:person.name,slug:person.slug,photo_url:recipientPhotoUrl(person)},
+    return result({recipient:{name:person.name,slug:person.slug,photo_url:person.active?recipientPhotoUrl(person):null},
       cards:rows.map(o=>({id:o.id,submitted_at:o.submitted_at})),
       release_at:config.release_at,locked:false});
   }

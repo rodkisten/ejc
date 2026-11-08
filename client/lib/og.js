@@ -238,7 +238,7 @@ export async function publishOgImage(person) {
 // Brand-wide OG card when the link points to the home rather than one encontrista.
 // Rendered in the authenticated admin browser and served as PNG from R2.
 export async function createDefaultOgImage() {
-  try { await document.fonts.ready; } catch { /* Local font fallback. */ }
+  try { await document.fonts.ready; } catch { /* Use bundled font fallback. */ }
   const canvas = document.createElement('canvas');
   canvas.width = OG_WIDTH;
   canvas.height = OG_HEIGHT;
@@ -246,47 +246,50 @@ export async function createDefaultOgImage() {
   if (!ctx) throw new Error('Canvas indisponível para prévia social.');
 
   collageBackdrop(ctx);
-  // Content essential to WhatsApp stays wholly within x=320..880,
-  // even when the wide OG is cropped to its central square.
-  ctx.fillStyle = '#411b64';
-  rounded(ctx, 314, 22, 572, 586, 24); ctx.fill();
-  ctx.fillStyle = '#fff4de';
-  rounded(ctx, 322, 30, 556, 570, 19); ctx.fill();
-  crossSticker(ctx, 342, 162);
+  // Paper and text entirely in the crop x=320..880.
+  ctx.fillStyle = '#241532';
+  rounded(ctx, 317, 24, 566, 578, 22); ctx.fill();
+  ctx.fillStyle = '#fff7e8';
+  rounded(ctx, 325, 33, 550, 560, 16); ctx.fill();
 
-  ctx.fillStyle = '#ffcb21';
-  rounded(ctx, 345, 52, 510, 62, 8); ctx.fill();
-  ctx.fillStyle = '#1748a4';
-  ctx.font = '900 26px Arial,sans-serif';
+  ctx.fillStyle = '#ffdb31';
+  rounded(ctx, 343, 52, 514, 61, 11); ctx.fill();
+  ctx.fillStyle = '#163993';
   ctx.textAlign = 'center';
-  ctx.fillText('XX EJC  ·  SIMONÉSIA', 600, 93, 478);
+  ctx.font = '900 25px "DM Sans",Arial,sans-serif';
+  ctx.fillText('XX EJC  ·  SIMONÉSIA', 600, 93, 486);
 
-  ctx.save();
-  ctx.translate(600, 304);
-  ctx.rotate(-.035);
-  ctx.fillStyle = '#ec2275';
-  rounded(ctx, -249, -165, 498, 291, 16); ctx.fill();
-  ctx.fillStyle = '#fff9e9';
-  ctx.font = 'italic 900 76px Arial,sans-serif';
-  ctx.fillText('ENVIE SUA', 0, -69, 468);
-  ctx.fillStyle = '#ffd52a';
-  ctx.font = 'italic 900 91px Arial,sans-serif';
-  ctx.fillText('CARTINHA!', 0, 41, 470);
-  ctx.fillStyle = '#fff5e2';
-  ctx.font = '900 23px Arial,sans-serif';
-  ctx.fillText('CARTINHAS DE AMOR.', 0, 95, 465);
-  ctx.restore();
+  // Cross is fully visible in the left half of the center card.
+  crossSticker(ctx, 344, 171);
 
-  ctx.fillStyle = '#fff0c6';
-  rounded(ctx, 345, 454, 510, 98, 12); ctx.fill();
-  ctx.fillStyle = '#552a62';
-  ctx.font = '900 22px Arial,sans-serif';
-  ctx.fillText('Crie. Decore. Envie. Guarde.', 600, 491, 472);
-  ctx.font = '700 17px Arial,sans-serif';
-  ctx.fillText('Cartas com fotos, voz e adesivos de fé.', 600, 522, 475);
-  ctx.font = '900 16px Arial,sans-serif';
-  ctx.fillStyle = '#d71e72';
-  ctx.fillText('UMA SURPRESA PARA CADA ENCONTRISTA', 600, 582, 490);
+  // Distinct high-contrast headline on solid paper stickers, not pink-on-pink.
+  ctx.fillStyle = '#ef287b';
+  rounded(ctx, 469, 145, 388, 270, 12); ctx.fill();
+  ctx.fillStyle = '#fff9e7';
+  rounded(ctx, 486, 162, 355, 86, 6); ctx.fill();
+  ctx.fillStyle = '#1b3990';
+  ctx.font = '900 51px "DM Sans",Arial,sans-serif';
+  ctx.fillText('ENVIE SUA', 664, 223, 329);
+
+  ctx.fillStyle = '#ffe139';
+  rounded(ctx, 487, 260, 354, 100, 7); ctx.fill();
+  ctx.fillStyle = '#96134a';
+  ctx.font = '900 63px "DM Sans",Arial,sans-serif';
+  ctx.fillText('CARTINHA!', 664, 332, 333);
+
+  ctx.fillStyle = '#fff8e5';
+  ctx.font = '900 17px Arial,sans-serif';
+  ctx.fillText('CARTINHAS DE AMOR.', 663, 389, 345);
+
+  ctx.fillStyle = '#ffe1eb';
+  rounded(ctx, 343, 444, 514, 105, 11); ctx.fill();
+  ctx.fillStyle = '#26163b';
+  ctx.font = '900 22px "DM Sans",Arial,sans-serif';
+  ctx.fillText('Crie. Decore. Envie. Guarde.', 600, 485, 475);
+  ctx.font = '700 17px "DM Sans",Arial,sans-serif';
+  ctx.fillText('Cartas com fotos, voz e adesivos de fé.', 600, 520, 480);
+  ctx.font = '900 16px "DM Sans",Arial,sans-serif';
+  ctx.fillText('UMA SURPRESA PARA CADA ENCONTRISTA', 600, 579, 500);
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => blob ? resolve(blob) :

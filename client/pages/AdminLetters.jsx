@@ -101,6 +101,7 @@ export default function AdminLetters() {
     try {
       const summary=await api('/api/admin/cartinhas/finalize-preview');
       setFinalizeSummary(summary);
+      setFinalizeError('');
     } catch (cause) {
       setFinalizeError(cause.message);
     }
@@ -116,7 +117,7 @@ export default function AdminLetters() {
     );
     if (!accepted) return;
     setFinalizeBusy(true);setFinalizeError('');setFinalizeResult('');
-    let cursor='',finalized=0,empty=0,failed=0,scanned=0;
+    let cursor='',finalized=0,empty=0,failed=0,notificationFailed=0,scanned=0;
     const failures=[];
     try {
       const seen=new Set();
@@ -129,6 +130,7 @@ export default function AdminLetters() {
         finalized+=page.finalized||0;
         empty+=page.empty||0;
         failed+=page.failed||0;
+        notificationFailed+=page.notification_failed||0;
         scanned+=page.scanned||0;
         failures.push(...(page.failed_ids||[]));
         setFinalizeProgress('Conferidas ' + scanned + ' cartinhas · ' + finalized + ' finalizadas…');
@@ -137,7 +139,8 @@ export default function AdminLetters() {
       }
       setFinalizeResult(finalized + ' cartinha(s) finalizada(s). ' +
         empty + ' sem conteúdo foram ignoradas. ' +
-        (failed ? failed + ' ocorrência(s) precisam ser verificadas: ' + failures.join(', ') : 'Tudo concluído!'));
+        (failed ? failed + ' erro(s) na finalização: ' + failures.join(', ') : 'Tudo concluído!') +
+        (notificationFailed ? ' Atenção: ' + notificationFailed + ' aviso(s) precisam ser verificados.' : ''));
     } catch (cause) {
       setFinalizeError('Processo interrompido após ' + finalized +
         ' finalizações: ' + cause.message + '. As já finalizadas foram preservadas.');

@@ -770,7 +770,7 @@ async function adminRoute(req,env,path) {
   const technicalMedia=path.match(/^\/api\/admin\/technical-preview\/(EJC-[A-F0-9]{12})\/media\/([a-f0-9-]{36})$/);
   if ((technicalLetter || technicalMedia) && req.method==='POST') {
     const input=await jsonBody(req,600);
-    await requireTechnicalPreview(req,env,input.password);
+    await requireTechnicalPreview(req,env,input && typeof input==='object' ? input.password : null);
     const orderId=(technicalLetter||technicalMedia)[1];
     if (technicalMedia) {
       const media=await env.DB.prepare(
@@ -782,7 +782,7 @@ async function adminRoute(req,env,path) {
       return new Response(object.body,{headers:{
         ...BASE_HEADERS,
         'Content-Type':media.content_type || 'application/octet-stream',
-        'Content-Disposition':'inline',
+        'Content-Disposition':'attachment; filename="anexo-tecnico"',
       }});
     }
     const order=await orderWithRecipient(env,orderId);
@@ -1279,7 +1279,8 @@ export default {
         allowOrigin(request);
         if (path.startsWith('/api/admin/')) {
           const response=await adminRoute(request,env,path);
-          if(WRITE_METHODS.has(request.method)&&ctx?.waitUntil)ctx.waitUntil(dispatch(env));
+          if(WRITE_METHODS.has(request.method) && !path.startsWith('/api/admin/technical-preview/') && ctx?.waitUntil)
+            ctx.waitUntil(dispatch(env));
           return response;
         }
         const stream=path.match(/^\/api\/media\/([a-f0-9-]{36})$/);

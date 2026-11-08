@@ -902,7 +902,7 @@ async function adminRoute(req,env,path) {
         'id,token_hash,recipient_id,sender_name,status,total_cents,pix_payload,txid,'+
         'rich_html,composition_json,moderation,submitted_at,approved_at,public_message,'+
         'release_override,campaign_key,created_at,updated_at) '+
-        "VALUES(?,?,?,?,'paid',0,?,?,?,?,?,'approved',?,?,0,0,?,?,?)"
+        "VALUES(?,?,?,?,'paid',0,?,?,?,?,'approved',?,?,0,0,?,?,?)"
       ).bind(id,await digest(token()),person.id,CAMPAIGN_SENDER,
         'CORTESIA-SEM-PIX','GIFT'+randomCode(),rich,composition,
         stamp,stamp,CAMPAIGN_KEY,stamp,stamp).run();
@@ -1021,6 +1021,34 @@ async function adminRoute(req,env,path) {
     });
   }
 
+  // Manual review of a paid draft requires the independent technical credential.
+  const reviewFinalize=path.match(/^\/api\/admin\/technical-preview\/(EJC-[A-F0-9]{12})\/finalize$/);
+  if(reviewFinalize && req.method==='POST') {
+    const input=await jsonBody(req,600);
+    await requireTechnicalPreview(req,env,input?.password);
+    const order=await env.DB.prepare(
+      'SELECT id,status,submitted_at,rich_html FROM orders WHERE id=? AND campaign_key IS NULL'
+    ).bind(reviewFinalize[1]).first();
+    if(!order)bad('Cartinha não encontrada.',404);
+    if(!activeOrder(order))bad('A cartinha ainda não tem pagamento confirmado.',409);
+    if(order.submitted_at)bad('A cartinha já foi enviada.',409);
+    const media=await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM media WHERE order_id=? AND status='ready'"
+    ).bind(order.id).first();
+    if(!excerpt(order.rich_html) && !media.n)
+      bad('O rascunho está vazio no servidor. Peça ao remetente para salvar a mensagem ou os anexos.',409);
+    const time=now();
+    const changed=await env.DB.prepare(
+      "UPDATE orders SET moderation='approved',public_message=0,moderation_note='',"+
+      "submitted_at=?,approved_at=?,release_override=0,updated_at=? "+
+      "WHERE id=? AND submitted_at IS NULL AND status IN ('paid','preparing','delivered')"
+    ).bind(time,time,time,order.id).run();
+    if(changed.meta.changes!==1)bad('Esta cartinha foi alterada. Atualize a página.',409);
+    await event(env,order.id,'letter_sent','technical_review_approved');
+    await enqueue(env,order.id,'letter_sent');
+    return result({ok:true,submitted:true,status:order.status});
+  }
+
   // Isolated, opt-in diagnostic access. The ordinary coordinator route below
   // continues to omit text, photos and audio. Never cache this response.
   const technicalLetter=path.match(/^\/api\/admin\/technical-preview\/(EJC-[A-F0-9]{12})$/);
@@ -1117,7 +1145,7 @@ async function adminRoute(req,env,path) {
 
   if(path==='/api/admin/cartinhas' && req.method==='GET') {
     const rows=(await env.DB.prepare(
-      `SELECT o.id,o.sender_name,o.status,o.submitted_at,o.created_at,o.composition_json,
+      `SELECT o.id,o.sender_name,o.status,o.submitted_at,o.created_at,o.composition_json,o.campaign_key,
         r.id AS recipient_id,r.name AS recipient_name,r.slug AS recipient_slug
         FROM orders o JOIN recipients r ON r.id=o.recipient_id
         ORDER BY o.created_at DESC`
@@ -1130,7 +1158,7 @@ async function adminRoute(req,env,path) {
         id:row.id,
         sender_name:row.sender_name||'Remetente não informado',
         recipient_id:row.recipient_id,recipient_name:row.recipient_name,
-        recipient_slug:row.recipient_slug,status:row.status,
+        recipient_slug:row.recipient_slug,status:row.status,gift:!!row.campaign_key,
         submitted:!!row.submitted_at,created_at:row.created_at,
         theme:design.theme,stickers:design.stickers
       };
@@ -1278,7 +1306,7 @@ async function adminRoute(req,env,path) {
     const payer=String(input.payer||'').trim().slice(0,100);
     const sender=String(input.sender||'').trim().slice(0,100);
     const status=maskedStatus(input.status||'');
-    const where=[],args=[];
+    const where=['o.campaign_key IS NULL'],args=[];
     if(query){
       const term=likeTerm(query);
       where.push(`(
@@ -1371,7 +1399,7 @@ async function adminRoute(req,env,path) {
       "SELECT id,txid,total_cents,status,created_at,payer_name,bank_reference,'checkout' AS type FROM checkouts " +
       "UNION ALL " +
       "SELECT id,txid,total_cents,status,created_at,payer_name,bank_reference,'order' AS type " +
-      "FROM orders WHERE checkout_id IS NULL AND COALESCE(demo,0)=0 " +
+      "FROM orders WHERE checkout_id IS NULL AND COALESCE(demo,0)=0 AND campaign_key IS NULL " +
       "ORDER BY created_at DESC LIMIT 1500"
     ).all()).results;
     return result({payments});
@@ -1423,7 +1451,13 @@ async function adminRoute(req,env,path) {
       env.DB.prepare(`SELECT r.id,r.name,r.slug,r.active,r.created_at,r.photo_key,r.photo_consent,r.og_key,r.mural_og_key,r.mural_code,r.whatsapp_phone,
         (SELECT COUNT(*) FROM orders o WHERE o.recipient_id=r.id) AS order_count,
         (SELECT COUNT(*) FROM orders o WHERE o.recipient_id=r.id AND o.submitted_at IS NOT NULL
-          AND o.status IN ('paid','preparing','delivered')) AS ready_letter_count
+          AND o.status IN ('paid','preparing','delivered')) AS ready_letter_count,
+        (SELECT d.sent_at FROM recipient_whatsapp_deliveries d WHERE d.recipient_id=r.id
+          AND d.campaign_key='pos-encontro') AS campaign_wa_sent_at,
+        (SELECT d.send_count FROM recipient_whatsapp_deliveries d WHERE d.recipient_id=r.id
+          AND d.campaign_key='pos-encontro') AS campaign_wa_send_count,
+        (SELECT d.sent_at FROM recipient_whatsapp_deliveries d WHERE d.recipient_id=r.id
+          AND d.campaign_key='mural') AS mural_wa_sent_at
         FROM recipients r ORDER BY r.name COLLATE NOCASE`).all(),
       env.DB.prepare(`SELECT o.id,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,
         CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted,o.demo,
@@ -1431,7 +1465,8 @@ async function adminRoute(req,env,path) {
         COALESCE(NULLIF(c.payer_name,''),o.payer_name) AS payer_name,
         o.checkout_id,o.txid,COALESCE(c.txid,o.txid) AS payment_txid
         FROM orders o JOIN recipients r ON o.recipient_id=r.id
-        LEFT JOIN checkouts c ON c.id=o.checkout_id ORDER BY o.created_at DESC LIMIT 500`).all()
+        LEFT JOIN checkouts c ON c.id=o.checkout_id WHERE o.campaign_key IS NULL
+        ORDER BY o.created_at DESC LIMIT 500`).all()
     ]);
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({config:{...config,logo_url:logo?`/api/branding/logo?v=${logo.uploaded?.getTime()||0}`:null},

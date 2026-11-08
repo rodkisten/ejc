@@ -34,3 +34,86 @@
  .admin-payment-value { max-width:42%; }
  .admin-payment-letter { align-items:start; flex-wrap:wrap; }
 }
+
+
+.admin-payment-batch {
+  display: grid;
+  gap: 13px;
+  margin: 16px 0 20px;
+  padding: 17px;
+  border: 2px solid #d9b4e7;
+  border-radius: 17px;
+  background: linear-gradient(135deg,#faf5ff,#fff8ef);
+  min-width: 0;
+}
+.admin-payment-batch-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.admin-payment-batch-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #4b275e;
+  margin: 0 0 6px;
+  font-size: 1.08rem;
+}
+.admin-payment-batch-heading p { max-width: 570px; margin: 0; }
+.admin-payment-batch-heading > strong {
+  font-variant-numeric: tabular-nums;
+  font-size: .9rem;
+  color: #43205d;
+}
+.admin-payment-batch-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.admin-payment-batch-controls .btn { white-space: normal; font-size: .85rem; }
+.admin-payment-batch-items {
+  display: grid;
+  gap: 10px;
+  max-height: 320px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.admin-payment-batch-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 11px 13px;
+  background: white;
+  border: 1px solid #ead7ef;
+  border-radius: 12px;
+}
+.admin-payment-batch-item > span { flex: 1 1 160px; display: grid; gap: 3px; min-width: 0; }
+.admin-payment-batch-item strong { font-size: .86rem; overflow-wrap: anywhere; }
+.admin-payment-batch-item small { color: #74627b; font-size: .76rem; }
+.admin-payment-batch-item input {
+  flex: 1 1 220px;
+  min-height: 44px;
+  min-width: 0;
+  font-size: 16px;
+}
+.admin-payment-batch-submit { justify-content: center; min-height: 46px; width: 100%; white-space: normal; }
+.admin-payment-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 0;
+  font-size: .79rem;
+  font-weight: 750;
+  color: #613b7c;
+  cursor: pointer;
+}
+.admin-payment-select input {
+  width: 19px;
+  height: 19px;
+  flex: none;
+  accent-color: #6831b6;
+}
+@media (max-width: 650px) {
+  .admin-payment-batch { padding: 12px; }
+  .admin-payment-batch-item { padding: 10px; }
+  .admin-payment-batch-controls > .btn { flex: 1 1 100%; }
+}

@@ -245,7 +245,10 @@ export default function WhatsAppAdmin({ info, reload }) {
                 <strong>{person.name}</strong>
                 <small>{person.order_count} cartinha(s) vinculada(s) · {person.ready_letter_count||0} pronta(s)</small>
                 <small>{person.mural_og_ready?'Prévia personalizada pronta':'Arte do mural será gerada antes do envio'}</small>
-                <small>{person.campaign_wa_sent_at?'✅ Campanha enviada '+new Date(person.campaign_wa_sent_at).toLocaleString('pt-BR'):'💌 Campanha não enviada'}</small>
+                <small>{person.campaign_wa_sent_at
+                  ? '✅ Campanha enviada '+new Date(person.campaign_wa_sent_at).toLocaleString('pt-BR')+
+                    ' · '+(person.campaign_wa_send_count||1)+' envio(s)'
+                  : '💌 Campanha não enviada'}</small>
               </div>
             </div>
             {person.mural_og_url && <div className="whatsapp-og-thumb">

@@ -1,6 +1,7 @@
 import React from 'react';
 import { LifeBuoy } from 'lucide-react';
 import { checkoutSupportHref } from '../lib/checkoutSupport';
+import '../styles/checkout-support.css';
 
 export default function CheckoutSupport({
   step,

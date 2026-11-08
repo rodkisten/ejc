@@ -3,6 +3,8 @@ import { Check, Copy, ExternalLink, ImagePlus, MessageCircle, Phone, RefreshCw }
 import { api } from '../lib/api';
 import { publishMuralOgImage } from '../lib/og';
 import { muralInvitationMessage, whatsappShareUrl } from '../lib/recipientWhatsApp';
+import MiniMercadoCampaign from './MiniMercadoCampaign';
+import { CAMPAIGN_KEY, renderCampaignWhatsApp } from '../../shared/ejcCampaign.js';
 import '../styles/recipient-whatsapp.css';
 
 export function RecipientPhoneEditor({ recipient, onRefresh }) {
@@ -44,57 +46,106 @@ export function RecipientPhoneEditor({ recipient, onRefresh }) {
   );
 }
 
-export function WhatsAppShareButton({ recipient, onRefresh, compact = false }) {
+export function WhatsAppShareButton({ recipient, onRefresh, compact = false, campaignKey = 'mural' }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [fallbackLink, setFallbackLink] = useState('');
+  const [confirming, setConfirming] = useState(false);
+  const [confirmedLocal, setConfirmedLocal] = useState(false);
   const ready=Number(recipient.ready_letter_count || 0);
-  const canSend=recipient.active!==0 && !!recipient.whatsapp_phone && ready>0;
+  const isCampaign=campaignKey===CAMPAIGN_KEY;
+  const published=Number(recipient.campaign_letter_count || 0)>0;
+  const sent=confirmedLocal || Boolean(
+    isCampaign?recipient.campaign_wa_sent_at:recipient.mural_wa_sent_at
+  );
+  const canSend=recipient.active!==0 && !!recipient.whatsapp_phone &&
+    ready>0 && (!isCampaign || published);
 
   async function send() {
-    // Safari iOS requires opening a tab during the original tap, before awaits.
+    // Opening during the gesture is required on iOS Safari.
     const popup=window.open('about:blank','_blank');
-    if(popup) {
+    if(popup){
       popup.opener=null;
-      try {
+      try{
         popup.document.title='Preparando convite do XX EJC';
-        popup.document.body.innerText='Preparando seu WhatsApp…';
-      } catch { /* Safari may block document access. */ }
+        popup.document.body.innerText='Preparando o WhatsApp…';
+      }catch{ /* blocked by cross-origin navigation */ }
     }
-    setBusy(true);setError('');setFallbackLink('');
-    try {
-      if(!recipient.mural_og_ready) await publishMuralOgImage(recipient);
+    setBusy(true);setError('');setFallbackLink('');setConfirming(false);
+    try{
+      if(!recipient.mural_og_ready)await publishMuralOgImage(recipient);
       const details=await api('/api/admin/recipients/'+recipient.id+'/whatsapp-link',{
         method:'POST',data:{},
       });
-      const message=muralInvitationMessage({
-        name:details.name,url:details.url,count:details.count,
-      });
+      let message;
+      if(isCampaign){
+        const campaign=await api('/api/admin/campaign/mini-mercado');
+        message=renderCampaignWhatsApp(campaign.campaign.whatsapp,{
+          name:details.name,url:details.url,count:Math.max(0,details.count-1),
+        });
+      }else{
+        message=muralInvitationMessage({name:details.name,url:details.url,count:details.count});
+      }
       const href=whatsappShareUrl({phone:details.phone,message});
-      if(popup && !popup.closed) {
-        try { popup.location.replace(href); }
-        catch { setFallbackLink(href); }
-      } else setFallbackLink(href);
+      if(popup && !popup.closed){
+        try{
+          popup.location.replace(href);
+          setConfirming(true);
+        }catch{
+          setFallbackLink(href);
+        }
+      }else setFallbackLink(href);
       await onRefresh?.();
-    } catch (cause) {
-      try { popup?.close(); } catch { /* No action. */ }
+    }catch(cause){
+      try{popup?.close();}catch{ /* ignore */ }
       setError(cause.message||'Não foi possível preparar o convite.');
-    } finally { setBusy(false); }
+    }finally{setBusy(false);}
+  }
+
+  async function confirmSent(){
+    setBusy(true);setError('');
+    try{
+      await api('/api/admin/whatsapp/deliveries',{method:'POST',data:{
+        recipient_id:recipient.id,campaign_key:campaignKey,image_sent:true,
+      }});
+      setConfirmedLocal(true);setConfirming(false);
+      await onRefresh?.();
+    }catch(cause){setError(cause.message);}
+    finally{setBusy(false);}
   }
 
   return (
     <div className={'whatsapp-action'+(compact?' is-compact':'')}>
-      <button type="button" className="btn whatsapp-send-button" disabled={!canSend||busy} onClick={send}
-        title={!ready?'Aguardando uma cartinha paga e enviada':!recipient.whatsapp_phone?'Cadastre o WhatsApp primeiro':''}>
-        <MessageCircle size={17} />
-        {busy?'Preparando link e OG…':'Enviar mural pelo WhatsApp'}
+      <button type="button" className="btn whatsapp-send-button" disabled={!canSend||busy}
+        onClick={send} title={!recipient.whatsapp_phone?'Cadastre o WhatsApp primeiro':
+          !ready?'Aguardando uma cartinha pronta':
+          isCampaign&&!published?'Publique a carta do Mini Mercado primeiro':''}>
+        <MessageCircle size={17}/>
+        {busy?'Preparando…':sent?'Enviado ✅ · Reenviar':
+          isCampaign?'Enviar carta do Mini Mercado':'Enviar mural pelo WhatsApp'}
       </button>
-      {ready===0 && <small className="whatsapp-action-hint">Aguardando cartinhas pagas e enviadas.</small>}
-      {ready>0 && !recipient.whatsapp_phone && <small className="whatsapp-action-hint">Salve o telefone antes de compartilhar.</small>}
-      {error && <p className="notice error" role="alert">{error}</p>}
-      {fallbackLink && <a href={fallbackLink} target="_blank" rel="noreferrer" className="btn outline">
-        <ExternalLink size={15} /> Abrir WhatsApp
+      {sent&&<small className="whatsapp-action-hint is-sent">✅ Enviado e confirmado manualmente.
+        O botão continua ativo para reenviar.</small>}
+      {!ready&&<small className="whatsapp-action-hint">Aguardando cartinhas prontas.</small>}
+      {isCampaign&&!published&&<small className="whatsapp-action-hint">Publique a carta da campanha primeiro.</small>}
+      {ready>0&&!recipient.whatsapp_phone&&<small className="whatsapp-action-hint">Salve o telefone antes de compartilhar.</small>}
+      {error&&<p role="alert" className="notice error">{error}</p>}
+      {fallbackLink&&<a href={fallbackLink} target="_blank" rel="noreferrer" className="btn outline"
+        onClick={()=>setConfirming(true)}>
+        <ExternalLink size={15}/> Abrir WhatsApp
       </a>}
+      {confirming&&<div className="whatsapp-send-confirm" role="group"
+        aria-label={'Confirmar envio para '+recipient.name}>
+        <strong>📸 Você enviou a imagem E a mensagem no WhatsApp para {recipient.name}?</strong>
+        <p>Confirme apenas depois de realmente enviar no WhatsApp. Abrir o aplicativo não significa que foi enviado. A imagem do mural deve ser anexada manualmente, se desejar enviá-la como arquivo.</p>
+        <div>
+          <button type="button" className="btn" disabled={busy} onClick={confirmSent}>
+            <Check size={16}/> Sim, enviei a imagem e a mensagem
+          </button>
+          <button type="button" className="btn outline" disabled={busy}
+            onClick={()=>setConfirming(false)}>Ainda não enviei</button>
+        </div>
+      </div>}
     </div>
   );
 }
@@ -105,16 +156,31 @@ export default function WhatsAppAdmin({ info, reload }) {
   const [imageBusy, setImageBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [campaignPublished, setCampaignPublished] = useState(0);
+  useEffect(()=>{api('/api/admin/campaign/mini-mercado')
+    .then(data=>setCampaignPublished(Number(data.published_count||0)))
+    .catch(()=>{});},[]);
+  const updateCampaign=async()=>{
+    await reload?.();
+    try{
+      const response=await api('/api/admin/campaign/mini-mercado');
+      setCampaignPublished(Number(response.published_count||0));
+    }catch{ /* existing admin errors remain visible elsewhere */ }
+  };
   const withLetters=useMemo(()=>info.recipients.filter(
     person=>person.active!==0 && Number(person.order_count||0)>0
   ),[info.recipients]);
   const rows=useMemo(()=>withLetters.filter(person=>{
     if(view==='ready' && Number(person.ready_letter_count||0)===0)return false;
+    if(view==='sent' && !person.campaign_wa_sent_at)return false;
+    if(view==='unsent' && person.campaign_wa_sent_at)return false;
     if(view==='missing-phone' && person.whatsapp_phone)return false;
     return !query || person.name.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR'));
   }),[withLetters,view,query]);
   const ready=withLetters.filter(person=>Number(person.ready_letter_count||0)>0).length;
   const sendable=withLetters.filter(person=>Number(person.ready_letter_count||0)>0 && !!person.whatsapp_phone).length;
+  const sentCount=withLetters.filter(person=>person.campaign_wa_sent_at).length;
+  const pendingCount=withLetters.filter(person=>!person.campaign_wa_sent_at&&person.whatsapp_phone).length;
 
   async function updateImage(person) {
     setImageBusy(person.id);setError('');setNotice('');
@@ -135,14 +201,19 @@ export default function WhatsAppAdmin({ info, reload }) {
           <p>Somente encontristas com cartinhas aparecem aqui. O link é pessoal, com uma mensagem de fé e prévia colorida gerada para cada mural.</p>
         </div>
       </div>
+      <MiniMercadoCampaign onPublished={updateCampaign}/>
       <div className="whatsapp-summary">
         <div><strong>{withLetters.length}</strong><span>Com cartinhas vinculadas</span></div>
         <div><strong>{ready}</strong><span>Com cartinhas prontas</span></div>
-        <div><strong>{sendable}</strong><span>Prontos para receber o convite</span></div>
+        <div><strong>{sendable}</strong><span>Com WhatsApp cadastrado</span></div>
+        <div><strong>{sentCount}</strong><span>Campanha enviada ✅</span></div>
+        <div><strong>{pendingCount}</strong><span>Faltam enviar 💌</span></div>
       </div>
       <div className="notice">
         <MessageCircle size={20} />
-        O botão abre o WhatsApp com a mensagem e o link preenchidos. Revise e toque em enviar no WhatsApp. O sistema não envia mensagens sozinho e não marca ninguém como notificado.
+        Depois de publicar a carta oficial para todos, abra o WhatsApp de cada encontrista.
+        Confira a prévia e envie manualmente a mensagem e a imagem. Ao voltar, confirme que realmente enviou.
+        O sistema não envia mensagens automaticamente.
       </div>
       <div className="whatsapp-toolbar">
         <input type="search" aria-label="Buscar encontrista" placeholder="Buscar encontrista…"
@@ -150,8 +221,16 @@ export default function WhatsAppAdmin({ info, reload }) {
         <select aria-label="Filtrar convites" value={view} onChange={event=>setView(event.target.value)}>
           <option value="all">Todos com cartinhas</option>
           <option value="ready">Cartinhas prontas</option>
+          <option value="sent">Campanha enviada ✅</option>
+          <option value="unsent">Campanha não enviada</option>
           <option value="missing-phone">Sem telefone cadastrado</option>
         </select>
+      </div>
+      <div className="whatsapp-batch-actions">
+        <button type="button" className="btn outline" onClick={()=>setView('unsent')}>
+          <MessageCircle size={17}/> Mostrar apenas não enviados ({pendingCount})
+        </button>
+        <span>{campaignPublished>0?campaignPublished+' cartinhas oficiais publicadas':'Publique a campanha para habilitar os convites'}</span>
       </div>
       {error && <p role="alert" className="notice error">{error}</p>}
       {notice && <p role="status" className="notice success">{notice}</p>}
@@ -166,6 +245,7 @@ export default function WhatsAppAdmin({ info, reload }) {
                 <strong>{person.name}</strong>
                 <small>{person.order_count} cartinha(s) vinculada(s) · {person.ready_letter_count||0} pronta(s)</small>
                 <small>{person.mural_og_ready?'Prévia personalizada pronta':'Arte do mural será gerada antes do envio'}</small>
+                <small>{person.campaign_wa_sent_at?'✅ Campanha enviada '+new Date(person.campaign_wa_sent_at).toLocaleString('pt-BR'):'💌 Campanha não enviada'}</small>
               </div>
             </div>
             {person.mural_og_url && <div className="whatsapp-og-thumb">
@@ -173,6 +253,7 @@ export default function WhatsAppAdmin({ info, reload }) {
             </div>}
             <RecipientPhoneEditor recipient={person} onRefresh={reload}/>
             <div className="whatsapp-recipient-actions">
+              <WhatsAppShareButton recipient={person} onRefresh={reload} campaignKey={CAMPAIGN_KEY} />
               <WhatsAppShareButton recipient={person} onRefresh={reload} />
               <button type="button" className="btn outline" disabled={!!imageBusy}
                 onClick={()=>updateImage(person)}>

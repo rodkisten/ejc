@@ -1044,9 +1044,15 @@ async function adminRoute(req,env,path) {
       "WHERE id=? AND submitted_at IS NULL AND status IN ('paid','preparing','delivered')"
     ).bind(time,time,time,order.id).run();
     if(changed.meta.changes!==1)bad('Esta cartinha foi alterada. Atualize a página.',409);
-    await event(env,order.id,'letter_sent','technical_review_approved');
-    await enqueue(env,order.id,'letter_sent');
-    return result({ok:true,submitted:true,status:order.status});
+    let notification_warning=false;
+    try{
+      await event(env,order.id,'letter_sent','technical_review_approved');
+      await enqueue(env,order.id,'letter_sent');
+    }catch{
+      // Content is finalized even if an auxiliary event queue is unavailable.
+      notification_warning=true;
+    }
+    return result({ok:true,submitted:true,status:order.status,notification_warning});
   }
 
   // Isolated, opt-in diagnostic access. The ordinary coordinator route below

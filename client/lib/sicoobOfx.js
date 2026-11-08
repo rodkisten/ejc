@@ -24,10 +24,21 @@ function endToEndId(text) {
 
 function valueToCents(value) {
   let raw = String(value || '').trim().replace(/\s/g, '');
-  if (raw.includes(',') && raw.includes('.')) raw = raw.replace(/\./g, '').replace(',', '.');
+  if (raw.includes(',') && raw.includes('.')) {
+    raw = raw.lastIndexOf('.') > raw.lastIndexOf(',')
+      ? raw.replace(/,/g, '') : raw.replace(/\./g, '').replace(',', '.');
+  }
   else if (raw.includes(',')) raw = raw.replace(',', '.');
   const amount = Number(raw);
   return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
+}
+
+export async function decodeSicoobOfxFile(file) {
+  const buffer = await file.arrayBuffer();
+  const header = new TextDecoder('ascii').decode(buffer.slice(0, 500));
+  const legacy = /CHARSET:\s*(1252|8859-1|ISO-8859-1)/i.test(header)
+    || /ENCODING:\s*USASCII/i.test(header);
+  return new TextDecoder(legacy ? 'windows-1252' : 'utf-8').decode(buffer);
 }
 
 export function parseSicoobOfx(text) {

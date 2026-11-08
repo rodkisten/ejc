@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, Sparkles } from 'lucide-react';
 import { api } from '../lib/api';
 import StickerLayer from '../components/letter/StickerLayer';
+import TechnicalLetterPreview from '../components/TechnicalLetterPreview';
+import '../styles/technical-preview.css';
 import { THEMES } from '../../shared/letter.js';
 
 const paid = (status) => ['paid', 'preparing', 'delivered'].includes(status);
@@ -64,6 +66,10 @@ function SecretLetterPreview({ letter }) {
 
 export default function AdminLetters() {
   const { slug } = useParams();
+  const location = useLocation();
+  const technicalMode = new URLSearchParams(location.search).get('secret') === '000000';
+  const [technicalInput, setTechnicalInput] = useState('');
+  const [technicalPassword, setTechnicalPassword] = useState('');
   const [letters, setLetters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -106,7 +112,32 @@ export default function AdminLetters() {
           <RefreshCw size={16} /> Atualizar
         </button>
       </div>
-      {slug && <Link className="text-button" to="/admin/cartinhas">← Ver todas as cartinhas</Link>}
+      {slug && <Link className="text-button" to={'/admin/cartinhas' + (technicalMode ? '?secret=000000' : '')}>← Ver todas as cartinhas</Link>}
+      {technicalMode && (
+        <form className="admin-tech-gate" onSubmit={(event) => {
+          event.preventDefault();
+          setTechnicalPassword(technicalInput);
+          setTechnicalInput('');
+        }}>
+          <strong>🔐 Modo de conferência técnica de layout</strong>
+          <p>Somente para o responsável técnico. O parâmetro da URL não concede acesso: além do login administrativo, é necessária a credencial técnica separada configurada no servidor. A coordenação continua vendo apenas a prévia protegida.</p>
+          {technicalPassword ? <div className="notice success">Credencial técnica informada para esta sessão. A verificação acontece no servidor ao abrir cada cartinha.</div> : null}
+          <div className="admin-tech-entry">
+            <label>Credencial técnica
+              <input type="password" minLength={20} maxLength={256} autoComplete="off"
+                placeholder="Senha técnica, não é 000000" value={technicalInput}
+                onChange={(event) => setTechnicalInput(event.target.value)} />
+            </label>
+            <button type="submit" className="btn" disabled={technicalInput.length < 20}>
+              <LockKeyhole size={16} /> Ativar conferência
+            </button>
+            {technicalPassword && <button type="button" className="btn outline" onClick={() => {
+              setTechnicalPassword('');
+              setExpanded({});
+            }}>Bloquear</button>}
+          </div>
+        </form>
+      )}
       <div className="notice admin-letters-privacy">
         <ShieldCheck size={20} />
         Somente o nome do remetente, os stickers e os dados operacionais são enviados para esta página. O blur é ilustrativo, não contém mensagens escondidas.
@@ -138,7 +169,7 @@ export default function AdminLetters() {
           <article className="admin-letter-entry form-card" key={letter.id}>
             <div className="admin-letter-summary">
               <div>
-                {!slug && <Link to={'/admin/cartinhas/' + encodeURIComponent(letter.recipient_slug)}
+                {!slug && <Link to={'/admin/cartinhas/' + encodeURIComponent(letter.recipient_slug) + (technicalMode ? '?secret=000000' : '')}
                   className="admin-letter-recipient">{letter.recipient_name}</Link>}
                 {slug && <strong className="admin-letter-recipient">{letter.recipient_name}</strong>}
                 <p>De: <strong>{letter.sender_name}</strong></p>
@@ -153,11 +184,13 @@ export default function AdminLetters() {
                     ...previous, [letter.id]: !previous[letter.id],
                   }))}>
                   {expanded[letter.id] ? <EyeOff size={16} /> : <Eye size={16} />}
-                  {expanded[letter.id] ? 'Fechar prévia' : 'Ver prévia protegida'}
+                  {expanded[letter.id] ? 'Fechar prévia' : technicalMode && technicalPassword ? 'Conferir layout completo' : 'Ver prévia protegida'}
                 </button>
               </div>
             </div>
-            {expanded[letter.id] && <SecretLetterPreview letter={letter} />}
+            {expanded[letter.id] && (technicalMode && technicalPassword
+              ? <TechnicalLetterPreview orderId={letter.id} password={technicalPassword} />
+              : <SecretLetterPreview letter={letter} />)}
           </article>
         ))}
       </div>

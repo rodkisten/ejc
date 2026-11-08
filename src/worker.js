@@ -959,7 +959,7 @@ async function adminRoute(req,env,path) {
     // Each request processes one bounded batch, to remain responsive on mobile.
     const rows=await paidDraftRows(env,cursor,40);
     let finalized=0,empty=0;
-    const failures=[];
+    const failures=[],notificationFailures=[];
     for(const row of rows) {
       if(!paidDraftHasContent(row)){empty++;continue;}
       try {
@@ -971,15 +971,21 @@ async function adminRoute(req,env,path) {
         ).bind(timestamp,timestamp,timestamp,row.id).run();
         if(changed.meta.changes!==1)continue; // Already sent or payment changed.
         finalized++;
-        await event(env,row.id,'letter_sent','admin_bulk_finalize');
-        await enqueue(env,row.id,'letter_sent');
-      } catch (cause) {
-        // A submitted order is never reset on an event/notification failure.
+        try {
+          await event(env,row.id,'letter_sent','admin_bulk_finalize');
+          await enqueue(env,row.id,'letter_sent');
+        } catch {
+          // The letter stays finalized even if an auxiliary notification fails.
+          notificationFailures.push(row.id);
+        }
+      } catch {
         failures.push(row.id);
       }
     }
     return result({
-      scanned:rows.length,finalized,empty,failed:failures.length,failed_ids:failures,
+      scanned:rows.length,finalized,empty,
+      failed:failures.length,failed_ids:failures,
+      notification_failed:notificationFailures.length,
       next_cursor:rows.length===40?rows[rows.length-1].id:null
     });
   }

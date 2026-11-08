@@ -892,7 +892,7 @@ async function adminRoute(req,env,path) {
         COALESCE(c.txid,o.txid) AS payment_txid,
         COALESCE(c.bank_reference,o.bank_reference) AS bank_reference,
         COALESCE(c.payer_name,o.payer_name) AS payer_name,
-        m.payment_created, o.checkout_id,o.id AS order_id,o.status AS order_status,o.sender_name,
+        m.payment_created, o.checkout_id,o.id AS order_id,o.status AS order_status,
         r.name AS recipient_name,
         CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted
       FROM matched m JOIN orders o ON COALESCE(o.checkout_id,o.id)=m.payment_id
@@ -914,7 +914,7 @@ async function adminRoute(req,env,path) {
         payments.push(payment);
       }
       payment.items.push({
-        id:row.order_id,recipient_name:row.recipient_name,sender_name:row.sender_name,
+        id:row.order_id,recipient_name:row.recipient_name,
         status:row.order_status,submitted:!!row.submitted
       });
     }

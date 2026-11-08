@@ -33,27 +33,86 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
   const [bulkBankChecked, setBulkBankChecked] = useState(false);
   const [bulkAmountChecked, setBulkAmountChecked] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(null);
+  const [nextOffset, setNextOffset] = useState(null);
+  const [loadingAllProgress, setLoadingAllProgress] = useState('');
   const eligible = payments.filter((payment) => ['pending', 'claimed'].includes(payment.status));
   const chosen = eligible.filter((payment) => bulkIds.includes(payment.id));
   const bulkTotalCents = chosen.reduce((sum, payment) => sum + Number(payment.total_cents), 0);
   const bulkLetters = chosen.reduce((sum, payment) => sum + payment.items.length, 0);
 
-  const search = useCallback(async (filters) => {
+  const search = useCallback(async (filters, { offset = 0, append = false } = {}) => {
     setBusy(true);
     setError('');
     try {
       const data = await api('/api/admin/payments/search', {
-        method: 'POST', data: filters,
+        method: 'POST', data: { ...filters, offset },
       });
-      setPayments(data.payments || []);
-      setBulkIds((current) => current.filter((id) => (data.payments || []).some(
-        (payment) => payment.id === id && ['pending', 'claimed'].includes(payment.status))));
+      const found = data.payments || [];
+      setPayments((previous) => {
+        if (!append) return found;
+        const unique = new Map(previous.map((payment) => [payment.id, payment]));
+        for (const payment of found) unique.set(payment.id, payment);
+        return [...unique.values()];
+      });
+      setNextOffset(data.next_offset ?? null);
+      if (!append) {
+        setBulkIds([]);
+        setBulkReferences({});
+        setBulkBankChecked(false);
+        setBulkAmountChecked(false);
+      }
     } catch (cause) {
       setError(cause.message);
     } finally {
       setBusy(false);
     }
   }, []);
+
+  async function selectEveryPending() {
+    if (busy || status === 'paid') return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    setLoadingAllProgress('Localizando todos os Pix pendentes…');
+    try {
+      const filters = currentFilters();
+      let offset = 0;
+      const found = new Map();
+      const visited = new Set();
+      for (;;) {
+        if (visited.has(offset)) throw new Error('A paginação repetiu uma página. Tente novamente.');
+        visited.add(offset);
+        const response = await api('/api/admin/payments/search', {
+          method: 'POST', data: { ...filters, offset, pending_only: true },
+        });
+        for (const payment of response.payments || []) {
+          if (['pending', 'claimed'].includes(payment.status)) found.set(payment.id, payment);
+        }
+        setLoadingAllProgress('Encontrados ' + found.size + ' pagamentos pendentes…');
+        if (response.next_offset == null) break;
+        if (!Number.isSafeInteger(response.next_offset) || response.next_offset <= offset) {
+          throw new Error('O servidor retornou uma página inválida.');
+        }
+        offset = response.next_offset;
+      }
+      const all = [...found.values()];
+      setPayments((previous) => {
+        const unique = new Map(previous.map((payment) => [payment.id, payment]));
+        for (const payment of all) unique.set(payment.id, payment);
+        return [...unique.values()];
+      });
+      setBulkIds(all.map((payment) => payment.id));
+      setNotice(all.length
+        ? 'Selecionados TODOS os ' + all.length + ' Pix pendentes encontrados. Revise os pagamentos e confirme os valores no banco antes de aprovar.'
+        : 'Nenhum Pix pendente corresponde a estes filtros.');
+    } catch (cause) {
+      setError('Não foi possível selecionar todos: ' + cause.message +
+        '. Nenhum pagamento foi aprovado.');
+    } finally {
+      setLoadingAllProgress('');
+      setBusy(false);
+    }
+  }
 
   const currentFilters = () => ({ query, recipient, payer, sender, status, only_sent: onlySent });
   useEffect(() => {
@@ -152,7 +211,15 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
         Object.entries(current).filter(([id]) => !completed.includes(id))));
       setBulkBankChecked(false);
       setBulkAmountChecked(false);
-      await Promise.all([search(currentFilters()), onConfirmed?.()]);
+      // Keep failed payments in the loaded list for an immediate retry, even
+      // when they are beyond the original first page of search results.
+      setPayments((current) => current.map((payment) =>
+        completed.includes(payment.id) ? { ...payment, status: 'paid' } : payment));
+      if (!failed.length) {
+        await Promise.all([search(currentFilters()), onConfirmed?.()]);
+      } else {
+        await onConfirmed?.();
+      }
       setNotice(completed.length + ' pagamento(s) confirmado(s) em massa. ' +
         (failed.length ? failed.length + ' requer(em) revisão.' : 'Tudo concluído!'));
       if (failed.length) setError(failed.join(' | '));
@@ -225,7 +292,9 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
       </form>
       <p className="muted small admin-payment-found" aria-live="polite">
         {payments.length} {payments.length === 1 ? 'Pix encontrado' : 'Pix encontrados'}.
-        A consulta mostra até 100 pagamentos por vez.
+        {payments.length} carregado(s). {nextOffset != null
+          ? 'Há mais páginas. Use “Carregar mais” ou selecione todos os pendentes da busca.'
+          : 'Todos os resultados desta consulta foram carregados.'}
       </p>
       {error && <div className="notice error" role="alert">{error}</div>}
       {notice && <div className="notice success" role="status">{notice}</div>}
@@ -245,11 +314,18 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
         <div className="admin-payment-batch-controls">
           <button type="button" className="btn ghost" disabled={busy || !eligible.length}
             onClick={() => setBulkIds(eligible.map((payment) => payment.id))}>
-            Selecionar {eligible.length} pendentes desta busca
+            Selecionar {eligible.length} pendentes carregados
+          </button>
+          <button type="button" className="btn" disabled={busy || status === 'paid'}
+            onClick={selectEveryPending}>
+            <CheckCheck size={17} /> Selecionar TODOS os pendentes desta busca
           </button>
           <button type="button" className="btn ghost" disabled={busy || !bulkIds.length}
             onClick={() => setBulkIds([])}>Limpar seleção</button>
         </div>
+        {loadingAllProgress && <p role="status" className="muted small" aria-live="polite">
+          <RefreshCw size={16} /> {loadingAllProgress}
+        </p>}
         {!!chosen.length && (
           <>
             <div className="admin-payment-batch-items">
@@ -291,6 +367,12 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
           Processados {bulkProgress.done} de {bulkProgress.total} pagamentos.
         </p>}
       </div>
+      {nextOffset != null && (
+        <button type="button" className="btn outline" disabled={busy}
+          onClick={() => search(currentFilters(), { offset: nextOffset, append: true })}>
+          <RefreshCw size={17} /> Carregar mais pagamentos
+        </button>
+      )}
       <div className="admin-payment-results">
         {payments.map((payment) => {
           const expanded = selected === payment.id;

@@ -54,7 +54,7 @@ As rotas `/enviar/:slug` e `/mural/:slug` recebem metatags OG injetadas no HTML 
 ### Alterações de banco e operação
 
 - Migration **`0009_checkout_cart.sql`** cria `checkouts` e adiciona `orders.checkout_id` e `checkout_item_index`, preservando pedidos anteriores.
-- O painel administrativo mostra Pix agrupados e identifica a situação operacional de cada destinatário, sem expor texto, áudio, fotos, composição ou nome do remetente.
+- O painel administrativo mostra Pix agrupados e os dados operacionais dos destinatários. Em `/admin/cartinhas`, o admin também vê o nome do remetente e somente os stickers normalizados, inclusive com Pix pendente. Texto, fotos, áudio, assinatura e links privados não são enviados.
 - Os valores não podem ser alterados no browser depois da criação do checkout, nem é possível confirmar individualmente um pedido vinculado a Pix agrupado.
 - Para reduzir abuso de armazenamento em compras não confirmadas, o pré-envio aceita até 12 anexos e 48 MiB por cartinha, além de 160 MiB no total de um Pix agrupado. Após a confirmação bancária aplicam-se os limites normais da infraestrutura.
 - O texto e a decoração passam a estar disponíveis pelo **link privado de checkout mesmo em outro dispositivo**. Fotos e áudios originais saem do IndexedDB para o R2 ao abrir o checkout; acompanhe a sincronização antes de trocar de dispositivo. Quem possui o link secreto pode editar o conteúdo até o prazo, mas a coordenação continua sem endpoints de leitura.
@@ -86,6 +86,7 @@ As rotas `/enviar/:slug` e `/mural/:slug` recebem metatags OG injetadas no HTML 
 | `/admin` | Conferência Pix e situação operacional, sem conteúdo | Administrador |
 | `/admin/pedidos/:id` | Conferência do Pix e metadados do pedido | Administrador |
 | `/admin/encontristas` | Importação, fotos e OG personalizado | Administrador |
+| `/admin/cartinhas` e `/admin/cartinhas/:slug` | Prévia protegida: remetente, stickers e situação, inclusive Pix pendente | Administrador |
 | `/admin/stickers` | Upload das artes PNG originais para R2 | Administrador |
 | `/admin/configuracoes` | Pix, valor, horários, GA4 | Administrador |
 | `/admin/qrcodes` | Cartazes QR coloridos e impressão A4 | Administrador |
@@ -257,7 +258,7 @@ nunca textos, áudios, mensagens ou códigos secretos.
 
 - **Sem moderação**: a coordenação não aprova, rejeita, altera, lê nem escuta as cartinhas pelo painel. Os endpoints de moderação, leitura de carta e mídia pela administração foram desativados no servidor, não apenas escondidos na interface.
 - **Sem galeria pública**: toda carta é privada, inclusive as que anteriormente tinham a opção de publicação ativada. A migração `0006_private_letters.sql` desliga essa opção e revoga links longos de mural que podiam ser emitidos pelo administrador.
-- **Pagamentos separados de conteúdo**: administradores visualizam apenas código do pedido, destinatário, valor, situação do Pix e se a homenagem foi enviada. O nome do remetente, texto, anexos e áudio não constam dos endpoints administrativos.
+- **Pagamentos separados de conteúdo**: `/api/admin/bootstrap` e as consultas de pagamento continuam sem nome do remetente ou conteúdo privado. A nova rota autenticada `/api/admin/cartinhas` fornece nome do remetente, destinatário, status e stickers permitidos, inclusive rascunhos e Pix pendente, sem entregar texto, assinatura, fotos, áudios, links de mídia ou tokens.
 - **Entrega pelo horário**: o envio é direto para o mural do encontrista, sem aprovação; a leitura começa depois do horário de liberação estabelecido nas configurações.
 - **Segredo do mural**: os códigos de seis caracteres são gerados e impressos pela coordenação. Qualquer pessoa que tenha uma cópia do QR ou do código pode acessar o mural. Guarde as etiquetas e entregue a cada destinatário sem exposição pública.
 - **Limite técnico**: os dados ainda são armazenados em formato legível no D1/R2; **não há criptografia ponta a ponta**. O bloqueio do painel não impede que um operador com acesso privilegiado à infraestrutura examine os dados. Não divulgar promessa de impossibilidade absoluta de acesso até implementar criptografia ponta a ponta e gestão de chaves exclusivamente pelos participantes.

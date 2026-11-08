@@ -771,9 +771,16 @@ async function adminRoute(req,env,path) {
     const input=await jsonBody(req,3000);
     await requireTechnicalPreview(req,env,input && typeof input==='object' ? input.password : null);
     const rawToken=typeof input.mural_token==='string' ? input.mural_token.trim() : '';
+    const rawCode=typeof input.mural_code==='string' ? input.mural_code.trim().toUpperCase() : '';
     const slug=typeof input.recipient_slug==='string' ? input.recipient_slug.trim() : '';
     let recipient=null;
-    if (rawToken) {
+    if (rawCode) {
+      if(!/^[A-HJ-NP-Z2-9]{6}$/.test(rawCode))bad('Código pessoal do mural inválido.',403);
+      recipient=await env.DB.prepare(
+        'SELECT id,name,slug,active,photo_key,photo_consent,mural_code FROM recipients WHERE mural_code=?'
+      ).bind(rawCode).first();
+      if(!recipient)bad('Código pessoal do mural não encontrado.',403);
+    } else if (rawToken) {
       const parts=rawToken.split('.');
       if(parts.length!==3 || parts[0]!=='m2' ||
         parts[1].length>500 || parts[2].length>200 ||

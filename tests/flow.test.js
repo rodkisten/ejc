@@ -1232,3 +1232,93 @@ test('busca administrativa pagina todos os Pix, inclusive além dos primeiros 10
   assert.equal((await find({offset:-1})).status,400);
   assert.equal((await find({offset:1.5})).status,400);
 });
+
+test('admin finaliza somente rascunhos pagos com conteúdo, sem ler a mensagem',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const create=async slug=>call(env,'/api/orders','POST',{recipient_slug:slug,sender_name:'Remetente'},undefined);
+  const a=await create(list[0].slug);
+  const b=await create(list[0].slug);
+  const c=await create(list[1].slug);
+  const d=await create(list[1].slug);
+  assert.ok([a,b,c,d].every(x=>x.status===201));
+  const privateMessage='MENSAGEM-SIGILOSA-DE-TESTE';
+  assert.equal((await call(env,'/api/order/message','PUT',
+    {rich_html:'<p>'+privateMessage+'</p>'},{token:a.data.token})).status,200);
+  assert.equal((await call(env,'/api/order/message','PUT',
+    {rich_html:'<p>Pix ainda pendente</p>'},{token:c.data.token})).status,200);
+  await env.DB.prepare(
+    'INSERT INTO media(id,order_id,kind,filename,content_type,object_key,status,bytes) VALUES(?,?,?,?,?,?,?,?)'
+  ).bind(crypto.randomUUID(),d.data.id,'audio','audio.wav','audio/wav','tests/audio','ready',24).run();
+  for(const [index,row] of [a,b,d].entries()){
+    const paid=await call(env,'/api/admin/orders/'+row.data.id+'/status','PATCH',{
+      status:'paid',bank_reference:'TESTEBANCO9876543210'+index,
+      bank_checked:true,amount_checked:true
+    },admin);
+    assert.equal(paid.status,200);
+  }
+
+  const previewUrl='/api/admin/cartinhas/finalize-preview';
+  const actionUrl='/api/admin/cartinhas/finalize-paid';
+  assert.equal((await call(env,previewUrl)).status,401);
+  assert.equal((await call(env,actionUrl,'POST',{cursor:''})).status,401);
+  const preview=await call(env,previewUrl,'GET',undefined,admin);
+  assert.equal(preview.status,200);
+  assert.deepEqual(preview.data,{paid_drafts:3,eligible:2,empty:1});
+  assert.ok(!JSON.stringify(preview.data).includes(privateMessage));
+
+  const finished=await call(env,actionUrl,'POST',{cursor:''},admin);
+  assert.equal(finished.status,200);
+  assert.equal(finished.data.finalized,2);
+  assert.equal(finished.data.empty,1);
+  assert.equal(finished.data.failed,0);
+  assert.equal(finished.data.next_cursor,null);
+  assert.ok(!JSON.stringify(finished.data).includes(privateMessage));
+  const rows=(await env.DB.prepare(
+    'SELECT id,status,submitted_at,moderation FROM orders'
+  ).all()).results;
+  for(const item of [a,d]){
+    const order=rows.find(row=>row.id===item.data.id);
+    assert.equal(order.status,'paid');
+    assert.ok(order.submitted_at);
+    assert.equal(order.moderation,'approved');
+  }
+  assert.equal(rows.find(row=>row.id===b.data.id).submitted_at,null);
+  assert.equal(rows.find(row=>row.id===c.data.id).submitted_at,null);
+  const after=(await call(env,previewUrl,'GET',undefined,admin)).data;
+  assert.deepEqual(after,{paid_drafts:1,eligible:0,empty:1});
+  const again=await call(env,actionUrl,'POST',{cursor:''},admin);
+  assert.equal(again.data.finalized,0);
+
+  const summary=await call(env,'/api/admin/bootstrap','GET',undefined,admin);
+  const find=name=>summary.data.recipients.find(person=>person.name===name);
+  assert.equal(find(list[0].name).ready_letter_count,1);
+  assert.equal(find(list[1].name).ready_letter_count,1);
+});
+
+test('finalização administrativa percorre todos os lotes sem perder cartas',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  for(let i=0;i<87;i++){
+    const id='EJC-'+i.toString(16).padStart(12,'0').toUpperCase();
+    await env.DB.prepare(
+      'INSERT INTO orders(id,token_hash,recipient_id,status,total_cents,pix_payload,txid,rich_html) VALUES(?,?,?,?,?,?,?,?)'
+    ).bind(id,'hash-'+id,list[0].id,'paid',1000,'PIX','TX'+i,'<p>Mensagem '+i+'</p>').run();
+  }
+  let cursor='',finalized=0,scanned=0;
+  const seen=new Set();
+  do {
+    assert.ok(!seen.has(cursor)); seen.add(cursor);
+    const result=await call(env,'/api/admin/cartinhas/finalize-paid','POST',{cursor},admin);
+    assert.equal(result.status,200);
+    finalized+=result.data.finalized;
+    scanned+=result.data.scanned;
+    cursor=result.data.next_cursor;
+  } while(cursor);
+  assert.equal(finalized,87);
+  assert.equal(scanned,87);
+  const ready=await env.DB.prepare('SELECT COUNT(*) AS n FROM orders WHERE submitted_at IS NOT NULL').first();
+  assert.equal(ready.n,87);
+  const notices=(await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM order_events WHERE type='letter_sent' AND detail='admin_bulk_finalize'"
+  ).first()).n;
+  assert.equal(notices,87);
+});

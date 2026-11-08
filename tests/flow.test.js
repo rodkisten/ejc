@@ -1184,3 +1184,51 @@ test('aprovação em lote sem referência libera checkout agrupado sem gerar có
   assert.equal(childEvents.length,2);
   assert.ok(childEvents.every(row=>row.detail==='manual_batch_no_reference'));
 });
+
+test('busca administrativa pagina todos os Pix, inclusive além dos primeiros 100',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const expected=new Set();
+  const pendingIds=new Set();
+  for(let i=0;i<237;i++){
+    const id='EJC-'+i.toString(16).padStart(12,'0').toUpperCase();
+    const state=i%31===0?'paid':i%11===0?'claimed':'pending';
+    expected.add(id);
+    if(state!=='paid')pendingIds.add(id);
+    // Equal created_at dates exercise stable secondary order by payment ID.
+    await env.DB.prepare(
+      'INSERT INTO orders(id,token_hash,recipient_id,status,total_cents,pix_payload,txid,created_at,updated_at) ' +
+      'VALUES(?,?,?,?,?,?,?,?,?)'
+    ).bind(id,'hash-'+id,list[0].id,state,1000,'PIX TESTE','TXID'+i,
+      '2026-11-08 12:00:00','2026-11-08 12:00:00').run();
+  }
+  const find=(data)=>call(env,'/api/admin/payments/search','POST',data,admin);
+  const first=await find({});
+  assert.equal(first.status,200);
+  assert.equal(first.data.payments.length,100);
+  assert.equal(first.data.next_offset,100);
+  const second=await find({offset:first.data.next_offset});
+  assert.equal(second.data.payments.length,100);
+  assert.equal(second.data.next_offset,200);
+  const third=await find({offset:second.data.next_offset});
+  assert.equal(third.data.payments.length,37);
+  assert.equal(third.data.next_offset,null);
+  const all=[...first.data.payments,...second.data.payments,...third.data.payments];
+  assert.equal(new Set(all.map(item=>item.id)).size,237);
+  assert.deepEqual(new Set(all.map(item=>item.id)),expected);
+  for(let i=1;i<all.length;i++)assert.ok(all[i-1].id>all[i].id);
+
+  const pending=[];
+  let offset=0;
+  for(;;){
+    const response=await find({pending_only:true,offset});
+    assert.equal(response.status,200);
+    assert.ok(response.data.payments.every(item=>['pending','claimed'].includes(item.status)));
+    pending.push(...response.data.payments);
+    if(response.data.next_offset===null)break;
+    offset=response.data.next_offset;
+  }
+  assert.deepEqual(new Set(pending.map(item=>item.id)),pendingIds);
+  assert.equal(new Set(pending.map(item=>item.id)).size,pendingIds.size);
+  assert.equal((await find({offset:-1})).status,400);
+  assert.equal((await find({offset:1.5})).status,400);
+});

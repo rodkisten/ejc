@@ -140,7 +140,9 @@ export default function AdminLetters() {
       )}
       <div className="notice admin-letters-privacy">
         <ShieldCheck size={20} />
-        Somente o nome do remetente, os stickers e os dados operacionais são enviados para esta página. O blur é ilustrativo, não contém mensagens escondidas.
+        {technicalMode && technicalPassword
+          ? 'A lista administrativa continua protegida. Apenas uma prévia técnica aberta com autorização específica carrega seu conteúdo, sem alterar a privacidade para a coordenação.'
+          : 'Somente o nome do remetente, os stickers e os dados operacionais são enviados para esta página. O blur é ilustrativo, não contém mensagens escondidas.'}
       </div>
       <div className="admin-letters-toolbar">
         <label className="search-box">

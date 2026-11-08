@@ -6,6 +6,7 @@ import { draftGet } from '../lib/drafts';
 import { cartDraftKey } from '../lib/cart';
 import { useApp } from '../main';
 import QrCode from '../components/QrCode';
+import CheckoutSupport from '../components/CheckoutSupport';
 
 export default function Checkout() {
   const { token } = useParams();
@@ -93,7 +94,7 @@ export default function Checkout() {
     try {
       await api('/api/checkout/claim', { method: 'POST', token, data: {} });
       await reload();
-      setMessage('Pagamento informado. A coordenação vai conferir o valor total no extrato.');
+      setMessage('Aviso recebido! O Pix ainda não foi confirmado: a coordenação verificará a entrada no extrato bancário.');
       track('cart_pix_claimed');
     } catch (cause) { setError(cause.message); }
     finally { setBusy(false); }
@@ -107,6 +108,7 @@ export default function Checkout() {
       <p className="muted">{paid
         ? 'Agora você pode concluir cada cartinha e enviá-la para o mural secreto do encontrista.'
         : 'Você já pode editar e confirmar cada cartinha enquanto aguarda a conferência do Pix. O envio ao mural será liberado após a aprovação.'}</p>
+      <CheckoutSupport step={order?.status === 'claimed' ? 'Pix informado · aguardando conferência' : 'Pix do carrinho'} checkoutId={order?.id} recipientNames={order?.items?.map(item => item.recipient_name) || []} />
       {error && <div className="notice error" role="alert">{error}</div>}
       {message && <div className="notice" role="status">{message}</div>}
       {!order && <button className="btn ghost" type="button" onClick={reload}>Tentar carregar <RefreshCw size={17} /></button>}
@@ -169,7 +171,8 @@ export default function Checkout() {
             <button className="btn outline wide" type="button" disabled={busy || order.status === 'claimed'} onClick={claim}>
               {order.status === 'claimed' ? 'Aguardando conferência' : busy ? 'Informando pagamento...' : 'Já paguei · avisar coordenação'}
             </button>
-            <p className="muted small">O QR já contém o valor exato. O comprovante é conferido com o extrato, nunca só pelo botão.</p>
+            <div className="notice warning" role="status"><Clock3 size={18} /><span><strong>Conferência manual, não automática.</strong> Como usamos conta de pessoa física, não temos integração bancária para confirmar o Pix automaticamente. Após clicar em “Já paguei”, a coordenação confere o crédito e o valor no extrato. O aviso ou um comprovante isolado não confirmam pagamento. Guarde somente o código <strong>{order.id}</strong> para pedir ajuda; não solicitamos envio de comprovantes.</span></div>
+            <p className="muted small">O QR já contém o valor exato. O envio das cartinhas depende da conferência do extrato.</p>
           </section>}
         </div>
       )}

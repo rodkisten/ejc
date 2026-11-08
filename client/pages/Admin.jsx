@@ -487,6 +487,7 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
           <img src={r.og_url} alt={`Miniatura WhatsApp de ${r.name}`}
             style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
         </span>}
+        <NavLink className="btn ghost" to={'/admin/cartinhas/'+encodeURIComponent(r.slug)}><Eye size={15}/> Cartinhas protegidas</NavLink>
         <button className="btn ghost" onClick={()=>copy(`${location.origin}/enviar/${r.slug}?og=${encodeURIComponent(new URL(r.og_url,location.origin).searchParams.get('v')||'20261107b')}`)}><Copy size={15}/> Link de envio</button></div></div>)}</div>
     {photoSelection&&<SquarePhotoEditor
       person={photoSelection.person}

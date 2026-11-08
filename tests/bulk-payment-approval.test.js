@@ -32,15 +32,27 @@ test('bloqueia reuso da mesma referência bancária ou de confirmação anterior
   }),/duplicada/);
 });
 
+test('permite lote com referências em branco sem criar códigos fictícios',()=>{
+  const ids=[payments[0].id,payments[1].id];
+  const empty=prepareManualPixBatch(payments,ids,{});
+  assert.equal(empty.length,2);
+  assert.deepEqual(empty.map(({reference})=>reference),['','']);
+  const mixed=prepareManualPixBatch(payments,ids,{
+    [payments[0].id]:' E2026110812345678901234567890145 ',
+    [payments[1].id]:' ',
+  });
+  assert.deepEqual(mixed.map(({reference})=>reference),['E2026110812345678901234567890145','']);
+});
+
 test('não aprova itens inexistentes, pagos ou referências inválidas',()=>{
   assert.throws(()=>prepareManualPixBatch(payments,[],{}),/Selecione/);
   assert.throws(()=>prepareManualPixBatch(payments,['EJC-NAO-EXISTE'],{}),/não está mais aguardando/);
   assert.throws(()=>prepareManualPixBatch(payments,[payments[2].id],
     {[payments[2].id]:'E2026110812345678901234567890145'}),/não está mais aguardando/);
   assert.throws(()=>prepareManualPixBatch(payments,[payments[0].id],
-    {[payments[0].id]:'ref'}),/referência bancária completa/);
+    {[payments[0].id]:'ref'}),/referência bancária válida/);
   assert.throws(()=>prepareManualPixBatch(payments,[payments[0].id],
-    {[payments[0].id]:'ABC12345678?'}),/referência bancária completa/);
+    {[payments[0].id]:'ABC12345678?'}),/referência bancária válida/);
 });
 
 test('a seleção deduplica ids repetidos para não liberar duas vezes',()=>{

@@ -17,13 +17,27 @@ export function extractMuralGrant(value) {
   }
 }
 
-export default function TechnicalMuralPreview({ password, recipientSlug, userToken, onClose }) {
+export function extractMuralCode(value) {
+  const raw = String(value || '').trim();
+  if (/^[A-HJ-NP-Z2-9]{6}$/i.test(raw)) return raw.toUpperCase();
+  try {
+    const parsed = new URL(raw);
+    const code = new URLSearchParams(parsed.search).get('codigo') ||
+      new URLSearchParams(parsed.hash.replace(/^#/, '')).get('codigo');
+    return /^[A-HJ-NP-Z2-9]{6}$/i.test(code || '') ? code.toUpperCase() : '';
+  } catch {
+    return '';
+  }
+}
+
+export default function TechnicalMuralPreview({ password, recipientSlug, userToken, userCode, onClose }) {
   const [data, setData] = useState(null);
   const [opened, setOpened] = useState({});
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [openBusy, setOpenBusy] = useState('');
   const [allBusy, setAllBusy] = useState(false);
+  const [onlyVisible, setOnlyVisible] = useState(false);
   const files = useRef(new Set());
   const active = useRef(true);
   const generation = useRef(0);
@@ -61,7 +75,7 @@ export default function TechnicalMuralPreview({ password, recipientSlug, userTok
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             password,
-            ...(userToken ? { mural_token: userToken } : { recipient_slug: recipientSlug }),
+            ...(userCode ? { mural_code: userCode } : userToken ? { mural_token: userToken } : { recipient_slug: recipientSlug }),
           }),
           signal: controller.signal,
         });
@@ -85,7 +99,7 @@ export default function TechnicalMuralPreview({ password, recipientSlug, userTok
       for (const url of files.current) URL.revokeObjectURL(url);
       files.current.clear();
     };
-  }, [password, recipientSlug, userToken]);
+  }, [password, recipientSlug, userToken, userCode]);
 
   const openLetter = async (id) => {
     if (!data || opened[id] || openBusy) return;
@@ -150,9 +164,16 @@ export default function TechnicalMuralPreview({ password, recipientSlug, userTok
           </button>
         </div>
       </div>
-      {loading && <p className="loading" role="status"><LoaderCircle size={18} /> Carregando mural técnico…</p>}
-      {data && <MuralGallery data={data} opened={opened} openBusy={openBusy} error={error}
-        onOpenLetter={openLetter} technical />}
+      {data && <label className="technical-mural-visibility">
+        <input type="checkbox" checked={onlyVisible}
+          onChange={(event) => setOnlyVisible(event.target.checked)} />
+        Exibir somente as cartinhas que o encontrista já pode ver
+      </label>}
+      {loading && <p className="loading" role="status"><LoaderCircle size={18} /> Carregando mural técnico…</p>
+      {data && <MuralGallery
+        data={onlyVisible ? { ...data, cards: data.cards.filter((card) => card.visible_to_recipient) } : data}
+        opened={opened} openBusy={openBusy} error={error}
+        onOpenLetter={openLetter} technical technicalAll={!onlyVisible} />}
       {!data && error && <p className="notice error" role="alert">{error}</p>}
     </section>
   );

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createOgImage, createDefaultOgImage, OG_WIDTH, OG_HEIGHT, OG_SAFE } from '../client/lib/og.js';
+import { createOgImage, createDefaultOgImage, createMuralOgImage, OG_WIDTH, OG_HEIGHT, OG_SAFE } from '../client/lib/og.js';
 
 test('fallback PNG is real, correctly sized, and usable without any admin upload', () => {
   const png = fs.readFileSync(new URL('../public/og-ejc-default.png', import.meta.url));
@@ -125,4 +125,37 @@ test('OG da home é PNG real com título e chamadas dentro do corte seguro',asyn
     assert.ok(center.length>=4);
     assert.ok(center.every(item=>item.y>=OG_SAFE.top&&item.y<=OG_SAFE.bottom));
   } finally {globalThis.document=original;}
+});
+
+
+test('mural invitation OG is vivid and fully readable inside WhatsApp crop',async()=>{
+  const documentBefore=globalThis.document;
+  const imageBefore=globalThis.Image;
+  const windowBefore=globalThis.window;
+  const mock=browserCanvas();
+  globalThis.document={fonts:{ready:Promise.resolve()},createElement:()=>mock.canvas};
+  globalThis.window={location:{origin:'https://ejc.migos.club'}};
+  globalThis.Image=class {
+    naturalWidth=350;naturalHeight=450;
+    set src(value) {this._src=value;queueMicrotask(()=>this.onload?.());}
+  };
+  try {
+    const png=await createMuralOgImage({name:'Maria Eduarda Oliveira',photoUrl:'/api/recipients/test/photo'});
+    assert.equal(png.type,'image/png');
+    assert.equal(mock.canvas.width,1200);
+    assert.equal(mock.canvas.height,630);
+    const essential=mock.text.filter(item=>/XX EJC|SEU MURAL|UM CARINHO|Maria|Eduarda|Oliveira/.test(item.value));
+    assert.ok(essential.length>=4);
+    assert.ok(essential.every(item=>
+      item.x>=OG_SAFE.left && item.x<=OG_SAFE.right &&
+      item.y>=OG_SAFE.top && item.y<=OG_SAFE.bottom
+    ));
+    assert.ok(mock.frames.some(frame=>frame.x===470 && frame.y===186 && frame.width===258 && frame.height===248));
+    assert.ok(mock.photos.length>0);
+    assert.ok(mock.frames.some(frame=>frame.x===317 && frame.y===23 && frame.width===566));
+  } finally {
+    globalThis.document=documentBefore;
+    globalThis.Image=imageBefore;
+    globalThis.window=windowBefore;
+  }
 });

@@ -189,7 +189,7 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
                             Ver registro {item.id}
                           </Link>
                         </span>
-                        <span><small>De: {item.sender_name || 'Não informado'}</small>{' · '}{item.submitted ? 'Cartinha enviada' : 'Ainda não enviada'}</span>
+                        <span>{item.submitted ? 'Cartinha enviada' : 'Ainda não enviada'}</span>
                       </div>
                     ))}
                   </div>

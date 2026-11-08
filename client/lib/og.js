@@ -65,28 +65,47 @@ function collageBackdrop(ctx) {
   }
   ctx.restore();
 
-  // Wooden crucifix and little paper-sticker details.
-  ctx.save();
-  ctx.translate(125, 300);
-  ctx.rotate(-.08);
-  ctx.fillStyle = '#fff8e9';
-  rounded(ctx, -33, -116, 72, 275, 8); ctx.fill();
-  rounded(ctx, -105, -55, 220, 65, 7); ctx.fill();
-  ctx.fillStyle = '#73310f';
-  rounded(ctx, -26, -108, 58, 258, 4); ctx.fill();
-  rounded(ctx, -97, -48, 204, 51, 4); ctx.fill();
-  ctx.fillStyle = '#fff1df';
-  strip([[-80, -37], [-43, -30], [-2, 24], [40, 39], [83, -34], [64, -12],
-    [33, 60], [-3, 73], [-48, 6], [-80, -14]], '#fff1df');
-  ctx.restore();
-
+  // Only abstract decoration is allowed in the wide gutters. No half-cross
+  // and no lettering outside the central WhatsApp crop.
   ctx.textAlign = 'center';
-  ctx.font = '900 93px Arial,sans-serif';
-  ctx.fillStyle = '#fff7eb';
-  ctx.fillText('♡', 1004, 170);
-  ctx.fillText('✝', 1045, 380);
-  ctx.fillText('✦', 260, 148);
-  ctx.fillText('♡', 225, 560);
+  ctx.font = '900 85px Arial,sans-serif';
+  ctx.fillStyle = '#fff6e8';
+  ctx.fillText('♡', 1015, 180);
+  ctx.fillText('✦', 240, 148);
+  ctx.fillText('♡', 210, 546);
+  ctx.fillText('✳', 1030, 510);
+}
+
+function crossSticker(ctx, x, y) {
+  // Everything fits inside x=340..451 and y=142..360. The cross and its
+  // draped cloth never touch the canvas edges or the face.
+  ctx.save();
+  ctx.fillStyle = '#ffd638';
+  rounded(ctx, x - 9, y - 6, 113, 195, 53);
+  ctx.fill();
+  ctx.fillStyle = '#fffaf0';
+  rounded(ctx, x + 31, y + 6, 40, 172, 8); ctx.fill();
+  rounded(ctx, x + 1, y + 46, 100, 43, 8); ctx.fill();
+  ctx.fillStyle = '#713212';
+  rounded(ctx, x + 36, y + 11, 30, 162, 3); ctx.fill();
+  rounded(ctx, x + 6, y + 51, 90, 33, 3); ctx.fill();
+  ctx.fillStyle = '#fff1df';
+  ctx.strokeStyle = '#e6cbb0';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x + 11, y + 60);
+  ctx.lineTo(x + 22, y + 67);
+  ctx.lineTo(x + 38, y + 105);
+  ctx.lineTo(x + 52, y + 119);
+  ctx.lineTo(x + 67, y + 109);
+  ctx.lineTo(x + 89, y + 60);
+  ctx.lineTo(x + 80, y + 60);
+  ctx.lineTo(x + 60, y + 92);
+  ctx.lineTo(x + 52, y + 98);
+  ctx.lineTo(x + 43, y + 89);
+  ctx.lineTo(x + 26, y + 58);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
 }
 
 function splitName(ctx, name, availableWidth, maxLines) {
@@ -135,138 +154,70 @@ function splitName(ctx, name, availableWidth, maxLines) {
 
 export async function createOgImage({ name, photoUrl }) {
   try { await document.fonts.ready; } catch { /* Native font fallback is acceptable. */ }
-
   const canvas = document.createElement('canvas');
-  canvas.width = OG_WIDTH;
-  canvas.height = OG_HEIGHT;
+  canvas.width = OG_WIDTH; canvas.height = OG_HEIGHT;
   const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) throw new Error('Seu navegador não conseguiu criar a prévia social.');
 
-  // Same bright scrapbook identity as the A4 poster, with a central safe area.
   collageBackdrop(ctx);
+  // A central scrapbook card: every essential element is wholly inside the
+  // WhatsApp safe x=320..880, y=48..582 region, even when cropped square.
+  ctx.fillStyle = '#251335';
+  rounded(ctx, 317, 24, 566, 578, 23); ctx.fill();
+  ctx.fillStyle = '#fff9ea';
+  rounded(ctx, 326, 34, 548, 558, 17); ctx.fill();
 
-  // Big off-centre labels frame the collage without becoming necessary to read.
-  ctx.save();
-  ctx.translate(36, 108);
-  ctx.rotate(-.16);
-  ctx.font = '900 100px "DM Sans", Arial, sans-serif';
-  ctx.fillStyle = '#552c80';
-  ctx.fillText('XX', 0, 0);
-  ctx.fillStyle = '#8f548f';
-  ctx.font = '900 73px "DM Sans", Arial, sans-serif';
-  ctx.fillText('EJC!', 0, 79);
-  ctx.restore();
-
-  ctx.save();
-  ctx.translate(945, 150); ctx.rotate(.14);
-  ctx.fillStyle = '#191722';
-  rounded(ctx, -30, -38, 226, 94, 10);
-  ctx.fill();
-  ctx.font = '900 42px "DM Sans", Arial, sans-serif';
+  ctx.fillStyle = '#ffe13c';
+  rounded(ctx, 342, 52, 516, 52, 10); ctx.fill();
+  ctx.fillStyle = '#183a99';
+  ctx.font = '900 23px "DM Sans",Arial,sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#fff2ce';
-  ctx.fillText('EJC • MG', 83, 7, 200);
-  ctx.restore();
+  ctx.fillText('CARTINHAS · XX EJC SIMONÉSIA', 600, 86, 489);
 
-  // Central block must survive a square preview crop of 1200 x 630.
-  ctx.save();
-  ctx.fillStyle = '#151326';
-  rounded(ctx, 317, 25, 566, 574, 23);
-  ctx.fill();
-  ctx.fillStyle = '#FFFFFF';
-  rounded(ctx, 327, 35, 546, 554, 17);
-  ctx.fill();
-  ctx.restore();
-
-  ctx.fillStyle = '#e5dcfb';
-  rounded(ctx, 342, 51, 516, 52, 10);
-  ctx.fill();
-  ctx.fillStyle = '#17182C';
-  ctx.font = '900 21px "DM Sans", Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('CARTINHAS · XX EJC SIMONÉSIA  ✳', 600, 86, 478);
+  // The wooden cross is a complete sticker inside the actual preview crop.
+  crossSticker(ctx, 347, 157);
+  ctx.fillStyle = '#c61569';
+  ctx.font = '900 44px Arial,sans-serif';
+  ctx.fillText('♡', 799, 170);
+  ctx.fillStyle = '#1c4ca5';
+  ctx.fillText('✦', 801, 239);
 
   const portrait = await loadPortrait(photoUrl);
-  // The portrait is a true 1:1 crop everywhere, including OG and WhatsApp.
   const photoX = 464, photoY = 112, photoW = 272, photoH = 272;
-  ctx.fillStyle = '#e7d9ef';
-  rounded(ctx, photoX, photoY, photoW, photoH, 12);
-  ctx.fill();
+  ctx.fillStyle = '#f1dbe8';
+  rounded(ctx, photoX, photoY, photoW, photoH, 12); ctx.fill();
   if (portrait) {
-    ctx.save();
-    rounded(ctx, photoX, photoY, photoW, photoH, 12);
-    ctx.clip();
+    ctx.save(); rounded(ctx, photoX, photoY, photoW, photoH, 12); ctx.clip();
     cover(ctx, portrait, photoX, photoY, photoW, photoH);
     ctx.restore();
   } else {
-    ctx.fillStyle = '#BE316C';
-    ctx.font = '900 146px Georgia, serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('♡', 600, 320);
+    ctx.fillStyle = '#bd195c';
+    ctx.font = '900 142px Georgia,serif';
+    ctx.fillText('♡', 600, 315);
   }
-  ctx.strokeStyle = '#151326';
-  ctx.lineWidth = 3;
-  rounded(ctx, photoX, photoY, photoW, photoH, 12);
-  ctx.stroke();
+  ctx.strokeStyle = '#251335'; ctx.lineWidth = 3;
+  rounded(ctx, photoX, photoY, photoW, photoH, 12); ctx.stroke();
 
-  // Text stays below portrait rather than covering the face.
-  ctx.fillStyle = '#f7e0ec';
-  rounded(ctx, 342, 404, 516, 134, 11);
-  ctx.fill();
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#25162A';
-  ctx.font = '900 15px "DM Sans", Arial, sans-serif';
-  ctx.fillText('PARA', 600, 437);
-  const personName = String(name || 'Você').trim().replace(/\s+/g, ' ');
-  const segments = personName.split(' ');
-  let nameLines = [personName];
-  let nameFont = 52;
-  for (let size = 52; size >= 24; size -= 2) {
-    ctx.font = '900 ' + size + 'px "DM Sans", Arial, sans-serif';
-    let first = '', second = '';
-    if (ctx.measureText(personName).width <= 485) {
-      nameLines = [personName]; nameFont = size; break;
-    }
-    for (const part of segments) {
-      const candidate = first ? first + ' ' + part : part;
-      if (!second && ctx.measureText(candidate).width <= 480) first = candidate;
-      else second = second ? second + ' ' + part : part;
-    }
-    if (first && second && ctx.measureText(first).width <= 480 &&
-      ctx.measureText(second).width <= 480) {
-      nameLines = [first,second]; nameFont = size; break;
-    }
-    if (size === 24) {
-      const available = personName.slice(0, 42);
-      nameLines = [available.length < personName.length ? available + '…' : available];
-      nameFont = 24;
-    }
-  }
-  ctx.font = '900 ' + nameFont + 'px "DM Sans", Arial, sans-serif';
-  ctx.fillStyle = '#25162A';
-  const firstY = nameLines.length === 1 ? 501 : 472;
-  nameLines.forEach((line,index) => ctx.fillText(line, 600, firstY + index * (nameFont + 3), 486));
+  ctx.fillStyle = '#ffdeea';
+  rounded(ctx, 342, 402, 516, 137, 12); ctx.fill();
+  ctx.fillStyle = '#2c143d';
+  ctx.font = '900 17px "DM Sans",Arial,sans-serif';
+  ctx.fillText('PARA', 600, 430);
 
-  ctx.fillStyle = '#25162A';
-  ctx.font = '800 16px "DM Sans", Arial, sans-serif';
-  ctx.fillText('Sua voz, suas fotos e seus adesivos.', 600, 567, 480);
+  const fitted = splitName(ctx, name, 475, 2);
+  ctx.font = '900 ' + fitted.size + 'px "DM Sans",Arial,sans-serif';
+  const firstY = fitted.lines.length === 1 ? 497 : 472;
+  fitted.lines.forEach((line, index) =>
+    ctx.fillText(line, 600, firstY + index * (fitted.size + 4), 476));
 
-  // Details outside central safe zone only.
-  ctx.save(); ctx.translate(960, 500); ctx.rotate(-.12);
-  ctx.font = '900 61px "DM Sans", Arial, sans-serif';
-  ctx.fillStyle = '#552c80'; ctx.fillText('ENVIE', 0, 0);
-  ctx.fillStyle = '#9d4d83'; ctx.fillText('CARINHO.', -10, 62);
-  ctx.restore();
-  ctx.fillStyle = '#d09ad7';
-  ctx.beginPath(); ctx.moveTo(116, 385); ctx.lineTo(147, 437); ctx.lineTo(208, 445);
-  ctx.lineTo(157, 479); ctx.lineTo(143, 539); ctx.lineTo(109, 487);
-  ctx.lineTo(54, 461); ctx.lineTo(110, 441); ctx.closePath(); ctx.fill();
+  // A dark-on-light footer still reads in a 1:1 iPhone link thumbnail.
+  ctx.fillStyle = '#2c143d';
+  ctx.font = '900 17px "DM Sans",Arial,sans-serif';
+  ctx.fillText('Sua voz, suas fotos e seus adesivos.', 600, 568, 494);
 
   return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error('Não foi possível exportar a imagem PNG.'));
-    }, 'image/png');
+    canvas.toBlob((blob) => blob ? resolve(blob) :
+      reject(new Error('Não foi possível exportar a imagem PNG.')), 'image/png');
   });
 }
 
@@ -287,7 +238,7 @@ export async function publishOgImage(person) {
 // Brand-wide OG card when the link points to the home rather than one encontrista.
 // Rendered in the authenticated admin browser and served as PNG from R2.
 export async function createDefaultOgImage() {
-  try { await document.fonts.ready; } catch { /* Local font fallback. */ }
+  try { await document.fonts.ready; } catch { /* Use bundled font fallback. */ }
   const canvas = document.createElement('canvas');
   canvas.width = OG_WIDTH;
   canvas.height = OG_HEIGHT;
@@ -295,46 +246,50 @@ export async function createDefaultOgImage() {
   if (!ctx) throw new Error('Canvas indisponível para prévia social.');
 
   collageBackdrop(ctx);
-  // Content essential to WhatsApp stays wholly within x=320..880,
-  // even when the wide OG is cropped to its central square.
-  ctx.fillStyle = '#411b64';
-  rounded(ctx, 314, 22, 572, 586, 24); ctx.fill();
-  ctx.fillStyle = '#fff4de';
-  rounded(ctx, 322, 30, 556, 570, 19); ctx.fill();
+  // Paper and text entirely in the crop x=320..880.
+  ctx.fillStyle = '#241532';
+  rounded(ctx, 317, 24, 566, 578, 22); ctx.fill();
+  ctx.fillStyle = '#fff7e8';
+  rounded(ctx, 325, 33, 550, 560, 16); ctx.fill();
 
-  ctx.fillStyle = '#ffcb21';
-  rounded(ctx, 345, 52, 510, 62, 8); ctx.fill();
-  ctx.fillStyle = '#1748a4';
-  ctx.font = '900 26px Arial,sans-serif';
+  ctx.fillStyle = '#ffdb31';
+  rounded(ctx, 343, 52, 514, 61, 11); ctx.fill();
+  ctx.fillStyle = '#163993';
   ctx.textAlign = 'center';
-  ctx.fillText('XX EJC  ·  SIMONÉSIA', 600, 93, 478);
+  ctx.font = '900 25px "DM Sans",Arial,sans-serif';
+  ctx.fillText('XX EJC  ·  SIMONÉSIA', 600, 93, 486);
 
-  ctx.save();
-  ctx.translate(600, 304);
-  ctx.rotate(-.035);
-  ctx.fillStyle = '#ec2275';
-  rounded(ctx, -249, -165, 498, 291, 16); ctx.fill();
-  ctx.fillStyle = '#fff9e9';
-  ctx.font = 'italic 900 76px Arial,sans-serif';
-  ctx.fillText('ENVIE SUA', 0, -69, 468);
-  ctx.fillStyle = '#ffd52a';
-  ctx.font = 'italic 900 91px Arial,sans-serif';
-  ctx.fillText('CARTINHA!', 0, 41, 470);
-  ctx.fillStyle = '#fff5e2';
-  ctx.font = '900 23px Arial,sans-serif';
-  ctx.fillText('CARTINHAS DE AMOR.', 0, 95, 465);
-  ctx.restore();
+  // Cross is fully visible in the left half of the center card.
+  crossSticker(ctx, 344, 171);
 
-  ctx.fillStyle = '#fff0c6';
-  rounded(ctx, 345, 454, 510, 98, 12); ctx.fill();
-  ctx.fillStyle = '#552a62';
-  ctx.font = '900 22px Arial,sans-serif';
-  ctx.fillText('Crie. Decore. Envie. Guarde.', 600, 491, 472);
-  ctx.font = '700 17px Arial,sans-serif';
-  ctx.fillText('Cartas com fotos, voz e adesivos de fé.', 600, 522, 475);
-  ctx.font = '900 16px Arial,sans-serif';
-  ctx.fillStyle = '#d71e72';
-  ctx.fillText('UMA SURPRESA PARA CADA ENCONTRISTA', 600, 582, 490);
+  // Distinct high-contrast headline on solid paper stickers, not pink-on-pink.
+  ctx.fillStyle = '#ef287b';
+  rounded(ctx, 469, 145, 388, 270, 12); ctx.fill();
+  ctx.fillStyle = '#fff9e7';
+  rounded(ctx, 486, 162, 355, 86, 6); ctx.fill();
+  ctx.fillStyle = '#1b3990';
+  ctx.font = '900 51px "DM Sans",Arial,sans-serif';
+  ctx.fillText('ENVIE SUA', 664, 223, 329);
+
+  ctx.fillStyle = '#ffe139';
+  rounded(ctx, 487, 260, 354, 100, 7); ctx.fill();
+  ctx.fillStyle = '#96134a';
+  ctx.font = '900 63px "DM Sans",Arial,sans-serif';
+  ctx.fillText('CARTINHA!', 664, 332, 333);
+
+  ctx.fillStyle = '#fff8e5';
+  ctx.font = '900 17px Arial,sans-serif';
+  ctx.fillText('CARTINHAS DE AMOR.', 663, 389, 345);
+
+  ctx.fillStyle = '#ffe1eb';
+  rounded(ctx, 343, 444, 514, 105, 11); ctx.fill();
+  ctx.fillStyle = '#26163b';
+  ctx.font = '900 22px "DM Sans",Arial,sans-serif';
+  ctx.fillText('Crie. Decore. Envie. Guarde.', 600, 485, 475);
+  ctx.font = '700 17px "DM Sans",Arial,sans-serif';
+  ctx.fillText('Cartas com fotos, voz e adesivos de fé.', 600, 520, 480);
+  ctx.font = '900 16px "DM Sans",Arial,sans-serif';
+  ctx.fillText('UMA SURPRESA PARA CADA ENCONTRISTA', 600, 579, 500);
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => blob ? resolve(blob) :

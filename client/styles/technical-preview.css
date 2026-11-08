@@ -1,0 +1,48 @@
+.admin-tech-gate {
+  display:grid; gap:12px; margin:18px 0;
+  padding:18px; border:2px dashed #a685d1; border-radius:15px;
+  background:#faf6ff;
+}
+.admin-tech-gate strong { color:#321748; }
+.admin-tech-gate p { margin:0; font-size:.88rem; }
+.admin-tech-gate .admin-tech-entry { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+.admin-tech-gate label { display:grid; gap:6px; flex:1 1 240px; }
+.admin-tech-gate input { min-height:44px; font-size:16px; min-width:0; }
+.admin-tech-gate .btn { min-height:44px; }
+.technical-letter-preview { margin-top:16px; }
+.technical-letter-preview .letter-card { margin-top:12px; max-width:100%; }
+.technical-letter-preview .letter-card .letter-canvas { max-width:100%; }
+@media print { .admin-tech-gate,.technical-letter-preview { display:none!important; } }
+
+
+.admin-tech-mural-pick {
+  display:grid; gap:14px; margin:18px 0; padding:18px;
+  border:2px solid #b79de2; border-radius:18px;
+  background:linear-gradient(135deg,#fcf8ff,#fff9ef); min-width:0;
+}
+.admin-tech-mural-pick>div>strong {display:block;font-size:1.12rem;color:#34165b;}
+.admin-tech-mural-pick>div>p {margin:6px 0;color:#56456c;font-size:.92rem;}
+.admin-tech-mural-form {display:grid;grid-template-columns:1fr 1.4fr auto;gap:12px;align-items:end;min-width:0;}
+.admin-tech-mural-form label {display:grid;gap:6px;min-width:0;font-size:.85rem;font-weight:800;}
+.admin-tech-mural-form select,.admin-tech-mural-form input {width:100%;min-width:0;min-height:44px;font-size:16px;}
+.admin-tech-mural-form .btn {min-height:44px;white-space:normal;}
+.technical-mural-preview {display:grid;gap:16px;min-width:0;padding:16px 0;}
+.technical-mural-toolbar {display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1px solid #dbcde8;padding-bottom:12px;}
+.technical-mural-toolbar strong {display:flex;gap:8px;align-items:center;color:#34165b;}
+.technical-mural-toolbar p {margin:4px 0 0;font-size:.84rem;color:#74617d;}
+.technical-mural-preview .mural-page {width:100%;max-width:100%;margin:0;min-width:0;}
+.technical-mural-preview .mural-cards {min-width:0;}
+.technical-mural-preview .mural-envelope {min-width:0;}
+@media(max-width:790px){
+  .admin-tech-mural-form {grid-template-columns:1fr;}
+  .technical-mural-toolbar {align-items:stretch;}
+  .technical-mural-toolbar .inline-actions {width:100%;flex-wrap:wrap;}
+}
+@media(max-width:520px){
+  .admin-tech-mural-pick {padding:14px;}
+  .technical-mural-toolbar .btn {flex:1;justify-content:center;}
+}
+@media print {.admin-tech-mural-pick,.technical-mural-preview {display:none!important;}}
+
+.technical-mural-visibility { display:flex; align-items:center; gap:10px; font-size:.9rem; font-weight:800; color:#321b59; padding:9px 0; }
+.technical-mural-visibility input { accent-color:#6831b6; width:18px; height:18px; flex:none; }

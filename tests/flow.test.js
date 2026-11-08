@@ -43,7 +43,7 @@ async function call(env,path,method='GET',data,options={}){
   if(options.raw){body=data;headers['Content-Type']='application/octet-stream';}
   else if(data!==undefined){body=JSON.stringify(data);headers['Content-Type']='application/json';}
   const response=await worker.fetch(new Request(url,{method,headers,body}),env);
-  return {status:response.status, data:await response.json(), headers:response.headers};
+  return {status:response.status, data:options.binary ? new Uint8Array(await response.arrayBuffer()) : await response.json(), headers:response.headers};
 }
 async function setup(env){
   const login=await call(env,'/api/admin/login','POST',{password:env.ADMIN_PASSWORD});
@@ -918,4 +918,130 @@ test('coordenação vê todas as cartinhas, inclusive Pix pendente, sem receber 
   assert.ok(!payload.includes(secretAuthor));
   assert.ok(!payload.includes(token));
   assert.equal((await call(env, '/api/mural/' + person.slug, 'GET', undefined, admin)).status, 403);
+});
+
+
+test('prévia técnica exige sessão admin e segredo independente, incluindo mídia',async()=>{
+  const env=fixture();
+  env.TECH_PREVIEW_SECRET='technical-test-only-32-character-secret';
+  const {admin,list}=await setup(env);
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:list[0].slug,sender_name:'Remetente particular'
+  });
+  assert.equal(created.status,201);
+  const id=created.data.id, token=created.data.token;
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Conteúdo privado só técnico</p>',sender_name:'Remetente particular',
+  },{token})).status,200);
+  const route='/api/admin/technical-preview/'+id;
+  assert.equal((await call(env,route,'GET',undefined,admin)).status,404);
+  assert.equal((await call(env,route,'POST',{password:env.TECH_PREVIEW_SECRET})).status,401);
+  const masked=(await call(env,'/api/admin/cartinhas','GET',undefined,admin)).data;
+  assert.equal('rich_html' in masked.letters[0],false);
+  assert.ok(!JSON.stringify(masked).includes('Conteúdo privado'));
+  assert.equal((await call(env,route,'POST',{password:'another-invalid-password-with-32-characters'},admin)).status,403);
+  const preview=await call(env,route,'POST',{password:env.TECH_PREVIEW_SECRET},admin);
+  assert.equal(preview.status,200);
+  assert.match(preview.data.rich_html,/Conteúdo privado só técnico/);
+  assert.equal(preview.data.sender_name,'Remetente particular');
+  assert.equal(preview.headers.get('Cache-Control'),'no-store');
+  assert.equal('token_hash' in preview.data,false);
+
+  const uploaded=await call(env,'/api/order/media/init','POST',
+    {kind:'image',filename:'private.png',content_type:'image/png'},{token});
+  assert.equal(uploaded.status,200);
+  const mediaId=uploaded.data.id;
+  assert.equal((await call(env,'/api/order/media/'+mediaId+'/part/1','PUT',
+    new Uint8Array([137,80,78,71,1,2,3]),{token,raw:true})).status,200);
+  assert.equal((await call(env,'/api/order/media/'+mediaId+'/complete','POST',{}, {token})).status,200);
+  const mediaRoute=route+'/media/'+mediaId;
+  assert.equal((await call(env,mediaRoute,'POST',{password:env.TECH_PREVIEW_SECRET})).status,401);
+  assert.equal((await call(env,mediaRoute,'POST',{password:'another-invalid-password-with-32-characters'},admin)).status,403);
+  const media=await call(env,mediaRoute,'POST',{password:env.TECH_PREVIEW_SECRET},{...admin,binary:true});
+  assert.equal(media.status,200);
+  assert.equal(media.headers.get('Cache-Control'),'no-store');
+  assert.equal(media.headers.get('Content-Type'),'image/png');
+  assert.deepEqual([...media.data],[137,80,78,71,1,2,3]);
+  assert.ok(!JSON.stringify((await call(env,'/api/admin/cartinhas','GET',undefined,admin)).data).includes('private.png'));
+});
+
+test('prévia técnica fica desativada sem segredo forte',async()=>{
+  const env=fixture();
+  const {admin,list}=await setup(env);
+  const created=await call(env,'/api/orders','POST',{recipient_slug:list[0].slug});
+  env.TECH_PREVIEW_SECRET='000000';
+  const response=await call(env,'/api/admin/technical-preview/'+created.data.id,
+    'POST',{password:'000000'},admin);
+  assert.equal(response.status,503);
+});
+
+
+test('modo técnico abre visão completa de um encontrista pelo token pessoal sem registrar leitura',async()=>{
+  const env=fixture();
+  env.TECH_PREVIEW_SECRET='technical-test-only-32-character-secret';
+  const {admin,list}=await setup(env);
+  const recipient=list[0];
+  const one=await call(env,'/api/orders','POST',{
+    recipient_slug:recipient.slug,sender_name:'Amigo primeiro'
+  });
+  const two=await call(env,'/api/orders','POST',{
+    recipient_slug:recipient.slug,sender_name:'Amiga segunda'
+  });
+  assert.equal(one.status,201);
+  assert.equal(two.status,201);
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Primeira mensagem privada</p>'
+  },{token:one.data.token})).status,200);
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Segunda mensagem privada</p>'
+  },{token:two.data.token})).status,200);
+
+  await call(env,'/api/admin/mural-codes/generate','POST',{regenerate:false},admin);
+  const bootstrap=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data;
+  const accessCode=bootstrap.recipients.find(person=>person.id===recipient.id).mural_code;
+  const redeem=await call(env,'/api/mural/redeem','POST',{code:accessCode});
+  assert.equal(redeem.status,200);
+  const grant=redeem.data.grant;
+  const path='/api/admin/technical-mural';
+  const valid={password:env.TECH_PREVIEW_SECRET,mural_token:grant};
+  assert.equal((await call(env,path,'GET',undefined,admin)).status,404);
+  assert.equal((await call(env,path,'POST',valid)).status,401);
+  assert.equal((await call(env,path,'POST',{...valid,password:'incorrect-technical-secret-with-length'},admin)).status,403);
+  assert.equal((await call(env,path,'POST',{...valid,mural_token:'m2.abc.def'},admin)).status,403);
+  assert.equal((await call(env,path,'POST',{...valid,mural_token:grant+'broken'},admin)).status,403);
+
+  const result=await call(env,path,'POST',valid,admin);
+  assert.equal(result.status,200);
+  assert.equal(result.headers.get('Cache-Control'),'no-store');
+  assert.equal(result.data.recipient.slug,recipient.slug);
+  assert.equal(result.data.cards.length,2);
+  assert.equal(result.data.locked,true);
+  assert.ok(result.data.cards.every(card=>card.visible_to_recipient===false));
+  assert.ok(result.data.cards.some(card=>card.rich_html.includes('Primeira mensagem privada')));
+  assert.ok(result.data.cards.some(card=>card.rich_html.includes('Segunda mensagem privada')));
+  assert.ok(!JSON.stringify(result.data).includes(one.data.token));
+  assert.ok(!JSON.stringify(result.data).includes(two.data.token));
+
+  const byRecipient=await call(env,path,'POST',{
+    password:env.TECH_PREVIEW_SECRET,recipient_slug:recipient.slug
+  },admin);
+  assert.equal(byRecipient.status,200);
+  assert.equal(byRecipient.data.cards.length,2);
+  const byPrintedCode=await call(env,path,'POST',{
+    password:env.TECH_PREVIEW_SECRET,mural_code:accessCode
+  },admin);
+  assert.equal(byPrintedCode.status,200);
+  assert.equal(byPrintedCode.data.recipient.slug,recipient.slug);
+  assert.equal(byPrintedCode.data.cards.length,2);
+  assert.equal((await call(env,path,'POST',{
+    password:env.TECH_PREVIEW_SECRET,mural_code:'ZZZZZZ'
+  },admin)).status,403);
+  const publicMural=await call(env,'/api/mural/'+recipient.slug,'GET',undefined,{token:grant});
+  assert.equal(publicMural.status,200);
+  assert.equal(publicMural.data.cards.length,0);
+
+  const summary=(await call(env,'/api/admin/cartinhas','GET',undefined,admin)).data;
+  assert.equal(summary.letters.length,2);
+  assert.ok(!JSON.stringify(summary).includes('Primeira mensagem privada'));
+  assert.ok(!JSON.stringify(summary).includes('Segunda mensagem privada'));
 });

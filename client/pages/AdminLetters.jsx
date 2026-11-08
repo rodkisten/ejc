@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, Sparkles } from 'lucide-react';
 import { api } from '../lib/api';
 import StickerLayer from '../components/letter/StickerLayer';
+import TechnicalLetterPreview from '../components/TechnicalLetterPreview';
+import TechnicalMuralPreview, { extractMuralGrant, extractMuralCode } from '../components/TechnicalMuralPreview';
+import '../styles/technical-preview.css';
 import { THEMES } from '../../shared/letter.js';
 
 const paid = (status) => ['paid', 'preparing', 'delivered'].includes(status);
@@ -64,6 +67,23 @@ function SecretLetterPreview({ letter }) {
 
 export default function AdminLetters() {
   const { slug } = useParams();
+  const location = useLocation();
+  const technicalMode = new URLSearchParams(location.search).get('secret') === '000000';
+  const [technicalInput, setTechnicalInput] = useState('');
+  const [technicalPassword, setTechnicalPassword] = useState('');
+  const [muralRecipient, setMuralRecipient] = useState('');
+  const [muralTokenInput, setMuralTokenInput] = useState('');
+  const [muralSelection, setMuralSelection] = useState(null);
+  const [muralError, setMuralError] = useState('');
+  useEffect(() => {
+    if (!technicalMode) {
+      setTechnicalPassword('');
+      setTechnicalInput('');
+      setMuralSelection(null);
+      setMuralTokenInput('');
+      setMuralError('');
+    }
+  }, [technicalMode]);
   const [letters, setLetters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -93,6 +113,19 @@ export default function AdminLetters() {
       .some((text) => String(text).toLocaleLowerCase('pt-BR').includes(query));
   }), [letters, slug, search, filter]);
   const heading = slug ? 'Cartinhas de ' + (selected?.recipient_name || 'encontrista') : 'Todas as cartinhas';
+  const recipients = useMemo(() => Array.from(new Map(letters.map(letter => [letter.recipient_slug, letter.recipient_name])).entries()).sort((a,b) => a[1].localeCompare(b[1], 'pt-BR')), [letters]);
+  function openRecipientMural(event) {
+    event.preventDefault();
+    setMuralError('');
+    const raw=muralTokenInput.trim();
+    const grant=raw ? extractMuralGrant(raw) : '';
+    const code=raw ? extractMuralCode(raw) : '';
+    if(raw && !grant && !code){ setMuralError('Cole o código pessoal de seis caracteres, um token m2. ou o link do mural.'); return; }
+    const recipientSlug=slug || muralRecipient || recipients[0]?.[0];
+    if(!grant && !code && !recipientSlug){setMuralError('Selecione um encontrista ou cole o token do mural.');return;}
+    setMuralSelection({recipientSlug:grant || code ? '' : recipientSlug,userToken:grant,userCode:code});
+    setMuralTokenInput('');
+  }
 
   return (
     <div className="admin-letters-page">
@@ -106,10 +139,70 @@ export default function AdminLetters() {
           <RefreshCw size={16} /> Atualizar
         </button>
       </div>
-      {slug && <Link className="text-button" to="/admin/cartinhas">← Ver todas as cartinhas</Link>}
+      {slug && <Link className="text-button" to={'/admin/cartinhas' + (technicalMode ? '?secret=000000' : '')}>← Ver todas as cartinhas</Link>}
+      {technicalMode && (
+        <form className="admin-tech-gate" onSubmit={(event) => {
+          event.preventDefault();
+          setTechnicalPassword(technicalInput);
+          setTechnicalInput('');
+          setMuralSelection(null);
+        }}>
+          <strong>🔐 Modo de conferência técnica de layout</strong>
+          <p>Somente para o responsável técnico. O parâmetro da URL não concede acesso: além do login administrativo, é necessária a credencial técnica separada configurada no servidor. A coordenação continua vendo apenas a prévia protegida.</p>
+          {technicalPassword ? <div className="notice success">Credencial técnica informada para esta sessão. A verificação acontece no servidor ao abrir cada cartinha.</div> : null}
+          <div className="admin-tech-entry">
+            <label>Credencial técnica
+              <input type="password" minLength={20} maxLength={256} autoComplete="off"
+                placeholder="Senha técnica, não é 000000" value={technicalInput}
+                onChange={(event) => setTechnicalInput(event.target.value)} />
+            </label>
+            <button type="submit" className="btn" disabled={technicalInput.length < 20}>
+              <LockKeyhole size={16} /> Ativar conferência
+            </button>
+            {technicalPassword && <button type="button" className="btn outline" onClick={() => {
+              setTechnicalPassword('');
+              setExpanded({});
+              setMuralSelection(null);
+              setMuralTokenInput('');
+            }}>Bloquear</button>}
+          </div>
+        </form>
+      )}
+      {technicalMode && technicalPassword && (
+        <section className="admin-tech-mural-pick">
+          <div>
+            <strong>👁 Ver mural como encontrista</strong>
+            <p>Abra todas as cartinhas no mesmo layout que o encontrista vê. O token pessoal serve para identificar o mural, não substitui sua senha técnica.</p>
+          </div>
+          <form className="admin-tech-mural-form" onSubmit={openRecipientMural}>
+            <label>Encontrista
+              <select value={slug || muralRecipient || recipients[0]?.[0] || ''}
+                onChange={(event) => { setMuralRecipient(event.target.value); setMuralError(''); }}
+                disabled={!!slug}>
+                {recipients.map(([value,name]) => <option key={value} value={value}>{name}</option>)}
+              </select>
+            </label>
+            <label>Código, token ou link do mural do usuário (opcional)
+              <input type="password" autoComplete="off" spellCheck={false}
+                placeholder="ABC234, m2.… ou link com #token=…"
+                value={muralTokenInput} onChange={(event) => setMuralTokenInput(event.target.value.slice(0,1200))} />
+            </label>
+            <button type="submit" className="btn"><Eye size={17} /> Abrir visão do encontrista</button>
+          </form>
+          {muralError && <div className="notice error" role="alert">{muralError}</div>}
+          {muralSelection && <TechnicalMuralPreview
+            password={technicalPassword}
+            recipientSlug={muralSelection.recipientSlug}
+            userToken={muralSelection.userToken}
+            userCode={muralSelection.userCode}
+            onClose={() => setMuralSelection(null)} />}
+        </section>
+      )}
       <div className="notice admin-letters-privacy">
         <ShieldCheck size={20} />
-        Somente o nome do remetente, os stickers e os dados operacionais são enviados para esta página. O blur é ilustrativo, não contém mensagens escondidas.
+        {technicalMode && technicalPassword
+          ? 'A lista administrativa continua protegida. Apenas uma prévia técnica aberta com autorização específica carrega seu conteúdo, sem alterar a privacidade para a coordenação.'
+          : 'Somente o nome do remetente, os stickers e os dados operacionais são enviados para esta página. O blur é ilustrativo, não contém mensagens escondidas.'}
       </div>
       <div className="admin-letters-toolbar">
         <label className="search-box">
@@ -138,7 +231,7 @@ export default function AdminLetters() {
           <article className="admin-letter-entry form-card" key={letter.id}>
             <div className="admin-letter-summary">
               <div>
-                {!slug && <Link to={'/admin/cartinhas/' + encodeURIComponent(letter.recipient_slug)}
+                {!slug && <Link to={'/admin/cartinhas/' + encodeURIComponent(letter.recipient_slug) + (technicalMode ? '?secret=000000' : '')}
                   className="admin-letter-recipient">{letter.recipient_name}</Link>}
                 {slug && <strong className="admin-letter-recipient">{letter.recipient_name}</strong>}
                 <p>De: <strong>{letter.sender_name}</strong></p>
@@ -153,11 +246,13 @@ export default function AdminLetters() {
                     ...previous, [letter.id]: !previous[letter.id],
                   }))}>
                   {expanded[letter.id] ? <EyeOff size={16} /> : <Eye size={16} />}
-                  {expanded[letter.id] ? 'Fechar prévia' : 'Ver prévia protegida'}
+                  {expanded[letter.id] ? 'Fechar prévia' : technicalMode && technicalPassword ? 'Conferir layout completo' : 'Ver prévia protegida'}
                 </button>
               </div>
             </div>
-            {expanded[letter.id] && <SecretLetterPreview letter={letter} />}
+            {expanded[letter.id] && (technicalMode && technicalPassword
+              ? <TechnicalLetterPreview orderId={letter.id} password={technicalPassword} />
+              : <SecretLetterPreview letter={letter} />)}
           </article>
         ))}
       </div>

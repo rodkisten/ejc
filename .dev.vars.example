@@ -6,3 +6,8 @@ RESEND_FROM="Cartinhas XX EJC <avisos@ejc.migos.club>"
 RELAY_URL="https://xtelegram-cf.migos.club/send"
 RELAY_TOKEN="substituir-com-token-rotacionado"
 RELAY_CHAT_ID="opcional"
+
+# Credencial independente para visualizar layout técnico (20+ caracteres).
+# Em produção: npx wrangler secret put TECH_PREVIEW_SECRET
+# Nunca use 000000 como senha real e nunca salve segredos no Git.
+TECH_PREVIEW_SECRET="substitua-por-credencial-aleatoria-com-32-ou-mais-caracteres"

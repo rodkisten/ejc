@@ -462,10 +462,11 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
           onClick={()=>restoreRecipient(r)}>
           <RotateCcw size={15}/> Restaurar
         </button>}
-        <button className="btn outline person-delete-button" type="button" disabled={!!savingRecipient}
+        {(r.active!==0||Number(r.order_count||0)===0) && <button
+          className="btn outline person-delete-button" type="button" disabled={!!savingRecipient}
           onClick={()=>deleteRecipient(r)}>
-          <Trash2 size={15}/> {savingRecipient===r.id?'Aguarde...':r.active===0&&Number(r.order_count||0)>0?'Arquivado':'Excluir'}
-        </button>
+          <Trash2 size={15}/> {savingRecipient===r.id?'Aguarde...':'Excluir'}
+        </button>}
         <label className="btn ghost person-photo-upload"><ImagePlus size={15}/>{uploading===r.id?'Enviando...':r.photo_url?'Trocar foto':'Adicionar foto'}
           <input type="file" accept="image/jpeg,image/png,image/webp" disabled={!!uploading}
             onChange={event=>{const file=event.target.files?.[0];if(file)setPhotoSelection({person:r,file});event.target.value='';}}/>

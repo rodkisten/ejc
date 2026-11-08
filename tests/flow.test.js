@@ -698,6 +698,8 @@ test('admin pesquisa pelo código Pix e mostra todas as cartinhas sem ler conte�
   assert.equal((await search({query:payload.txid})).data.payments[0].id,payload.id);
   assert.equal((await search({query:payload.pix_code})).data.payments[0].id,payload.id);
   assert.equal((await search({payer:'Conferência'})).data.payments[0].id,payload.id);
+  assert.equal((await search({sender:'Privada Dois'})).data.payments[0].id,payload.id);
+  assert.equal((await search({sender:'Quem não enviou'})).data.payments.length,0);
   const byRecipient=await search({recipient:list[0].name});
   assert.equal(byRecipient.data.payments.length,1);
   assert.equal(byRecipient.data.payments[0].items.length,2);

@@ -1465,3 +1465,29 @@ test('apenas modo técnico com senha aprova rascunhos pagos após visualizar con
   assert.equal((await call(env,'/api/admin/technical-preview/'+empty.data.id+'/finalize',
     'POST',{password},admin)).status,409);
 });
+
+test('publicação em massa percorre todos os encontristas sem duplicar em novas execuções',async()=>{
+  const env=fixture(),{admin}=await setup(env);
+  const extra=Array.from({length:51},(_,i)=>'Encontrista extra '+i);
+  const imported=await call(env,'/api/admin/recipients/import','POST',{names:extra},admin);
+  assert.equal(imported.status,200);
+  assert.equal(imported.data.inserted,51);
+  const url='/api/admin/campaign/mini-mercado/publish';
+  let cursor='',created=0,iterations=0;
+  do{
+    const response=await call(env,url,'POST',{cursor},admin);
+    assert.equal(response.status,200);
+    assert.ok(response.data.processed<=20);
+    created+=response.data.created;
+    cursor=response.data.next_cursor;
+    iterations++;
+  }while(cursor);
+  assert.equal(iterations,3);
+  assert.equal(created,53);
+  const rows=(await env.DB.prepare(
+    'SELECT recipient_id FROM orders WHERE campaign_key=?'
+  ).bind('pos-encontro').all()).results;
+  assert.equal(rows.length,53);
+  assert.equal(new Set(rows.map(row=>row.recipient_id)).size,53);
+  assert.equal((await call(env,url,'POST',{cursor:''},admin)).data.created,0);
+});

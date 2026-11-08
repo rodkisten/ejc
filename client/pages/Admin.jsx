@@ -3,7 +3,7 @@ import {NavLink,Routes,Route,useNavigate,useParams} from 'react-router-dom';
 import {ShieldCheck,ClipboardList,UsersRound,Settings2,QrCode as QrIcon,Eye,Check,Copy,Trash2,Sparkles,Printer,Download,LogOut,ExternalLink,RefreshCw,Heart,ImagePlus,Pencil,RotateCcw,X} from 'lucide-react';
 import { api, money, btime, track,download } from '../lib/api';
 import QrCode from '../components/QrCode';
-import PhotoPoster from '../components/PhotoPoster';
+import MiniQrCard from '../components/MiniQrCard';
 import Labels from './Labels';
 import StickerAdmin from './StickerAdmin';
 import { publishOgImage, publishDefaultOgImage } from '../lib/og';
@@ -559,11 +559,11 @@ function QrPrint({ info }) {
       <div className="section-head no-print">
         <div>
           <span className="eyebrow">MATERIAL IMPRESSO · PAPEL FOTOGRÁFICO</span>
-          <h1>Cartaz A4 das cartinhas</h1>
-          <p>Uma arte inteira por folha A4, com cores vibrantes, QR verdadeiro e margem de segurança para impressão.</p>
+          <h1>10 cartões por A4</h1>
+          <p>Dez mini cartões coloridos por página A4 (2 × 5), para cortar e distribuir. QR verdadeiro e alta legibilidade no papel fotográfico.</p>
         </div>
         <button className="btn" type="button" onClick={() => window.print()}>
-          <Printer size={16} /> Imprimir cartaz A4
+          <Printer size={16} /> Imprimir 10 por A4
         </button>
       </div>
       <div className="form-card no-print">
@@ -580,12 +580,14 @@ function QrPrint({ info }) {
         {ogNotice && <p className="notice" role="status">{ogNotice}</p>}
         <p className="muted small">
           A prévia usa o endereço real, gerado dinamicamente. Imprima em tamanho real, no modo
-          qualidade fotográfica e com gráficos de fundo ativados. O QR leva ao envio de cartinhas,
+          qualidade fotográfica e com gráficos de fundo ativados. Repita o mesmo link nos 10 cartões. O QR leva ao envio de cartinhas,
           não ao banco nem ao mural privado.
         </p>
       </div>
       <div className="qr-print-grid photo-print-sheet">
-        <PhotoPoster value={url} recipientName={selected?.name} photoUrl={selected?.photo_url} />
+        {Array.from({ length: 10 }, (_, index) => (
+          <MiniQrCard key={index} index={index} value={url} recipientName={selected?.name} />
+        ))}
       </div>
     </>
   );

@@ -68,9 +68,10 @@ export default function Cart() {
         itemIds: cart.items.map(item => item.id), created_at: new Date().toISOString(),
       });
       // Preserve the full checkout snapshot and every IndexedDB letter/attachment.
-      await draftSet('ejc-checkout-cart-' + checkout.id, cart.items);
+      try { await draftSet('ejc-checkout-cart-' + checkout.id, cart.items); }
+      catch { /* Original drafts and checkout history are retained. */ }
       // Only the active shopping index is reset, so new purchases remain possible.
-      await cart.clear();
+      try { await cart.clear(); } catch { /* The server checkout remains recoverable. */ }
       track('checkout_created', { letters: checkout.items.length });
       navigate('/checkout/' + checkout.token);
     } catch (cause) {

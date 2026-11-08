@@ -122,6 +122,7 @@
 @media(max-width:700px){.sticker-admin-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(prefers-reduced-motion:reduce){.mural-envelope .letter-card{animation:none}.mural-envelope-button{transition:none}}
 
+
 /* Purchaser identity is an internal payment lookup field, never a letter signature. */
 .cart-payer-label {
   display: grid;
@@ -176,3 +177,4 @@
 @media (max-width: 520px) {
   .checkout-code .btn { width: 100%; justify-content: center; }
 }
+

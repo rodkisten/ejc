@@ -62,8 +62,13 @@ test('cartinhas são privadas: a coordenação confirma Pix sem ler, ouvir nem m
   assert.equal(created.status,201);
   const token=created.data.token,id=created.data.id;
 
-  assert.equal((await call(env,'/api/order/message','PUT',{rich_html:'<p>Segredo</p>'},{token})).status,403);
-  assert.equal((await call(env,'/api/order/media/init','POST',{kind:'audio',filename:'privado.wav',content_type:'audio/wav'},{token})).status,403);
+  // The private single-letter link already edits safely while the Pix is pending.
+  assert.equal((await call(env,'/api/order/message','PUT',{rich_html:'<p>Segredo</p>'},{token})).status,200);
+  assert.match((await call(env,'/api/order','GET',undefined,{token})).data.rich_html,/Segredo/);
+  assert.equal((await call(env,'/api/order/submit','POST',{}, {token})).status,403);
+  const draftMedia=await call(env,'/api/order/media/init','POST',
+    {kind:'audio',filename:'privado-rascunho.wav',content_type:'audio/wav'},{token});
+  assert.equal(draftMedia.status,200);
   assert.equal((await call(env,'/api/order/claim','POST',{}, {token})).status,200);
   const paid=await call(env,`/api/admin/orders/${id}/status`,'PATCH',
     {status:'paid',bank_reference:'E2EPRIVADO123456789',bank_checked:true,amount_checked:true},admin);
@@ -482,6 +487,93 @@ test('carrinho: um único Pix com preço verificado no servidor para três carti
   }
   const parentAfter=await call(env,'/api/checkout','GET',undefined,{token:created.data.token});
   assert.ok(parentAfter.data.items.every(i=>i.status==='paid'));
+});
+
+test('link do Pix permite editar, confirmar e sincronizar anexos antes do pagamento, sem liberar o mural',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const created=await call(env,'/api/checkouts','POST',{
+    items:[
+      {recipient_slug:list[0].slug,sender_name:'Remetente A',
+       rich_html:'<p>Primeira versão.</p>',
+       composition:{theme:'marian',stickers:[{id:'s1',presetId:'jesus-ama',x:40,y:50}]}},
+      {recipient_slug:list[1].slug,sender_name:'Remetente B',
+       rich_html:'<p>Outra cartinha.</p>',composition:{theme:'rose',stickers:[]}},
+    ]
+  });
+  assert.equal(created.status,201);
+  const access=created.data.token;
+  const privateCheckout=await call(env,'/api/checkout','GET',undefined,{token:access});
+  assert.equal(privateCheckout.status,200);
+  assert.equal(privateCheckout.data.amount_cents,2000);
+  assert.equal(privateCheckout.data.items.length,2);
+  assert.equal(privateCheckout.data.items[0].has_draft,true);
+  const pix=privateCheckout.data.pix_code;
+  const first=privateCheckout.data.items[0];
+  const second=privateCheckout.data.items[1];
+  const before=(await call(env,'/api/order','GET',undefined,{token:first.token})).data;
+  assert.equal(before.status,'pending');
+  assert.equal(before.sender_name,'Remetente A');
+  assert.equal(before.rich_html,'<p>Primeira versão.</p>');
+  assert.equal(before.composition.theme,'marian');
+  assert.equal(before.composition.stickers[0].presetId,'jesus-ama');
+  assert.equal((await call(env,'/api/order','GET')).status,401);
+  assert.equal((await call(env,'/api/order/submit','POST',{}, {token:first.token})).status,403);
+
+  const changed=await call(env,'/api/order/message','PUT',{
+    sender_name:'Outra pessoa',rich_html:'<p>Alteração confirmada pelo link.</p>',
+    composition:{theme:'peach',stickers:[{id:'s2',presetId:'nossa-senhora',x:25,y:55}]}
+  },{token:first.token});
+  assert.equal(changed.status,200);
+  const updated=(await call(env,'/api/order','GET',undefined,{token:first.token})).data;
+  assert.equal(updated.status,'pending');
+  assert.equal(updated.sender_name,'Outra pessoa');
+  assert.equal(updated.rich_html,'<p>Alteração confirmada pelo link.</p>');
+  assert.equal(updated.composition.theme,'peach');
+  assert.equal((await call(env,'/api/order','GET',undefined,{token:second.token})).data.rich_html,
+    '<p>Outra cartinha.</p>');
+
+  // The same private link uploads attachments without granting delivery.
+  const file=await call(env,'/api/order/media/init','POST',{
+    kind:'image',filename:'lembranca.png',content_type:'image/png'
+  },{token:first.token});
+  assert.equal(file.status,200);
+  assert.equal((await call(env,'/api/order/media/'+file.data.id+'/part/1','PUT',
+    new Uint8Array([137,80,78,71,13,10,26,10]),{token:first.token,raw:true})).status,200);
+  assert.equal((await call(env,'/api/order/media/'+file.data.id+'/complete','POST',
+    {},{token:first.token})).status,200);
+  const extra=await call(env,'/api/order/media/init','POST',{
+    kind:'image',filename:'exagero.png',content_type:'image/png'
+  },{token:first.token});
+  assert.equal(extra.status,200);
+  assert.equal((await call(env,'/api/order/media/'+extra.data.id+'/part/7','PUT',
+    new Uint8Array([1]),{token:first.token,raw:true})).status,413);
+  const media=(await call(env,'/api/order','GET',undefined,{token:first.token})).data.media;
+  assert.equal(media.length,1);
+  const preview=await worker.fetch(new Request('https://ejc.test'+media[0].url),env);
+  assert.equal(preview.status,200);
+  assert.equal((await preview.arrayBuffer()).byteLength,8);
+
+  const parentAgain=(await call(env,'/api/checkout','GET',undefined,{token:access})).data;
+  assert.equal(parentAgain.pix_code,pix);
+  assert.equal(parentAgain.amount_cents,2000);
+  assert.equal(parentAgain.items[0].sender_name,'Outra pessoa');
+  assert.equal((await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data.orders
+    .some(o=>JSON.stringify(o).includes('Alteração confirmada')),false);
+
+  await call(env,'/api/admin/mural-codes/generate','POST',{regenerate:false},admin);
+  await call(env,'/api/admin/settings','PUT',{release_at:'2020-11-08T16:00'},admin);
+  const accessCode=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data.recipients
+    .find(p=>p.slug===list[0].slug).mural_code;
+  const grant=(await call(env,'/api/mural/redeem','POST',{code:accessCode})).data.grant;
+  assert.equal((await call(env,'/api/mural/'+list[0].slug,'GET',undefined,{token:grant}))
+    .data.cards.length,0);
+
+  assert.equal((await call(env,'/api/checkout/claim','POST',{}, {token:access})).status,200);
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    sender_name:'Última revisão',rich_html:'<p>Último ajuste.</p>'
+  },{token:first.token})).status,200);
+  assert.equal((await call(env,'/api/checkout','GET',undefined,{token:access})).data.pix_code,pix);
+  assert.equal((await call(env,'/api/order/submit','POST',{}, {token:first.token})).status,403);
 });
 
 test('carrinho: valida itens e recusa associação manual de pagamento individual', async () => {

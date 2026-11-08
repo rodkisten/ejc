@@ -24,8 +24,8 @@ O relay da coordenação recebe eventos operacionais de pedido e Pix, nunca o te
 2. Em `/enviar/:slug`, a pessoa escolhe o remetente **daquela cartinha**, escreve a mensagem e adiciona áudios, fotos e adesivos PNG instalados. O rascunho, inclusive as mídias, é salvo em IndexedDB do navegador.
 3. `/carrinho` permite **editar**, **remover**, **duplicar para outro encontrista** e **criar cartas novas**. A assinatura é independente. Uma mesma pessoa pode receber mais de uma cartinha.
 4. `POST /api/checkouts` recebe de 1 a 20 itens e valida o valor unitário **exclusivamente no servidor**. A API cria um `checkout` e múltiplos `orders` privativos, em transação D1. O único BR Code Pix inclui a **soma correta** com um `txid` da compra.
-5. Em `/checkout/:token`, o comprador vê o Pix consolidado, informa o pagamento e acompanha a confirmação. A coordenação aprova **uma transferência**, em `/admin`, verificando entrada no extrato, identificador e valor total. Nenhuma carta é aprovada individualmente antes disso.
-6. Depois do Pix, `/pedido/:token` permite enviar **cada** carta ao mural com suas fotos e áudios. O navegador recupera os rascunhos correspondentes. O mural continua privado e as cartas são liberadas no horário do encontro.
+5. Em `/checkout/:token`, o comprador vê o Pix consolidado e pode **editar cada cartinha mesmo após copiar o Pix**, sem refazer a compra. **Confirmar alterações** grava no servidor e devolve ao mesmo QR e código Copia e Cola. A coordenação aprova **uma transferência**, em `/admin`, verificando entrada no extrato, identificador e valor total.
+6. Em `/pedido/:token`, a pessoa com o link secreto pode revisar **texto, assinatura, adesivos, fotos e áudios antes ou depois da aprovação bancária**. O texto e a decoração são gravados no D1 ao gerar a compra. A tela de Pix sincroniza os anexos locais com R2; não a feche antes da mensagem de sincronização terminar. Apenas depois da confirmação bancária é possível **enviar ao mural**, que continua privado e só abre no horário do encontro.
 7. O encontrista abre o envelope, pode baixar a carta PNG, o ZIP com mídias e usar **Telegram / Compartilhar** na folha de compartilhamento nativa do iPhone. Não existe postagem automática por bot no Telegram nem exposição do token do mural.
 
 ### Artes PNG originais
@@ -43,7 +43,8 @@ As rotas `/enviar/:slug` e `/mural/:slug` recebem metatags OG injetadas no HTML 
 - Migration **`0009_checkout_cart.sql`** cria `checkouts` e adiciona `orders.checkout_id` e `checkout_item_index`, preservando pedidos anteriores.
 - O painel administrativo mostra Pix agrupados e identifica a situação operacional de cada destinatário, sem expor texto, áudio, fotos, composição ou nome do remetente.
 - Os valores não podem ser alterados no browser depois da criação do checkout, nem é possível confirmar individualmente um pedido vinculado a Pix agrupado.
-- Os rascunhos pré-pagamento continuam locais. Não apague os dados do Safari nem troque de aparelho antes de concluir os envios.
+- Para reduzir abuso de armazenamento em compras não confirmadas, o pré-envio aceita até 12 anexos e 48 MiB por cartinha, além de 160 MiB no total de um Pix agrupado. Após a confirmação bancária aplicam-se os limites normais da infraestrutura.
+- O texto e a decoração passam a estar disponíveis pelo **link privado de checkout mesmo em outro dispositivo**. Fotos e áudios originais saem do IndexedDB para o R2 ao abrir o checkout; acompanhe a sincronização antes de trocar de dispositivo. Quem possui o link secreto pode editar o conteúdo até o prazo, mas a coordenação continua sem endpoints de leitura.
 - Antes de publicar: `npm ci && npm run check && npm run build && npm run db:remote`, faça backup do D1, teste Pix real em valor pequeno, revisite a página após pagar, exporte fotos/áudios no Safari e confira OG no WhatsApp.
 
 
@@ -51,7 +52,7 @@ As rotas `/enviar/:slug` e `/mural/:slug` recebem metatags OG injetadas no HTML 
 
 1. A pessoa escaneia a plaquinha de divulgação, encontra o nome em `/` ou abre `/enviar/:slug`.
 2. Prepara a mensagem no editor rico (títulos, negrito, itálico, listas, citações e sublinhado), seleciona **quantas fotos quiser** e grava/regrava um ou mais áudios, com player de ondas e velocidade. Pode pagar sem ter terminado de escrever.
-3. Antes de pagar, o rascunho (inclusive arquivos) vive no **IndexedDB** daquele navegador. Não limpe os dados do celular nem troque de dispositivo antes de transferir o rascunho para o servidor.
+3. Antes de gerar o Pix, o rascunho fica no **IndexedDB**. Ao criar o checkout, texto, remetente e composição são persistidos em D1, e os anexos são sincronizados para R2 ao abrir o Pix. Aguarde o término da sincronização de arquivos antes de fechar a página ou mudar de aparelho.
 4. É gerado um **Pix BR Code estático** com valor configurável por mensagem e `txid` específico. O administrador compara valor e identificador da transferência no **extrato real do banco**. A confirmação manual do Pix libera o envio da cartinha privada, sem moderação.
 5. A pessoa continua pelo link privado `/pedido/:token`, salva o conteúdo no R2 e envia diretamente para o mural privado. Pode editar até o prazo configurado, sem revisão pela equipe.
 6. Somente cartinhas enviadas aparecem no mural do encontrista após o horário configurado. O código privado de seis caracteres é inserido em `/abrir`. Administradores não podem entrar no mural usando apenas a sessão administrativa.
@@ -65,8 +66,8 @@ As rotas `/enviar/:slug` e `/mural/:slug` recebem metatags OG injetadas no HTML 
 | `/` | Mural fotográfico em colagem, lista pesquisável e apresentação das funções | Público |
 | `/enviar/:slug` | Editor da cartinha nova ou duplicada | Público |
 | `/carrinho` | Carrinho de cartas com Pix consolidado | Rascunhos locais |
-| `/checkout/:token` | Pix e acesso às cartas após pagamento | Link privado |
-| `/pedido/:token` | Pix, status, rascunho e envio ao mural | Link privado |
+| `/checkout/:token` | Pix, cópia do código e edição individual das cartinhas antes da aprovação | Link privado |
+| `/pedido/:token` | Edição de rascunho antes/depois do Pix e envio ao mural somente após pagamento | Link privado |
 | `/mural/:slug` | Mural secreto | Somente acesso assinado derivado do código pessoal |
 | `/abrir` | Digitar código pessoal do mural | Destinatário |
 | `/admin` | Conferência Pix e situação operacional, sem conteúdo | Administrador |
@@ -526,72 +527,27 @@ dimensões JPEG, bordas e área quadrada das prévias.
 Teste o Safari em 320px, 375px, 390px e 430px, incluindo gesto de
 arrastar, zoom, publicação e um nome de encontrista longo.
 
-## Conferência por código Pix, nome de controle e edição após gerar o pagamento
 
-### Localização de pagamentos no admin
+## Conferência de Pix por código e nome de controle (migração 0010)
 
-Em **Admin → Pedidos → Localizar um Pix e suas cartinhas**, a coordenação
-pode pesquisar pelo código mostrado na tela do Pix (`EJCB-XXXXXXXXXXXX`
-para carrinhos, `EJC-XXXXXXXXXXXX` para pedidos antigos), pelo TXID
-incluído no Pix Copia e Cola, por nome do encontrista ou pelo **nome para
-conferência** informado pelo comprador. Também pode filtrar por situação
-do pagamento e por cartinhas enviadas.
+No painel administrativo, **Localizar um Pix e suas cartinhas** permite consultar
+código da compra, TXID, referência E2E já registrada, encontrista e o **nome
+para conferência** informado por quem compra. O campo identifica o pagamento
+sem alterar a assinatura da mensagem e sem aparecer no mural. Um único Pix
+consolidado libera todas as cartinhas após conferência manual do valor e do
+crédito no extrato bancário. Nenhum texto, mídia ou token privado é retornado
+pela pesquisa de pagamentos.
 
-O resultado exibe um pagamento e **todos os encontristas vinculados àquele
-Pix**, com identificadores individuais, valores e estados de entrega.
-A busca está disponível só após autenticação de admin e **não retorna
-texto, áudio, fotos, assinatura pública ou tokens privados**.
+O checkout mantém o identificador e código Pix originais mesmo após a pessoa
+editar e confirmar o texto, a assinatura, as fotos ou os adesivos no link
+privado. O estado canônico da cartinha fica no D1, seus anexos no R2 após
+sincronização; o IndexedDB preserva rascunhos como cópias locais para recuperação,
+sem manter um carrinho faturado como compra nova. Não limpe os dados do Safari
+antes de confirmar que os anexos foram sincronizados. Os links privados da
+compra continuam funcionando em outros aparelhos após a sincronização.
 
-O campo **Nome para conferência do Pix** aparece no carrinho antes de gerar
-o pagamento, separado da **assinatura** da cartinha. Ele não aparece no
-mural, nos destinatários, nas imagens sociais ou no link público.
-Compras anteriores à migração podem aparecer com “Não informado”.
-O nome fica fixo naquele Pix quando o código é criado.
-
-O identificador bancário E2E pode ser usado na busca **depois que tiver
-sido associado ao pedido** na conferência. Um comprovante fornecido por
-terceiros **não confirma automaticamente o pagamento**; a coordenação
-continua responsável por conferir o crédito e o valor no extrato.
-Um único recebimento confirmado libera todas as cartinhas daquele Pix.
-
-### Rascunhos preservados após gerar o Pix
-
-O botão **Gerar Pix** não esvazia o carrinho nem remove os rascunhos,
-fotos, áudios ou a decoração do IndexedDB. Na tela do Pix há links
-**Editar rascunho** para voltar ao editor usando o mesmo ID local.
-Ao voltar ao carrinho, o usuário encontra o pagamento já criado.
-O sistema bloqueia gerar outro Pix para as mesmas cartinhas e protege
-os itens associados contra remoção acidental.
-
-Depois da confirmação, a página privada de cada pedido recupera a última
-versão do rascunho e permite atualizar a assinatura, o texto e a
-decoração até o prazo de encerramento. Anexos já enviados são marcados
-localmente para não serem reenviados em duplicidade. Não apagamos os
-originais do IndexedDB após o envio.
-
-**Importante:** como fotos e áudios permanecem no armazenamento
-**do próprio navegador**, os dados só podem ser recuperados naquele
-perfil/aparelho. Limpar dados do Safari, usar modo privado ou mudar
-de dispositivo pode impedir essa recuperação. Guarde também o link
-privado gerado no Pix. A equipe do Mini Mercado não recebe acesso
-ao conteúdo dos rascunhos.
-
-### Migração e publicação
-
-A migração `migrations/0010_private_payer_name.sql` adiciona
-`payer_name` em `checkouts` e `orders`, sem alterar pedidos
-existentes ou os valores já pagos. O deploy aplica migrations da D1
-antes de publicar o Worker:
-
-```bash
-git switch main
-git pull --ff-only
-npm ci
-npm run check
-npm run build
-bash scripts/deploy.sh
-```
-
-Faça uma compra de teste no Safari com duas cartinhas, gere o Pix,
-volte e edite ambas, confirme o crédito no banco usando o código
-`EJCB-...` no admin e conclua o envio sem perder fotos ou áudios.
+A migração `migrations/0010_private_payer_name.sql` cria o atributo
+`payer_name` em compras e pedidos pré-existentes com valor padrão vazio.
+Aplique as migrações antes de publicar o Worker. Para ensaio, confira pelo
+código `EJCB-...` um Pix com duas cartinhas, edite cada uma, verifique no
+extrato e confirme manualmente o pagamento no admin.

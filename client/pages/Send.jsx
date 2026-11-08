@@ -4,7 +4,7 @@ import { ArrowRight, ImagePlus, Trash2, LockKeyhole, Info, ShoppingBag, Share2, 
 import { useApp } from '../main';
 import { money, track } from '../lib/api';
 import { draftGet, draftSet, draftRemove, draftKey } from '../lib/drafts';
-import { useCart, cartDraftKey } from '../lib/cart';
+import { useCart, cartDraftKey, checkoutForDraft } from '../lib/cart';
 import RichEditor from '../components/RichEditor';
 import Recorder from '../components/Recorder';
 import VoicePlayer from '../components/VoicePlayer';
@@ -17,6 +17,7 @@ export default function Send() {
   const navigate = useNavigate();
   const location = useLocation();
   const editId = new URLSearchParams(location.search).get('edit');
+  const alreadyPurchased = editId ? checkoutForDraft(editId) : null;
   const { recipients, config } = useApp();
   const cart = useCart();
   const found = recipients.find((r) => r.slug === slug);
@@ -128,6 +129,14 @@ export default function Send() {
 
   if (!found) return <div className="empty">
     <h2>Encontrista não encontrado.</h2><Link to="/">Voltar à lista</Link>
+  </div>;
+  if (alreadyPurchased) return <div className="empty">
+    <h2>Esta cartinha já está vinculada a um Pix 💌</h2>
+    <p>Você pode continuar editando e confirmar alterações pelo mesmo link privado,
+      sem gerar outro pagamento. Seu rascunho original continua salvo neste aparelho.</p>
+    <Link className="btn" to={'/checkout/' + alreadyPurchased.token}>
+      Abrir Pix {alreadyPurchased.id}
+    </Link>
   </div>;
 
   return (

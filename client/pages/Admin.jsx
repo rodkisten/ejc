@@ -41,6 +41,8 @@ function AdminDashboard({ info, reload }) {
         A coordenação acessa apenas dados operacionais de pagamento e envio. Mensagens, fotos e áudios não são exibidos.
       </div>
       <PaymentLookup recipients={info.recipients} onConfirmed={reload} />
+      <CheckoutList orders={info.orders} reloadOrders={reload} />
+      <OrderList orders={info.orders} navigate={navigate} />
     </>
   );
 }
@@ -209,9 +211,8 @@ function OrderDetail({ reload }) {
       </div>
       {error && <div className="notice error">{error}</div>}
       {order.checkout_id && !paid && (
-        <div className="notice">
-          Esta cartinha pertence a um Pix agrupado ({order.checkout_id}).
-          Para confirmar o recebimento, volte à busca de Pix e confirme o valor total.
+        <div className="notice">Esta cartinha faz parte do Pix agrupado {order.checkout_id}.
+          Confirme o recebimento único e o valor total pela busca de pagamentos acima.
         </div>
       )}
       {!paid && !order.checkout_id && (

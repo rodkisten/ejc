@@ -47,6 +47,10 @@ function editable(config) {
   if (Date.now() >= brazilTimeEnd(config.deadline)) bad('O prazo para editar as homenagens terminou.',403);
 }
 function activeOrder(order) { return ['paid','preparing','delivered'].includes(order.status); }
+// Private checkout links grant edit access even after the Pix code is displayed.
+function writableLetter(order) {
+  return activeOrder(order) || ['pending','claimed'].includes(order.status);
+}
 async function event(env, id, type, detail='') {
   await env.DB.prepare('INSERT INTO order_events(id,order_id,type,detail) VALUES(?,?,?,?)').bind(newId(),id,type,detail).run();
 }
@@ -148,20 +152,20 @@ async function signedMedia(req,env,id,url) {
   if (payload.v!==2 || payload.mediaId!==id || payload.exp<=Date.now()/1000) bad('Link de arquivo expirado ou revogado.',403);
   const media=await getMedia(env,id);
   if (media.order_id!==payload.orderId) bad('Acesso negado.',403);
-  const order=await env.DB.prepare('SELECT status FROM orders WHERE id=?').bind(media.order_id).first();
-  if (!order || !activeOrder(order)) bad('Arquivo ainda bloqueado.',403);
+  const order=await env.DB.prepare('SELECT status,checkout_id FROM orders WHERE id=?').bind(media.order_id).first();
+  if (!order || !writableLetter(order)) bad('Arquivo ainda bloqueado.',403);
   return fetchMedia(req,env,media);
 }
 async function orderInfo(env,o) {
   const config=await settings(env);
   const rows=(await env.DB.prepare("SELECT id,kind,filename,content_type,bytes,created_at FROM media WHERE order_id=? AND status='ready' ORDER BY created_at").bind(o.id).all()).results;
-  const visible=activeOrder(o)?await Promise.all(rows.map(async m=>({...m,url:await mediaUrl(env,m.id,o.id)}))):[];
+  const visible=writableLetter(o)?await Promise.all(rows.map(async m=>({...m,url:await mediaUrl(env,m.id,o.id)}))):[];
   const receipt=await env.DB.prepare('SELECT verified_at,notified_at FROM order_read_receipts WHERE order_id=?').bind(o.id).first();
   return {id:o.id,recipient_name:o.recipient_name,recipient_slug:o.recipient_slug,sender_name:o.sender_name,status:o.status,checkout_id:o.checkout_id,
     amount_cents:o.total_cents,pix_code:o.checkout_id?null:o.pix_payload,txid:o.checkout_id?null:o.txid,
     pix_receiver:config.pix_name||'',pix_city:config.pix_city||'',
-    rich_html:activeOrder(o)?o.rich_html:'',
-    composition:activeOrder(o)?normalizeComposition(JSON.parse(o.composition_json||'{}')):null,
+    rich_html:writableLetter(o)?o.rich_html:'',
+    composition:writableLetter(o)?normalizeComposition(JSON.parse(o.composition_json||'{}')):null,
     submitted:!!o.submitted_at,read_notification:{enabled:!!receipt,verified:!!receipt?.verified_at,notified:!!receipt?.notified_at},
     payment_claimed_at:o.payment_claimed_at,created_at:o.created_at,media:visible};
 }
@@ -189,7 +193,7 @@ async function fetchMedia(req,env,media) {
   return new Response(object.body,{headers:h});
 }
 async function mediaWrite(req,env,o,params,path) {
-  if (!activeOrder(o)) bad('O pagamento ainda não foi confirmado.',403);
+  if (!writableLetter(o)) bad('Este pedido não pode mais receber arquivos.',403);
   editable(await settings(env));
   if (path==='/api/order/media/init' && req.method==='POST') {
     const data=await jsonBody(req);
@@ -199,6 +203,13 @@ async function mediaWrite(req,env,o,params,path) {
     if (kind==='audio' && !/^audio\/(mp4|webm|ogg|mpeg|aac|x-m4a|wav)(;[\w=, .-]+)?$/.test(mime)) bad('Formato de áudio não suportado.');
     if (kind==='image' && !/^image\/(jpeg|png|webp|heic|heif|gif|avif)$/.test(mime)) bad('Formato de foto não suportado.');
     const filename=assertText(data.filename||`arquivo-${Date.now()}`,160,'Nome do arquivo');
+    if (!activeOrder(o)) {
+      // Before bank approval, prevent arbitrary storage consumption by unpaid checkouts.
+      const usage=await env.DB.prepare(
+        "SELECT COUNT(*) AS files FROM media WHERE order_id=? AND status IN ('uploading','ready')"
+      ).bind(o.id).first();
+      if (usage.files>=12) bad('Até 12 anexos por cartinha antes da confirmação do Pix.',413);
+    }
     const id=newId(), objectKey=`orders/${o.id}/${id}`;
     const upload=await env.MEDIA.createMultipartUpload(objectKey,{httpMetadata:{contentType:mime}});
     await env.DB.prepare('INSERT INTO media(id,order_id,kind,filename,content_type,object_key,upload_id) VALUES(?,?,?,?,?,?,?)').bind(id,o.id,kind,filename,mime,objectKey,upload.uploadId).run();
@@ -213,6 +224,7 @@ async function mediaWrite(req,env,o,params,path) {
     const part=Number(match[2]);
     const declared=Number(req.headers.get('Content-Length')||0);
     if (!Number.isSafeInteger(part) || part<1 || part>10000 || declared>PART_SIZE) bad('Parte inválida.',413);
+    if (!activeOrder(o) && part>6) bad('Cada anexo pode ter até 48 MB antes do pagamento.',413);
     // Don't depend on Content-Length: some browsers/proxies stream uploads without it.
     // Read incrementally and reject oversized parts before holding them in memory.
     if (!req.body) bad('Parte vazia.',400);
@@ -240,6 +252,21 @@ async function mediaWrite(req,env,o,params,path) {
     if (!rows.length || rows.length>10000) bad('Nenhuma parte enviada.');
     for (let i=0;i<rows.length;i++) {
       if (rows[i].part_number!==i+1 || (i<rows.length-1 && rows[i].bytes<MIN_PART) || (i<rows.length-1 && rows[i].bytes!==PART_SIZE)) bad('Partes incompletas ou incorretas.',409);
+    }
+    if (!activeOrder(o)) {
+      const incoming=rows.reduce((size,row)=>size+row.bytes,0);
+      const individual=await env.DB.prepare(
+        "SELECT COALESCE(SUM(bytes),0) AS bytes FROM media WHERE order_id=? AND status='ready'"
+      ).bind(o.id).first();
+      if (incoming+individual.bytes>48*1024*1024)
+        bad('O limite de 48 MB de anexos desta cartinha foi atingido antes do pagamento.',413);
+      if (o.checkout_id) {
+        const grouped=await env.DB.prepare(
+          "SELECT COALESCE(SUM(m.bytes),0) AS bytes FROM media m JOIN orders o ON m.order_id=o.id WHERE o.checkout_id=? AND m.status='ready'"
+        ).bind(o.checkout_id).first();
+        if (incoming+grouped.bytes>160*1024*1024)
+          bad('O carrinho atingiu o limite de 160 MB de anexos antes do pagamento.',413);
+      }
     }
     let object=await env.MEDIA.head(media.object_key);
     if (!object) object=await env.MEDIA.resumeMultipartUpload(media.object_key,media.upload_id).complete(rows.map(r=>({partNumber:r.part_number,etag:r.etag})));
@@ -411,7 +438,7 @@ async function checkoutBuyer(req, env) {
 }
 async function checkoutInfo(env,checkout,access) {
   const rows=(await env.DB.prepare(
-    'SELECT o.id,o.status,o.checkout_item_index,r.name AS recipient_name,r.slug AS recipient_slug FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.checkout_id=? ORDER BY o.checkout_item_index'
+    'SELECT o.id,o.status,o.sender_name,o.rich_html,o.checkout_item_index,r.name AS recipient_name,r.slug AS recipient_slug FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.checkout_id=? ORDER BY o.checkout_item_index'
   ).bind(checkout.id).all()).results;
   return {
     id:checkout.id,status:checkout.status,amount_cents:checkout.total_cents,
@@ -419,6 +446,7 @@ async function checkoutInfo(env,checkout,access) {
     claimed_at:checkout.claimed_at,confirmed_at:checkout.confirmed_at,
     items:await Promise.all(rows.map(async row=>({
       id:row.id,status:row.status,recipient_name:row.recipient_name,
+       sender_name:row.sender_name,has_draft:!!excerpt(row.rich_html),
       recipient_slug:row.recipient_slug,token:await digest(access+':item:'+row.checkout_item_index)
     })))
   };
@@ -427,7 +455,9 @@ async function createCheckout(req,env,config) {
   if (config.open!=='true') bad('As cartinhas estão temporariamente fechadas.',403);
   editable(config);
   if(!config.pix_key||!config.pix_name||!config.pix_city) bad('A chave Pix ainda não foi configurada.',503);
-  const input=await jsonBody(req,24000);
+  // Up to twenty letter texts and compositions saved atomically along with the Pix.
+  const input=await jsonBody(req,800000);
+  const payerName=assertText(input.payer_name||'',100,'Nome para conferência',false);
   if(!Array.isArray(input.items)||input.items.length<1||input.items.length>20)
     bad('Adicione entre 1 e 20 cartinhas ao carrinho.');
   const unit=Number(config.message_price_cents||1000);
@@ -440,13 +470,15 @@ async function createCheckout(req,env,config) {
   const bySlug=new Map(found.map(r=>[r.slug,r]));
   const recipients=slugs.map(slug=>bySlug.get(slug));
   if(recipients.some(r=>!r))bad('Um dos encontristas não está disponível.',400);
-  const payerName=assertText(input.payer_name||'',100,'Nome para conferência',false);
   const prepared=input.items.map((item,index)=>({
     recipient:recipients[index],
     sender:assertText(item.sender_name||'',100,'Remetente',false),
     email:item.notify_on_read===true?validateEmail(item.read_receipt_email):null,
-    notify:item.notify_on_read===true
+    notify:item.notify_on_read===true,
+    html:safeRich(item.rich_html||''),
+    composition:JSON.stringify(normalizeComposition(item.composition))
   }));
+  if(prepared.some(p=>p.composition.length>7000))bad('Decoração excede o limite permitido.',413);
   if(prepared.some(p=>p.notify&&(!emailsReady(env)||!p.email)))
     bad('Confira o e-mail de aviso de leitura.',400);
   const fingerprint=await digest((req.headers.get('CF-Connecting-IP')||'local')+':orders:'+env.SESSION_SECRET);
@@ -465,8 +497,8 @@ async function createCheckout(req,env,config) {
     env.DB.prepare('INSERT INTO checkouts(id,token_hash,txid,total_cents,pix_payload,payer_name) VALUES(?,?,?,?,?,?)')
       .bind(checkoutId,await digest(access),txid,amount,pix,payerName),
     ...records.map(row=>env.DB.prepare(
-      'INSERT INTO orders(id,token_hash,recipient_id,sender_name,total_cents,pix_payload,txid,public_message,checkout_id,checkout_item_index) VALUES(?,?,?,?,?,?,?,?,?,?)'
-    ).bind(row.id,row.tokenHash,row.recipient.id,row.sender,unit,pix,'ITEM'+row.id.slice(4),0,checkoutId,row.index)),
+      'INSERT INTO orders(id,token_hash,recipient_id,sender_name,total_cents,pix_payload,txid,public_message,checkout_id,checkout_item_index,rich_html,composition_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)'
+    ).bind(row.id,row.tokenHash,row.recipient.id,row.sender,unit,pix,'ITEM'+row.id.slice(4),0,checkoutId,row.index,row.html,row.composition)),
     env.DB.prepare('INSERT INTO order_rate(fingerprint,attempts,window_start) VALUES(?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET attempts=excluded.attempts,window_start=excluded.window_start')
       .bind(fingerprint,rate&&rate.window_start>seconds-3600?rate.attempts+1:1,rate&&rate.window_start>seconds-3600?rate.window_start:seconds)
   ];
@@ -664,17 +696,16 @@ async function publicRoute(req,env,path) {
       await event(env,o.id,'payment_claimed');await enqueue(env,o.id,'payment_claimed');return result({ok:true,status:'claimed'});
     }
     if(path==='/api/order/message'&&req.method==='PUT') {
-      if(!activeOrder(o))bad('Pagamento não confirmado.',403);
+      if(!writableLetter(o))bad('Cartinha indisponível para edição.',403);
       editable(config);
       const data=await jsonBody(req,40000),html=safeRich(data.rich_html||'');
+      const sender=data.sender_name===undefined?o.sender_name:assertText(data.sender_name,100,'Remetente',false);
       const composition=JSON.stringify(normalizeComposition(data.composition===undefined
         ? JSON.parse(o.composition_json||'{}') : data.composition));
       if(composition.length>7000)bad('Decoração excede o limite permitido.',413);
-      const signature=data.sender_name===undefined
-        ? (o.sender_name||'')
-        : assertText(data.sender_name||'',100,'Assinatura da cartinha',false);
-      await env.DB.prepare("UPDATE orders SET rich_html=?,composition_json=?,sender_name=?,public_message=0,updated_at=? WHERE id=?")
-        .bind(html,composition,signature,now(),o.id).run();
+      const saved=await env.DB.prepare("UPDATE orders SET sender_name=?,rich_html=?,composition_json=?,public_message=0,updated_at=? WHERE id=? AND status IN ('pending','claimed','paid','preparing','delivered')")
+        .bind(sender,html,composition,now(),o.id).run();
+      if(!saved.meta.changes)bad('Pedido alterado ou cancelado. Atualize a página.',409);
       await event(env,o.id,'message_saved');return result({ok:true});
     }
     if(path==='/api/order/submit'&&req.method==='POST') {
@@ -688,7 +719,7 @@ async function publicRoute(req,env,path) {
     if(path.startsWith('/api/order/media/')){
       const file=path.match(/^\/api\/order\/media\/([a-f0-9-]{36})\/file$/);
       if(file&&req.method==='GET'){
-        if(!activeOrder(o))bad('Pagamento não confirmado.',403);
+        if(!writableLetter(o))bad('Pedido indisponível.',403);
         const media=await getMedia(env,file[1]);if(media.order_id!==o.id)bad('Arquivo de outro pedido.',403);return fetchMedia(req,env,media);
       }
     }

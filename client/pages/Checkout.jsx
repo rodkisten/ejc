@@ -1,22 +1,28 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, Clock3, Copy, LockKeyhole, RefreshCw, Send } from 'lucide-react';
-import { api, money, track } from '../lib/api';
+import { Link, useLocation, useParams } from 'react-router-dom';
+import { ArrowRight, CheckCircle2, Clock3, Copy, LockKeyhole, Pencil, RefreshCw } from 'lucide-react';
+import { api, money, track, uploadMedia } from '../lib/api';
+import { draftGet } from '../lib/drafts';
+import { cartDraftKey } from '../lib/cart';
 import { useApp } from '../main';
 import QrCode from '../components/QrCode';
 
 export default function Checkout() {
   const { token } = useParams();
+  const location = useLocation();
   const { config } = useApp();
   const [order, setOrder] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(location.state?.notice || '');
   const [error, setError] = useState('');
+  const [syncMessage, setSyncMessage] = useState('');
+  const [syncError, setSyncError] = useState('');
 
   const reload = useCallback(async () => {
     try {
       const data = await api('/api/checkout', { token });
       setOrder(data);
+      localStorage.setItem('ejc-checkout-' + data.id, token);
       setError('');
     } catch (cause) { setError(cause.message); }
   }, [token]);
@@ -26,6 +32,50 @@ export default function Checkout() {
     const poll = setInterval(reload, 15000);
     return () => clearInterval(poll);
   }, [reload]);
+
+  // Finish moving local attachments to the private server order so the checkout link
+  // can be edited from another device. The texts are already saved transactionally.
+  useEffect(() => {
+    if (!order?.id) return;
+    let cancelled = false;
+    async function syncLocalMedia() {
+      for (const item of order.items) {
+        const draftId = localStorage.getItem('ejc-cart-order-' + item.token);
+        const syncedKey = 'ejc-checkout-media-synced-' + item.id;
+        if (!draftId || localStorage.getItem(syncedKey) === '1') continue;
+        try {
+          const draft = await draftGet(cartDraftKey(draftId));
+          const assets = (draft?.assets || []).filter((asset) => asset.file);
+          if (!assets.length) {
+            localStorage.setItem(syncedKey, '1');
+            continue;
+          }
+          if (!cancelled) setSyncMessage('Salvando fotos e áudios de ' + item.recipient_name + '...');
+          const current = await api('/api/order', { token: item.token });
+          const existing = [...(current.media || [])];
+          for (const asset of assets) {
+            const index = existing.findIndex((file) =>
+              file.kind === asset.kind && file.filename === asset.file.name && file.bytes === asset.file.size);
+            if (index >= 0) {
+              existing.splice(index, 1);
+              continue;
+            }
+            await uploadMedia(asset.file, asset.kind, item.token);
+          }
+          localStorage.setItem(syncedKey, '1');
+        } catch (cause) {
+          if (!cancelled) setSyncError('Alguns anexos ainda estão neste aparelho: ' + cause.message +
+            '. Abra esta página novamente para tentar sincronizar.');
+        }
+      }
+      if (!cancelled) {
+        setSyncMessage('');
+        await reload();
+      }
+    }
+    syncLocalMedia();
+    return () => { cancelled = true; };
+  }, [order?.id, reload]);
 
   async function copyCode() {
     try {
@@ -56,7 +106,7 @@ export default function Checkout() {
       <h1>{paid ? 'Pagamento confirmado!' : 'Falta só um Pix.'} <em>💌</em></h1>
       <p className="muted">{paid
         ? 'Agora você pode concluir cada cartinha e enviá-la para o mural secreto do encontrista.'
-        : 'Um único pagamento cobre todas as cartinhas do pedido. Depois da conferência, cada uma poderá ser enviada separadamente.'}</p>
+        : 'Você já pode editar e confirmar cada cartinha enquanto aguarda a conferência do Pix. O envio ao mural será liberado após a aprovação.'}</p>
       {error && <div className="notice error" role="alert">{error}</div>}
       {message && <div className="notice" role="status">{message}</div>}
       {!order && <button className="btn ghost" type="button" onClick={reload}>Tentar carregar <RefreshCw size={17} /></button>}
@@ -64,41 +114,33 @@ export default function Checkout() {
         <div className="checkout-columns">
           <div className="form-card checkout-summary">
             <h2>Suas {order.items.length} cartinhas</h2>
+            {!paid && <p className="notice"><Pencil size={17} />
+              O Pix já está pronto, mas suas cartinhas continuam editáveis. Toque em Editar,
+              faça as alterações e confirme. O código Pix e o valor permanecem iguais.
+            </p>}
+            {syncMessage && <p className="notice" role="status">{syncMessage} Não feche esta página até terminar.</p>}
+            {syncError && <p className="notice warning" role="alert">{syncError}</p>}
             <div className="checkout-recipients">
               {order.items.map((item, index) => (
                 <div className="checkout-recipient" key={item.id}>
                   <span className="checkout-recipient-index">{index + 1}</span>
                   <strong>{item.recipient_name}</strong>
-                  {(() => {
-                    const draftId = localStorage.getItem('ejc-cart-order-' + item.token);
-                    return draftId ? (
-                      <Link className="btn ghost" to={'/enviar/' + item.recipient_slug +
-                        '?edit=' + encodeURIComponent(draftId)}>
-                        Editar rascunho
-                      </Link>
-                    ) : null;
-                  })()}
-                  {paid ? <Link className="btn ghost" to={'/pedido/' + item.token}>
-                    {item.status === 'paid' ? 'Escrever e enviar' : 'Abrir cartinha'} <ArrowRight size={16} />
-                  </Link> : <span className="muted small">Aguardando Pix</span>}
+                  <Link className="btn ghost" to={'/pedido/' + item.token}>
+                    {paid ? 'Escrever e enviar' : 'Editar cartinha'} {paid ? <ArrowRight size={16} /> : <Pencil size={16} />}
+                  </Link>
                 </div>
               ))}
             </div>
             <div className="checkout-total"><span>Total</span><strong>{money(order.amount_cents)}</strong></div>
             <div className="notice checkout-code">
-              <strong>Código para conferir o Pix: {order.id}</strong>
-              <small>Informe este código à coordenação para localizar todas as cartinhas deste pagamento.</small>
-              <button type="button" className="btn ghost" onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(order.id);
-                  setMessage('Código do Pix copiado!');
-                } catch {
-                  setError('Não foi possível copiar o código.');
-                }
-              }}><Copy size={15} /> Copiar código</button>
+              <strong>Código para conferência: {order.id}</strong>
+              <small>Informe este código à coordenação para localizar suas cartinhas e o valor total.</small>
+              <button className="btn ghost" type="button" onClick={async () => {
+                try { await navigator.clipboard.writeText(order.id); setMessage('Código para conferência copiado!'); }
+                catch { setError('Não foi possível copiar o código.'); }
+              }}><Copy size={16} /> Copiar código</button>
             </div>
-            <p className="muted small">TXID da transação: {order.txid}</p>
-            <p className="muted small">As cartinhas continuam salvas neste aparelho e podem ser editadas mesmo depois de gerar o Pix. Para concluir o envio, aguarde a confirmação do pagamento.</p>
+            <p className="muted small">TXID do Pix: {order.txid}</p>
             <button className="btn ghost" type="button" onClick={async()=>{
               try{
                 await navigator.clipboard.writeText(window.location.href);

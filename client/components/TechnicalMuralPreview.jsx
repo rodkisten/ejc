@@ -66,6 +66,8 @@ export default function TechnicalMuralPreview({ password, recipientSlug, userTok
     setData(null);
     setError('');
     setOpened({});
+    setOpenBusy('');
+    setAllBusy(false);
     async function load() {
       try {
         const response = await fetch('/api/admin/technical-mural', {

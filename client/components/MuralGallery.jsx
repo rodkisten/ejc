@@ -5,7 +5,7 @@ import { LetterCard } from './LetterCard';
 
 // Shared recipient layout: the user portal and the technical preview render the same UI.
 export default function MuralGallery({ data, opened = {}, openBusy = '', error = '', busy = false,
-  onOpenLetter, onDownloadAll, technical = false }) {
+  onOpenLetter, onDownloadAll, technical = false, technicalAll = true }) {
   const openLetter = onOpenLetter;
   const downloadAll = onDownloadAll;
   return (
@@ -26,7 +26,7 @@ export default function MuralGallery({ data, opened = {}, openBusy = '', error =
       )}
       {data && (
         <>
-          {technical && <div className="notice warning"><LockKeyhole size={17} /> Visualização técnica do mural. Cartinhas pendentes também aparecem para conferência e ainda não estão liberadas ao encontrista.</div>}
+          {technical && <div className="notice warning"><LockKeyhole size={17} /> {technicalAll ? 'Visualização técnica do mural. Cartinhas pendentes também aparecem para conferência e ainda não estão liberadas ao encontrista.' : 'Comparação técnica: exibindo somente as cartinhas já disponíveis ao encontrista, sem registrar leitura.'}</div>}
           <div className="mural-count">
             <Sparkles size={18} /> {data.cards.length} {data.cards.length === 1 ? 'cartinha especial' : 'cartinhas especiais'} para você
           </div>

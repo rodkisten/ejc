@@ -111,12 +111,15 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
       setError(cause.message);
       return;
     }
+    const withoutReference = batch.filter(({ reference }) => !reference).length;
     const accepted = window.confirm(
       'Confirmar em massa ' + batch.length + ' Pix?\n\n' +
       'Valor total: ' + money(bulkTotalCents) +
       '\nCartinhas vinculadas: ' + bulkLetters +
-      '\n\nConfirme somente se conferiu cada crédito no extrato bancário e informou ' +
-      'a referência individual de cada transferência. Essa ação libera as cartinhas.'
+      '\nSem referência bancária: ' + withoutReference +
+      '\n\nConfirme somente se conferiu cada crédito e o valor no extrato bancário. ' +
+      'Os pagamentos sem código ficarão registrados como confirmação manual sem referência. ' +
+      'Essa ação libera as cartinhas.'
     );
     if (!accepted) return;
     setBusy(true);
@@ -134,6 +137,7 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
             method: 'PATCH',
             data: {
               status: 'paid', bank_reference: reference,
+              manual_batch: true,
               bank_checked: true, amount_checked: true,
             },
           });
@@ -233,8 +237,8 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
           <div>
             <h3><CheckCheck size={19} /> Confirmar pagamentos em massa</h3>
             <p className="muted small">Selecione os Pix já conferidos no extrato.
-              Cada transferência exige uma referência bancária diferente;
-              o sistema rejeita identificadores duplicados.</p>
+              O código E2E/FITID é opcional. Se informado, precisa ser válido e exclusivo.
+              Sem código, a confirmação fica registrada como manual.</p>
           </div>
           <strong>{chosen.length} Pix · {money(bulkTotalCents)} · {bulkLetters} cartinha(s)</strong>
         </div>
@@ -253,11 +257,11 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
                 <label key={payment.id} className="admin-payment-batch-item">
                   <span>
                     <strong>{payment.id} · {money(payment.total_cents)}</strong>
-                    <small>Referência bancária E2E/FITID deste Pix</small>
+                    <small>Código Pix / referência E2E/FITID (opcional)</small>
                   </span>
                   <input type="text" maxLength={128} autoComplete="off" spellCheck={false}
                     aria-label={'Referência bancária de ' + payment.id}
-                    placeholder="Referência única do extrato"
+                    placeholder="Deixe vazio se não tiver o código"
                     value={bulkReferences[payment.id] || ''}
                     disabled={busy}
                     onChange={(event) => setBulkReferences((current) => ({

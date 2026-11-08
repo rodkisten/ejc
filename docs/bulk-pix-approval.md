@@ -23,19 +23,25 @@ Esses casos permanecem para conferência individual no Sicoob.
 
 1. Em Admin → Pedidos → **Localizar um Pix e suas cartinhas**, filtre os pagamentos.
 2. Use **Selecionar N pendentes desta busca**, ou marque os Pix desejados.
-3. Informe uma **referência bancária distinta** para cada Pix selecionado.
+3. O **código Pix / referência bancária E2E/FITID é opcional** por pagamento.
+   Preencha quando tiver essa informação. Não invente códigos.
 4. Marque as confirmações de crédito recebido e de valor conferido.
 5. Pressione **Confirmar N Pix de uma vez** e autorize o lote apenas uma vez.
+   A confirmação mostra quantos pagamentos estão sem referência.
 
-Não é seguro usar um único código de comprovante para todos os pagamentos:
-cada Pix precisa da sua própria referência no extrato. O formulário detecta
-referências repetidas e incompletas antes de enviar as confirmações.
+Se informar códigos, cada Pix precisa de sua referência individual:
+o formulário rejeita referências repetidas ou inválidas. Se não houver código,
+o pagamento é marcado como pago **por conferência manual**, com referência
+bancária `NULL` e um evento de auditoria `manual_batch_no_reference`.
+A falta do código não comprova recebimento: a equipe deve conferir o
+extrato no banco antes de aprovar.
 
 ## Proteções mantidas
 
 - Só o admin logado pode usar essas funcionalidades.
 - A confirmação continua sendo **manual**, baseada no extrato da conta recebedora.
-- Cada item passa pelas mesmas rotas e validações que a confirmação individual.
+- Cada item passa pelas rotas administrativas autenticadas, com validação de status,
+  valor e recebimento; somente o lote aceita referência bancária vazia.
 - Pedidos cancelados e já pagos não podem ser aprovados de novo.
 - O checkout agrupado é confirmado uma vez, liberando as cartinhas vinculadas.
 - O processamento é sequencial e exibe resultados parciais, caso um item falhe.

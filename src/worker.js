@@ -1182,23 +1182,31 @@ async function adminRoute(req,env,path) {
     if(!order)bad('Compra não encontrada.',404);
     if(!['pending','claimed'].includes(order.status))bad('A compra já foi processada.',409);
     if(input.bank_checked!==true||input.amount_checked!==true)bad('Confira recebimento e total no extrato.',400);
-    const reference=assertText(input.bank_reference||'',128,'Identificador bancário').toUpperCase();
-    if(!/^[A-Z0-9:/._-]{8,128}$/.test(reference))bad('Identificador bancário inválido.');
-    const priorCheckout=await env.DB.prepare('SELECT id FROM checkouts WHERE bank_reference=?').bind(reference).first();
-    const priorOrder=await env.DB.prepare('SELECT id FROM orders WHERE bank_reference=?').bind(reference).first();
-    if(priorCheckout||priorOrder)bad('Esta transferência já foi confirmada.',409);
+    const reference=assertText(input.bank_reference||'',128,'Identificador bancário',false).toUpperCase();
+    // The admin can approve a verified batch without an E2E/FITID. Keep single
+    // approvals strict, and store SQL NULL rather than inventing a bank code.
+    if(!reference && input.manual_batch!==true)bad('Identificador bancário inválido.');
+    if(reference && !/^[A-Z0-9:/._-]{8,128}$/.test(reference))bad('Identificador bancário inválido.');
+    if(reference){
+      const priorCheckout=await env.DB.prepare('SELECT id FROM checkouts WHERE bank_reference=?').bind(reference).first();
+      const priorOrder=await env.DB.prepare('SELECT id FROM orders WHERE bank_reference=?').bind(reference).first();
+      if(priorCheckout||priorOrder)bad('Esta transferência já foi confirmada.',409);
+    }
     const confirmed=now();
     const results=await env.DB.batch([
       env.DB.prepare(
         "UPDATE checkouts SET status='paid',bank_reference=?,confirmed_at=? WHERE id=? AND status IN ('pending','claimed')"
-      ).bind(reference,confirmed,order.id),
+      ).bind(reference||null,confirmed,order.id),
       env.DB.prepare(
         "UPDATE orders SET status='paid',confirmed_at=?,updated_at=? WHERE checkout_id=? AND status IN ('pending','claimed')"
       ).bind(confirmed,confirmed,order.id),
     ]);
     if(results[0].meta.changes!==1)bad('Compra alterada por outro administrador.',409);
     const children=(await env.DB.prepare('SELECT id FROM orders WHERE checkout_id=?').bind(order.id).all()).results;
-    for(const row of children){await event(env,row.id,'payment_confirmed');await enqueue(env,row.id,'payment_confirmed');}
+    for(const row of children){
+      await event(env,row.id,'payment_confirmed',reference||'manual_batch_no_reference');
+      await enqueue(env,row.id,'payment_confirmed');
+    }
     return result({ok:true,status:'paid',letters:children.length});
   }
   if(path==='/api/admin/bootstrap'&&req.method==='GET'){
@@ -1348,17 +1356,20 @@ async function adminRoute(req,env,path) {
     if(order.checkout_id)bad('Confirme o Pix pelo checkout agrupado.',409);
     if(data.status!=='paid')bad('A coordenação só pode confirmar o pagamento Pix.',409);
     if(!['pending','claimed'].includes(order.status))bad('Pedido não está aguardando Pix.',409);
-    const ref=assertText(data.bank_reference||'',128,'Identificador bancário').toUpperCase();
-    if(!/^[A-Z0-9:/._-]{8,128}$/.test(ref))bad('Informe o identificador bancário completo.');
+    const ref=assertText(data.bank_reference||'',128,'Identificador bancário',false).toUpperCase();
+    if(!ref && data.manual_batch!==true)bad('Informe o identificador bancário completo.');
+    if(ref && !/^[A-Z0-9:/._-]{8,128}$/.test(ref))bad('Informe o identificador bancário completo.');
     if(data.bank_checked!==true||data.amount_checked!==true)bad('Confira recebimento e valor no extrato.');
-    const already=await env.DB.prepare('SELECT id FROM orders WHERE bank_reference=?').bind(ref).first();
-    const alreadyCheckout=await env.DB.prepare('SELECT id FROM checkouts WHERE bank_reference=?').bind(ref).first();
-    if(already||alreadyCheckout)bad('Transação já associada a outro pagamento.',409);
+    if(ref){
+      const already=await env.DB.prepare('SELECT id FROM orders WHERE bank_reference=?').bind(ref).first();
+      const alreadyCheckout=await env.DB.prepare('SELECT id FROM checkouts WHERE bank_reference=?').bind(ref).first();
+      if(already||alreadyCheckout)bad('Transação já associada a outro pagamento.',409);
+    }
     try {
-      const changed=await env.DB.prepare("UPDATE orders SET status='paid',bank_reference=?,confirmed_at=?,updated_at=? WHERE id=? AND status IN ('pending','claimed')").bind(ref,now(),now(),order.id).run();
+      const changed=await env.DB.prepare("UPDATE orders SET status='paid',bank_reference=?,confirmed_at=?,updated_at=? WHERE id=? AND status IN ('pending','claimed')").bind(ref||null,now(),now(),order.id).run();
       if(changed.meta.changes!==1)bad('Pedido alterado por outro administrador.',409);
     }catch(e){if(String(e).includes('UNIQUE constraint'))bad('Transação já utilizada.',409);throw e;}
-    await event(env,order.id,'payment_confirmed',ref);await enqueue(env,order.id,'payment_confirmed');return result({ok:true,status:'paid'});
+    await event(env,order.id,'payment_confirmed',ref||'manual_batch_no_reference');await enqueue(env,order.id,'payment_confirmed');return result({ok:true,status:'paid'});
   }
   if(path==='/api/admin/demo/seed'&&req.method==='POST')return seedDemo(env);
   if(path==='/api/admin/demo/clear'&&req.method==='DELETE')return clearDemo(env);

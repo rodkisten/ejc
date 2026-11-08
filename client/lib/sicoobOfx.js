@@ -102,3 +102,39 @@ export async function ofxBankReference(credit, accountId) {
   return 'OFX' + [...new Uint8Array(digest)].slice(0, 20)
     .map((byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
+
+
+// Strictly opt-in candidates for ONE admin confirmation of a bank-verified batch.
+// Same amount without a unique TXID is never sufficient. Repeated credits,
+// repeated FITIDs/E2Es, already used bank references and ambiguous matches are
+// excluded instead of arbitrarily choosing a payment.
+export function exactPixBatchCandidates(statement, payments) {
+  if (!statement?.transactions?.length || !Array.isArray(payments)) return [];
+  const existingRefs = new Set(payments.map((p) =>
+    String(p.bank_reference || '').trim().toUpperCase()).filter(Boolean));
+  const proposals = [];
+  for (const credit of statement.transactions) {
+    if (!credit.isPix || !Number.isSafeInteger(credit.amountCents) ||
+      credit.amountCents <= 0 || (!credit.e2eid && !credit.fitId) || !credit.txid) continue;
+    const match = candidatesForCredit(credit, payments);
+    if (match.reason !== 'txid' || match.matches.length !== 1) continue;
+    const payment = match.matches[0];
+    if (!['pending', 'claimed'].includes(payment.status) ||
+      !['checkout', 'order'].includes(payment.type || 'order')) continue;
+    const bankId = credit.e2eid
+      ? String(credit.e2eid).trim().toUpperCase()
+      : [statement.accountId, credit.fitId, credit.date, credit.amountCents].join('|');
+    if (credit.e2eid && existingRefs.has(bankId)) continue;
+    proposals.push({ credit, payment, bankId });
+  }
+  const occurrences = (key) => {
+    const counts = new Map();
+    for (const entry of proposals) counts.set(key(entry), (counts.get(key(entry)) || 0) + 1);
+    return counts;
+  };
+  const byPayment = occurrences((entry) => entry.payment.id);
+  const byBankId = occurrences((entry) => entry.bankId);
+  return proposals.filter((entry) =>
+    byPayment.get(entry.payment.id) === 1 && byBankId.get(entry.bankId) === 1)
+    .map(({ credit, payment }) => ({ credit, payment }));
+}

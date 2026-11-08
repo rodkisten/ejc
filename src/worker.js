@@ -2,6 +2,7 @@ import { generatePix } from './pix.js';
 import { normalizePaymentLookup, likeTerm, maskedStatus } from './paymentSearch.js';
 import { isSquareRecipientJpeg } from './photo.js';
 import { normalizeComposition, STICKERS_BY_ID } from '../shared/letter.js';
+import { CAMPAIGN_KEY, CAMPAIGN_SENDER, DEFAULT_CAMPAIGN, letterMarkdownToHtml } from '../shared/ejcCampaign.js';
 import { enqueue, enableReceipt, disableReceipt, confirmReceipt, markRead, queueRelease, dispatch, validateEmail, emailsReady } from './notify.js';
 
 const PART_SIZE = 8 * 1024 * 1024;
@@ -815,6 +816,130 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
   await requireAdmin(req,env);
   if(path==='/api/admin/me')return result({authenticated:true});
+  // The campaign is an official, complimentary letter, NOT a Pix sale.
+  if(path==='/api/admin/campaign/mini-mercado' && req.method==='GET') {
+    const saved=await env.DB.prepare(
+      'SELECT key,title,markdown,whatsapp,composition_json FROM ejc_campaigns WHERE key=?'
+    ).bind(CAMPAIGN_KEY).first();
+    const published=await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM orders WHERE campaign_key=?'
+    ).bind(CAMPAIGN_KEY).first();
+    const active=await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM recipients WHERE active=1'
+    ).first();
+    return result({
+      campaign:saved?{
+        key:CAMPAIGN_KEY,title:saved.title,markdown:saved.markdown,whatsapp:saved.whatsapp,
+        composition:normalizeComposition(JSON.parse(saved.composition_json||'{}'))
+      }:DEFAULT_CAMPAIGN,
+      published_count:published.n,active_recipients:active.n
+    });
+  }
+  if(path==='/api/admin/campaign/mini-mercado' && req.method==='PUT') {
+    const data=await jsonBody(req,25000);
+    if(!data || typeof data!=='object' || Array.isArray(data))bad('Campanha inválida.');
+    const title=assertText(data.title,140,'Título da campanha');
+    const markdown=assertText(data.markdown,14000,'Texto da cartinha');
+    if(!excerpt(letterMarkdownToHtml(markdown)))bad('A cartinha não pode estar vazia.');
+    const whatsapp=assertText(data.whatsapp,7000,'Mensagem do WhatsApp');
+    if(!whatsapp.includes('{link}'))bad('A mensagem do WhatsApp precisa incluir {link}.');
+    const composition=normalizeComposition({
+      ...data.composition,anonymous:false,authorName:CAMPAIGN_SENDER
+    });
+    const json=JSON.stringify(composition);
+    await env.DB.prepare(
+      'INSERT INTO ejc_campaigns(key,title,markdown,whatsapp,composition_json,updated_at) '+
+      'VALUES(?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET '+
+      'title=excluded.title,markdown=excluded.markdown,whatsapp=excluded.whatsapp,'+
+      'composition_json=excluded.composition_json,updated_at=excluded.updated_at'
+    ).bind(CAMPAIGN_KEY,title,markdown,whatsapp,json,now()).run();
+    return result({ok:true,campaign:{key:CAMPAIGN_KEY,title,markdown,whatsapp,composition}});
+  }
+  if(path==='/api/admin/campaign/mini-mercado/publish' && req.method==='POST') {
+    const input=await jsonBody(req,256);
+    const cursor=input && typeof input==='object' ? (input.cursor??'') : '';
+    if(typeof cursor!=='string'||(cursor&&!/^[a-f0-9-]{36}$/i.test(cursor)))
+      bad('Cursor da campanha inválido.');
+    let campaign=await env.DB.prepare('SELECT * FROM ejc_campaigns WHERE key=?')
+      .bind(CAMPAIGN_KEY).first();
+    if(!campaign){
+      await env.DB.prepare(
+        'INSERT OR IGNORE INTO ejc_campaigns(key,title,markdown,whatsapp,composition_json,updated_at) '+
+        'VALUES(?,?,?,?,?,?)'
+      ).bind(CAMPAIGN_KEY,DEFAULT_CAMPAIGN.title,DEFAULT_CAMPAIGN.markdown,
+        DEFAULT_CAMPAIGN.whatsapp,JSON.stringify(DEFAULT_CAMPAIGN.composition),now()).run();
+      campaign=await env.DB.prepare('SELECT * FROM ejc_campaigns WHERE key=?')
+        .bind(CAMPAIGN_KEY).first();
+    }
+    const rich=safeRich(letterMarkdownToHtml(campaign.markdown));
+    if(!excerpt(rich))bad('A campanha não contém texto para publicar.');
+    const composition=JSON.stringify(normalizeComposition({
+      ...JSON.parse(campaign.composition_json||'{}'),anonymous:false,
+      authorName:CAMPAIGN_SENDER
+    }));
+    const recipients=(await env.DB.prepare(
+      'SELECT id FROM recipients WHERE active=1 AND id>? ORDER BY id LIMIT 21'
+    ).bind(cursor).all()).results;
+    const page=recipients.slice(0,20);
+    let created=0,updated=0,unchanged=0;
+    for(const person of page) {
+      const current=await env.DB.prepare(
+        'SELECT id,first_read_at FROM orders WHERE campaign_key=? AND recipient_id=?'
+      ).bind(CAMPAIGN_KEY,person.id).first();
+      if(current) {
+        if(current.first_read_at){unchanged++;continue;}
+        const edited=await env.DB.prepare(
+          "UPDATE orders SET rich_html=?,composition_json=?,sender_name=?,updated_at=? "+
+          "WHERE id=? AND first_read_at IS NULL AND campaign_key=?"
+        ).bind(rich,composition,CAMPAIGN_SENDER,now(),current.id,CAMPAIGN_KEY).run();
+        if(edited.meta.changes)updated++;
+        continue;
+      }
+      const id='EJC-'+randomCode();
+      const stamp=now();
+      const inserted=await env.DB.prepare(
+        'INSERT OR IGNORE INTO orders('+
+        'id,token_hash,recipient_id,sender_name,status,total_cents,pix_payload,txid,'+
+        'rich_html,composition_json,moderation,submitted_at,approved_at,public_message,'+
+        'release_override,campaign_key,created_at,updated_at) '+
+        "VALUES(?,?,?,?,'paid',0,?,?,?,?,?,'approved',?,?,0,0,?,?,?)"
+      ).bind(id,await digest(token()),person.id,CAMPAIGN_SENDER,
+        'CORTESIA-SEM-PIX','GIFT'+randomCode(),rich,composition,
+        stamp,stamp,CAMPAIGN_KEY,stamp,stamp).run();
+      if(inserted.meta.changes){
+        created++;
+        await event(env,id,'letter_sent','official_complimentary_campaign');
+        await enqueue(env,id,'letter_sent');
+      } else unchanged++;
+    }
+    return result({
+      created,updated,unchanged,processed:page.length,
+      next_cursor:recipients.length>20?page[page.length-1].id:null
+    });
+  }
+  if(path==='/api/admin/whatsapp/deliveries' && req.method==='POST') {
+    const data=await jsonBody(req,400);
+    if(!data || typeof data!=='object'||Array.isArray(data))bad('Confirmação inválida.');
+    if(!['mural',CAMPAIGN_KEY].includes(data.campaign_key))bad('Tipo de convite inválido.');
+    if(typeof data.recipient_id!=='string'|| !/^[a-f0-9-]{36}$/i.test(data.recipient_id))
+      bad('Encontrista inválido.');
+    if(data.image_sent!==true)bad('Confirme se a imagem foi enviada no WhatsApp.');
+    const person=await env.DB.prepare('SELECT id,active,whatsapp_phone FROM recipients WHERE id=?')
+      .bind(data.recipient_id).first();
+    if(!person||!person.active||!person.whatsapp_phone)
+      bad('Encontrista sem WhatsApp ativo.',409);
+    const sent=now();
+    await env.DB.prepare(
+      'INSERT INTO recipient_whatsapp_deliveries(recipient_id,campaign_key,sent_at,send_count,image_sent) '+
+      'VALUES(?,?,?,1,1) ON CONFLICT(recipient_id,campaign_key) DO UPDATE SET '+
+      'sent_at=excluded.sent_at,send_count=send_count+1,image_sent=1'
+    ).bind(person.id,data.campaign_key,sent).run();
+    const record=await env.DB.prepare(
+      'SELECT sent_at,send_count,image_sent FROM recipient_whatsapp_deliveries '+
+      'WHERE recipient_id=? AND campaign_key=?'
+    ).bind(person.id,data.campaign_key).first();
+    return result({ok:true,...record});
+  }
   // Complete recipient-point-of-view diagnostics. A user's mural grant is only
   // a recipient selector here: it NEVER replaces the logged-in admin session
   // and separate technical credential. No first-read tracking or notifications.

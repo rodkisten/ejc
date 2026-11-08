@@ -21,3 +21,17 @@ CREATE TABLE IF NOT EXISTS recipient_whatsapp_deliveries (
   image_sent INTEGER NOT NULL DEFAULT 0 CHECK(image_sent IN (0,1)),
   PRIMARY KEY(recipient_id,campaign_key)
 );
+
+-- Append-only manual delivery audit. Templates retain placeholders, never
+-- personalized URLs, recipient grants or secret tokens.
+CREATE TABLE IF NOT EXISTS recipient_whatsapp_delivery_history (
+  id TEXT PRIMARY KEY,
+  recipient_id TEXT NOT NULL REFERENCES recipients(id),
+  campaign_key TEXT NOT NULL CHECK(campaign_key IN ('mural','pos-encontro')),
+  sent_at TEXT NOT NULL,
+  sent_by TEXT NOT NULL DEFAULT 'admin',
+  image_sent INTEGER NOT NULL DEFAULT 1,
+  message_template TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS recipient_whatsapp_history_lookup
+  ON recipient_whatsapp_delivery_history(recipient_id,campaign_key,sent_at DESC);

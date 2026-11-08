@@ -1,6 +1,6 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {NavLink,Routes,Route,useNavigate,useParams} from 'react-router-dom';
-import {ShieldCheck,ClipboardList,UsersRound,Settings2,QrCode as QrIcon,Eye,Check,Copy,Trash2,Sparkles,Printer,Download,LogOut,ExternalLink,RefreshCw,Heart,ImagePlus} from 'lucide-react';
+import {ShieldCheck,ClipboardList,UsersRound,Settings2,QrCode as QrIcon,Eye,Check,Copy,Trash2,Sparkles,Printer,Download,LogOut,ExternalLink,RefreshCw,Heart,ImagePlus,Pencil,RotateCcw,X} from 'lucide-react';
 import { api, money, btime, track,download } from '../lib/api';
 import QrCode from '../components/QrCode';
 import Labels from './Labels';
@@ -252,6 +252,62 @@ function OrderDetail({ reload }) {
   );
 }
 function People({info,reload}){const [names,setNames]=useState(''),[notice,setNotice]=useState(''),[error,setError]=useState(''),[uploading,setUploading]=useState(''),[ogProgress,setOgProgress]=useState(''),[photoSelection,setPhotoSelection]=useState(null);
+  const [editingId,setEditingId]=useState(null);
+  const [editingName,setEditingName]=useState('');
+  const [savingRecipient,setSavingRecipient]=useState(null);
+  const [showArchived,setShowArchived]=useState(false);
+  const beginEdit=(r)=>{setError('');setNotice('');setEditingId(r.id);setEditingName(r.name);};
+  const cancelEdit=()=>{setEditingId(null);setEditingName('');};
+  async function saveRecipient(r){
+    const name=editingName.trim();
+    if(!name){setError('Informe o nome do encontrista.');return;}
+    setSavingRecipient(r.id);setError('');setNotice('');
+    try {
+      const updated=await api('/api/admin/recipients/'+r.id,{
+        method:'PATCH',data:{name}
+      });
+      cancelEdit();
+      await reload();
+      if(updated.og_needs_refresh && r.active!==0) {
+        try {
+          await publishOgImage({...r,name,slug:updated.slug});
+          setNotice('Nome atualizado para '+name+'. A prévia do WhatsApp também foi atualizada.');
+          await reload();
+        } catch(cause) {
+          setNotice('Nome atualizado para '+name+'. Gere a imagem do WhatsApp novamente: '+cause.message);
+        }
+      } else {
+        setNotice('Nome de '+name+' salvo. O link e o código do mural continuam iguais.');
+      }
+    } catch(cause){setError(cause.message);}
+    finally{setSavingRecipient(null);}
+  }
+  async function restoreRecipient(r){
+    setSavingRecipient(r.id);setError('');setNotice('');
+    try {
+      await api('/api/admin/recipients/'+r.id,{method:'PATCH',data:{active:true}});
+      await reload();
+      setNotice(r.name+' foi restaurado à lista pública.');
+    } catch(cause){setError(cause.message);}
+    finally{setSavingRecipient(null);}
+  }
+  async function deleteRecipient(r){
+    const linked=Number(r.order_count||0);
+    const explanation=linked
+      ? 'Este encontrista possui '+linked+' cartinha(s). Ele será retirado da lista pública, mas as cartinhas e os códigos privados serão preservados. Pode ser restaurado depois.'
+      : 'O cadastro, a foto e a imagem social serão excluídos permanentemente. Esta ação não pode ser desfeita.';
+    if(!window.confirm('Excluir '+r.name+'?\n\n'+explanation))return;
+    setSavingRecipient(r.id);setError('');setNotice('');
+    try{
+      const result=await api('/api/admin/recipients/'+r.id,{method:'DELETE'});
+      if(editingId===r.id)cancelEdit();
+      await reload();
+      setNotice(result.mode==='archived'
+        ? r.name+' foi arquivado. As cartinhas existentes continuam protegidas.'
+        : r.name+' foi excluído definitivamente.');
+    }catch(cause){setError(cause.message);}
+    finally{setSavingRecipient(null);}
+  }
   async function photoUpload(r,file) {
     if (!file) return false;
     if (!window.confirm(`Confirmo que tenho autorização para divulgar a foto de ${r.name}, inclusive dos responsáveis se menor de idade.`)) return false;
@@ -360,14 +416,56 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
       {ogProgress&&<p className="notice">{ogProgress}</p>}
     </section>
     {error&&<div className="notice error">{error}</div>}{notice&&<div className="notice success">{notice}</div>}
-    <div className="people-list">{info.recipients.map(r=><div className="form-card person-row" key={r.id}>
+    <div className="person-admin-toolbar">
+      <strong>{info.recipients.filter(r=>r.active!==0).length} encontristas ativos</strong>
+      <label className="person-admin-toggle">
+        <input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/>
+        Mostrar arquivados ({info.recipients.filter(r=>r.active===0).length})
+      </label>
+    </div>
+    <div className="people-list">{info.recipients.filter(r=>showArchived||r.active!==0).map(r=><div className={'form-card person-row'+(r.active===0?' person-archived':'')} key={r.id}>
       <div className="person-with-photo">
         <div className="recipient-avatar lavender">
           {r.photo_url?<img src={r.photo_url} alt={`Foto de ${r.name}`}/>:r.name.slice(0,2).toUpperCase()}
         </div>
-        <div><strong>{r.name}</strong><small>/enviar/{r.slug}</small></div>
+        <div className="person-name-details">
+          {editingId===r.id ? (
+            <form className="person-name-editor" onSubmit={event=>{event.preventDefault();saveRecipient(r);}}>
+              <label htmlFor={'person-name-'+r.id}>Editar nome</label>
+              <input id={'person-name-'+r.id} type="text" maxLength={100} autoComplete="off"
+                autoFocus value={editingName} disabled={!!savingRecipient}
+                onChange={event=>setEditingName(event.target.value)} />
+              <div className="person-name-editor-actions">
+                <button className="btn" type="submit" disabled={!!savingRecipient||!editingName.trim()}>
+                  <Check size={16}/> {savingRecipient===r.id?'Salvando...':'Salvar nome'}
+                </button>
+                <button className="btn ghost" type="button" onClick={cancelEdit} disabled={!!savingRecipient}>
+                  <X size={16}/> Cancelar
+                </button>
+              </div>
+              <small>O endereço de envio não muda, para preservar QR Codes e links antigos.</small>
+            </form>
+          ) : (
+            <><strong>{r.name}</strong><small>/enviar/{r.slug}</small>
+              {r.active===0 && <span className="person-status">Arquivado</span>}
+              {Number(r.order_count||0)>0 && <small>{r.order_count} cartinha(s) vinculada(s)</small>}
+            </>
+          )}
+        </div>
       </div>
-      <div className="inline-actions">
+      <div className="inline-actions person-admin-actions">
+        <button className="btn ghost" type="button" disabled={!!savingRecipient}
+          onClick={()=>editingId===r.id?cancelEdit():beginEdit(r)}>
+          <Pencil size={15}/> {editingId===r.id?'Cancelar edição':'Editar nome'}
+        </button>
+        {r.active===0 && <button className="btn outline" type="button" disabled={!!savingRecipient}
+          onClick={()=>restoreRecipient(r)}>
+          <RotateCcw size={15}/> Restaurar
+        </button>}
+        <button className="btn outline person-delete-button" type="button" disabled={!!savingRecipient}
+          onClick={()=>deleteRecipient(r)}>
+          <Trash2 size={15}/> {savingRecipient===r.id?'Aguarde...':r.active===0&&Number(r.order_count||0)>0?'Arquivado':'Excluir'}
+        </button>
         <label className="btn ghost person-photo-upload"><ImagePlus size={15}/>{uploading===r.id?'Enviando...':r.photo_url?'Trocar foto':'Adicionar foto'}
           <input type="file" accept="image/jpeg,image/png,image/webp" disabled={!!uploading}
             onChange={event=>{const file=event.target.files?.[0];if(file)setPhotoSelection({person:r,file});event.target.value='';}}/>

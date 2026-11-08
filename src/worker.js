@@ -727,11 +727,79 @@ async function publicRoute(req,env,path) {
   }
   bad('Rota não encontrada.',404);
 }
+
+async function requireTechnicalPreview(req, env, password) {
+  // The ?secret=000000 query string only reveals a *locked* technical UI.
+  // Authorization is the existing admin session PLUS a strong, independently
+  // configured Worker secret. Nothing sensitive is ever trusted from the URL.
+  if (!env.TECH_PREVIEW_SECRET || env.TECH_PREVIEW_SECRET.length < 20) {
+    bad('A prévia técnica está desativada. Configure TECH_PREVIEW_SECRET com pelo menos 20 caracteres.', 503);
+  }
+  const ip = req.headers.get('CF-Connecting-IP') || 'local';
+  const fingerprint = await digest(ip + ':technical-preview:' + env.SESSION_SECRET);
+  const seconds = Math.floor(Date.now() / 1000);
+  const row = await env.DB.prepare(
+    'SELECT attempts,window_start FROM login_attempts WHERE fingerprint=?'
+  ).bind(fingerprint).first();
+  if (row && row.window_start > seconds - 900 && row.attempts >= 5) {
+    bad('Muitas tentativas técnicas. Tente novamente em 15 minutos.', 429);
+  }
+  const valid = typeof password === 'string' &&
+    password.length >= 20 && password.length <= 256 &&
+    await checkPassword(password, env.TECH_PREVIEW_SECRET);
+  if (!valid) {
+    const start = row && row.window_start > seconds - 900 ? row.window_start : seconds;
+    const attempts = row && row.window_start > seconds - 900 ? row.attempts + 1 : 1;
+    await env.DB.prepare(
+      'INSERT INTO login_attempts(fingerprint,attempts,window_start) VALUES(?,?,?) ' +
+      'ON CONFLICT(fingerprint) DO UPDATE SET attempts=excluded.attempts,window_start=excluded.window_start'
+    ).bind(fingerprint, attempts, start).run();
+    bad('Credencial técnica inválida.', 403);
+  }
+  await env.DB.prepare('DELETE FROM login_attempts WHERE fingerprint=?').bind(fingerprint).run();
+}
+
 async function adminRoute(req,env,path) {
   if(path==='/api/admin/login'&&req.method==='POST')return login(req,env);
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
   await requireAdmin(req,env);
   if(path==='/api/admin/me')return result({authenticated:true});
+  // Isolated, opt-in diagnostic access. The ordinary coordinator route below
+  // continues to omit text, photos and audio. Never cache this response.
+  const technicalLetter=path.match(/^\/api\/admin\/technical-preview\/(EJC-[A-F0-9]{12})$/);
+  const technicalMedia=path.match(/^\/api\/admin\/technical-preview\/(EJC-[A-F0-9]{12})\/media\/([a-f0-9-]{36})$/);
+  if ((technicalLetter || technicalMedia) && req.method==='POST') {
+    const input=await jsonBody(req,600);
+    await requireTechnicalPreview(req,env,input.password);
+    const orderId=(technicalLetter||technicalMedia)[1];
+    if (technicalMedia) {
+      const media=await env.DB.prepare(
+        "SELECT * FROM media WHERE id=? AND order_id=? AND status='ready'"
+      ).bind(technicalMedia[2],orderId).first();
+      if (!media)bad('Anexo não encontrado.',404);
+      const object=await env.MEDIA.get(media.object_key);
+      if (!object)bad('Anexo indisponível.',404);
+      return new Response(object.body,{headers:{
+        ...BASE_HEADERS,
+        'Content-Type':media.content_type || 'application/octet-stream',
+        'Content-Disposition':'inline',
+      }});
+    }
+    const order=await orderWithRecipient(env,orderId);
+    if(!order)bad('Cartinha não encontrada.',404);
+    const attachments=(await env.DB.prepare(
+      "SELECT id,kind,filename,content_type,bytes FROM media WHERE order_id=? AND status='ready' ORDER BY created_at"
+    ).bind(orderId).all()).results;
+    return result({
+      id:order.id,recipient_name:order.recipient_name,
+      sender_name:order.sender_name||'Uma pessoa especial',
+      rich_html:order.rich_html||'',
+      composition:normalizeComposition(JSON.parse(order.composition_json||'{}')),
+      media:attachments,
+      status:order.status,submitted:!!order.submitted_at,
+    });
+  }
+
   // Prévia operacional segura: a coordenação vê remetente, status e stickers.
   // Corpo, HTML, fotos, áudios, nome de assinatura e tokens NUNCA são serializados.
   // Inclui cartinhas com Pix pendente e rascunhos, sem desbloquear murais.

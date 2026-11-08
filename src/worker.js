@@ -29,6 +29,14 @@ async function jsonBody(request, max=80_000) {
   if (input.length > max) bad('Requisição muito grande.',413);
   try { return JSON.parse(input); } catch { bad('JSON inválido.'); }
 }
+function normaliseWhatsAppPhone(raw) {
+  const digits=String(raw||'').replace(/\D/g,'');
+  if(!digits)return '';
+  const canonical=(digits.length===10||digits.length===11)?'55'+digits:digits;
+  if(!/^55[1-9][0-9][0-9]{8,9}$/.test(canonical))
+    bad('Informe um WhatsApp brasileiro válido com DDD (ex.: 32 99966-2604).',400);
+  return canonical;
+}
 function assertText(value, max, label, required=true) {
   if (typeof value !== 'string') bad(`${label} inválido.`);
   const s=value.trim();
@@ -368,8 +376,16 @@ function escapeMeta(value){
 // in Worker-rendered HTML, even when the admin has not generated a portrait PNG.
 const DEFAULT_OG_PATH = '/og-ejc-default.png';
 const DEFAULT_OG_VERSION = '20261107c';
-function socialImage(recipient, defaultOg=null) {
-  const personalized = recipient?.og_key && (!recipient.photo_key || recipient.photo_consent);
+function socialImage(recipient, defaultOg=null, kind='enviar') {
+  const withPhotoConsent=!recipient?.photo_key || !!recipient.photo_consent;
+  if(kind==='mural' && recipient?.mural_og_key && withPhotoConsent) {
+    const version=recipient.mural_og_key.split('/').pop();
+    return {
+      path:'/api/og/mural/'+encodeURIComponent(recipient.slug)+'.png?v='+encodeURIComponent(version),
+      version,width:1200,height:630,
+    };
+  }
+  const personalized = recipient?.og_key && withPhotoConsent;
   if (personalized) {
     const version = recipient.og_key.split('/').pop();
     return {
@@ -390,10 +406,10 @@ function buildSocialMeta(origin, recipient, kind = 'enviar', defaultOg=null) {
     : 'Cartinhas do XX EJC Simonésia';
   const description = person
     ? kind === 'mural'
-      ? 'Um cantinho privado para guardar mensagens, fotos e áudios. Acesso somente com código pessoal.'
+      ? 'Tem um carinho especial esperando por você! Abra seu mural privado do XX EJC Simonésia. Deus te ama, persevere na fé.'
       : 'Envie fotos, áudios e palavras especiais para ' + person + ' no XX EJC de Simonésia.'
     : 'Uma homenagem especial para guardar no coração. Cartinhas do XX EJC Simonésia.';
-  const image = socialImage(recipient,defaultOg);
+  const image = socialImage(recipient,defaultOg,kind);
   const imageUrl = origin + image.path;
   const canonicalPath = person
     ? '/' + kind + '/' + encodeURIComponent(recipient.slug)
@@ -414,7 +430,7 @@ function buildSocialMeta(origin, recipient, kind = 'enviar', defaultOg=null) {
     ['property', 'og:image:width', String(image.width)],
     ['property', 'og:image:height', String(image.height)],
     ['property', 'og:image:alt', person
-      ? 'Arte da cartinha dedicada a ' + person + ', XX EJC Simonésia'
+      ? (kind==='mural' ? 'Convite colorido para o mural secreto de ' : 'Arte da cartinha dedicada a ') + person + ', XX EJC Simonésia'
       : 'Cartinhas do XX EJC Simonésia'],
     ['name', 'twitter:card', 'summary_large_image'],
     ['name', 'twitter:title', title],
@@ -514,6 +530,20 @@ async function createCheckout(req,env,config) {
 }
 
 async function publicRoute(req,env,path) {
+  const muralOg=path.match(/^\/api\/og\/mural\/([a-z0-9-]+)\.png$/);
+  if(muralOg&&(req.method==='GET'||req.method==='HEAD')){
+    const r=await env.DB.prepare(
+      'SELECT mural_og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
+    ).bind(muralOg[1]).first();
+    if(!r||!r.mural_og_key||(r.photo_key&&!r.photo_consent))
+      bad('Imagem do mural não disponível.',404);
+    const image=await env.MEDIA.get(r.mural_og_key);
+    if(!image)bad('Imagem do mural não disponível.',404);
+    return new Response(req.method==='HEAD'?null:image.body,{headers:{
+      ...BASE_HEADERS,'Content-Type':'image/png','Content-Length':String(image.size),
+      'Cache-Control':'public, max-age=300'
+    }});
+  }
   const ogImage=path.match(/^\/api\/og\/([a-z0-9-]+)\.png$/);
   if(ogImage&&(req.method==='GET'||req.method==='HEAD')){
     const r=await env.DB.prepare(
@@ -1116,8 +1146,10 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/bootstrap'&&req.method==='GET'){
     const [config,recipients,orders]=await Promise.all([
       settings(env),
-      env.DB.prepare(`SELECT r.id,r.name,r.slug,r.active,r.created_at,r.photo_key,r.photo_consent,r.og_key,r.mural_code,
-        (SELECT COUNT(*) FROM orders o WHERE o.recipient_id=r.id) AS order_count
+      env.DB.prepare(`SELECT r.id,r.name,r.slug,r.active,r.created_at,r.photo_key,r.photo_consent,r.og_key,r.mural_og_key,r.mural_code,r.whatsapp_phone,
+        (SELECT COUNT(*) FROM orders o WHERE o.recipient_id=r.id) AS order_count,
+        (SELECT COUNT(*) FROM orders o WHERE o.recipient_id=r.id AND o.submitted_at IS NOT NULL
+          AND o.status IN ('paid','preparing','delivered')) AS ready_letter_count
         FROM recipients r ORDER BY r.name COLLATE NOCASE`).all(),
       env.DB.prepare(`SELECT o.id,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,
         CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted,o.demo,
@@ -1133,6 +1165,8 @@ async function adminRoute(req,env,path) {
         ...r,
         photo_url:recipientPhotoUrl(r),
         og_url:socialImage(r).path,
+        mural_og_url:socialImage(r,null,'mural').path,
+        mural_og_ready:!!r.mural_og_key,
         og_safe:typeof r.og_key==='string'&&r.og_key.startsWith('og/v3/')
       })),orders:orders.results});
   }
@@ -1375,7 +1409,7 @@ export default {
       // without the Accept/Sec-Fetch headers that Cloudflare SPA fallback expects.
       const social=path.match(/^\/(enviar|mural)\/([a-z0-9-]+)$/);
       const socialRecipient=social?await env.DB.prepare(
-        'SELECT name,slug,og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
+        'SELECT name,slug,og_key,mural_og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
       ).bind(social[2]).first():null;
       if(path==='/og-ejc-default.png'&&(request.method==='GET'||request.method==='HEAD')){
         const image=await env.MEDIA.get('og/default-v3.png');

@@ -974,3 +974,65 @@ test('prévia técnica fica desativada sem segredo forte',async()=>{
     'POST',{password:'000000'},admin);
   assert.equal(response.status,503);
 });
+
+
+test('modo técnico abre visão completa de um encontrista pelo token pessoal sem registrar leitura',async()=>{
+  const env=fixture();
+  env.TECH_PREVIEW_SECRET='technical-test-only-32-character-secret';
+  const {admin,list}=await setup(env);
+  const recipient=list[0];
+  const one=await call(env,'/api/orders','POST',{
+    recipient_slug:recipient.slug,sender_name:'Amigo primeiro'
+  });
+  const two=await call(env,'/api/orders','POST',{
+    recipient_slug:recipient.slug,sender_name:'Amiga segunda'
+  });
+  assert.equal(one.status,201);
+  assert.equal(two.status,201);
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Primeira mensagem privada</p>'
+  },{token:one.data.token})).status,200);
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Segunda mensagem privada</p>'
+  },{token:two.data.token})).status,200);
+
+  await call(env,'/api/admin/mural-codes/generate','POST',{regenerate:false},admin);
+  const bootstrap=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data;
+  const accessCode=bootstrap.recipients.find(person=>person.id===recipient.id).mural_code;
+  const redeem=await call(env,'/api/mural/redeem','POST',{code:accessCode});
+  assert.equal(redeem.status,200);
+  const grant=redeem.data.grant;
+  const path='/api/admin/technical-mural';
+  const valid={password:env.TECH_PREVIEW_SECRET,mural_token:grant};
+  assert.equal((await call(env,path,'GET',undefined,admin)).status,404);
+  assert.equal((await call(env,path,'POST',valid)).status,401);
+  assert.equal((await call(env,path,'POST',{...valid,password:'incorrect-technical-secret-with-length'},admin)).status,403);
+  assert.equal((await call(env,path,'POST',{...valid,mural_token:'m2.abc.def'},admin)).status,403);
+  assert.equal((await call(env,path,'POST',{...valid,mural_token:grant+'broken'},admin)).status,403);
+
+  const result=await call(env,path,'POST',valid,admin);
+  assert.equal(result.status,200);
+  assert.equal(result.headers.get('Cache-Control'),'no-store');
+  assert.equal(result.data.recipient.slug,recipient.slug);
+  assert.equal(result.data.cards.length,2);
+  assert.equal(result.data.locked,true);
+  assert.ok(result.data.cards.every(card=>card.visible_to_recipient===false));
+  assert.ok(result.data.cards.some(card=>card.rich_html.includes('Primeira mensagem privada')));
+  assert.ok(result.data.cards.some(card=>card.rich_html.includes('Segunda mensagem privada')));
+  assert.ok(!JSON.stringify(result.data).includes(one.data.token));
+  assert.ok(!JSON.stringify(result.data).includes(two.data.token));
+
+  const byRecipient=await call(env,path,'POST',{
+    password:env.TECH_PREVIEW_SECRET,recipient_slug:recipient.slug
+  },admin);
+  assert.equal(byRecipient.status,200);
+  assert.equal(byRecipient.data.cards.length,2);
+  const publicMural=await call(env,'/api/mural/'+recipient.slug,'GET',undefined,{token:grant});
+  assert.equal(publicMural.status,200);
+  assert.equal(publicMural.data.cards.length,0);
+
+  const summary=(await call(env,'/api/admin/cartinhas','GET',undefined,admin)).data;
+  assert.equal(summary.letters.length,2);
+  assert.ok(!JSON.stringify(summary).includes('Primeira mensagem privada'));
+  assert.ok(!JSON.stringify(summary).includes('Segunda mensagem privada'));
+});

@@ -54,7 +54,7 @@ export const DEFAULT_CAMPAIGN = Object.freeze({
     '',
     '🌹 Que Nossa Senhora te acompanhe. A gente espera você na caminhada!',
     '',
-    '💝 *Sua carta e suas outras {quantidade} homenagens estão neste mural pessoal:*',
+    '💝 *Sua carta especial e todas as mensagens de carinho estão neste mural pessoal:*',
     '{link}',
     '',
     '_Com carinho, Mini Mercado XX EJC Simonésia_ ✝️💛',

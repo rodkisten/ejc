@@ -43,3 +43,6 @@
   .technical-mural-toolbar .btn {flex:1;justify-content:center;}
 }
 @media print {.admin-tech-mural-pick,.technical-mural-preview {display:none!important;}}
+
+.technical-mural-visibility { display:flex; align-items:center; gap:10px; font-size:.9rem; font-weight:800; color:#321b59; padding:9px 0; }
+.technical-mural-visibility input { accent-color:#6831b6; width:18px; height:18px; flex:none; }

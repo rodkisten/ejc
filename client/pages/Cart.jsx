@@ -153,7 +153,7 @@ export default function Cart() {
                   <ArrowRight size={18} />
                 </button>
                 <p className="muted small">O pagamento será confirmado manualmente pela coordenação no extrato. Guarde o código da compra para facilitar a conferência; não solicitamos comprovantes bancários pelo site.</p>
-                {!config?.payments_ready && <p className="notice warning">A coordenação ainda precisa configurar a chave Pix.</p>
+                {!config?.payments_ready && <p className="notice warning">A coordenação ainda precisa configurar a chave Pix.</p>}
               </div>
             </div>
           </>

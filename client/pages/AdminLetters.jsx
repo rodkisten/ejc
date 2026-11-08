@@ -4,6 +4,7 @@ import { Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, Sparkles } fr
 import { api } from '../lib/api';
 import StickerLayer from '../components/letter/StickerLayer';
 import TechnicalLetterPreview from '../components/TechnicalLetterPreview';
+import TechnicalMuralPreview, { extractMuralGrant } from '../components/TechnicalMuralPreview';
 import '../styles/technical-preview.css';
 import { THEMES } from '../../shared/letter.js';
 
@@ -70,10 +71,17 @@ export default function AdminLetters() {
   const technicalMode = new URLSearchParams(location.search).get('secret') === '000000';
   const [technicalInput, setTechnicalInput] = useState('');
   const [technicalPassword, setTechnicalPassword] = useState('');
+  const [muralRecipient, setMuralRecipient] = useState('');
+  const [muralTokenInput, setMuralTokenInput] = useState('');
+  const [muralSelection, setMuralSelection] = useState(null);
+  const [muralError, setMuralError] = useState('');
   useEffect(() => {
     if (!technicalMode) {
       setTechnicalPassword('');
       setTechnicalInput('');
+      setMuralSelection(null);
+      setMuralTokenInput('');
+      setMuralError('');
     }
   }, [technicalMode]);
   const [letters, setLetters] = useState([]);
@@ -105,6 +113,18 @@ export default function AdminLetters() {
       .some((text) => String(text).toLocaleLowerCase('pt-BR').includes(query));
   }), [letters, slug, search, filter]);
   const heading = slug ? 'Cartinhas de ' + (selected?.recipient_name || 'encontrista') : 'Todas as cartinhas';
+  const recipients = useMemo(() => Array.from(new Map(letters.map(letter => [letter.recipient_slug, letter.recipient_name])).entries()).sort((a,b) => a[1].localeCompare(b[1], 'pt-BR')), [letters]);
+  function openRecipientMural(event) {
+    event.preventDefault();
+    setMuralError('');
+    const raw=muralTokenInput.trim();
+    const grant=raw ? extractMuralGrant(raw) : '';
+    if(raw && !grant){ setMuralError('Cole um token do mural ou link pessoal válido (#token=m2...).'); return; }
+    const recipientSlug=slug || muralRecipient || recipients[0]?.[0];
+    if(!grant && !recipientSlug){setMuralError('Selecione um encontrista ou cole o token do mural.');return;}
+    setMuralSelection({recipientSlug:grant ? '' : recipientSlug,userToken:grant});
+    setMuralTokenInput('');
+  }
 
   return (
     <div className="admin-letters-page">
@@ -124,6 +144,7 @@ export default function AdminLetters() {
           event.preventDefault();
           setTechnicalPassword(technicalInput);
           setTechnicalInput('');
+          setMuralSelection(null);
         }}>
           <strong>🔐 Modo de conferência técnica de layout</strong>
           <p>Somente para o responsável técnico. O parâmetro da URL não concede acesso: além do login administrativo, é necessária a credencial técnica separada configurada no servidor. A coordenação continua vendo apenas a prévia protegida.</p>
@@ -140,9 +161,40 @@ export default function AdminLetters() {
             {technicalPassword && <button type="button" className="btn outline" onClick={() => {
               setTechnicalPassword('');
               setExpanded({});
+              setMuralSelection(null);
+              setMuralTokenInput('');
             }}>Bloquear</button>}
           </div>
         </form>
+      )}
+      {technicalMode && technicalPassword && (
+        <section className="admin-tech-mural-pick">
+          <div>
+            <strong>👁 Ver mural como encontrista</strong>
+            <p>Abra todas as cartinhas no mesmo layout que o encontrista vê. O token pessoal serve para identificar o mural, não substitui sua senha técnica.</p>
+          </div>
+          <form className="admin-tech-mural-form" onSubmit={openRecipientMural}>
+            <label>Encontrista
+              <select value={slug || muralRecipient || recipients[0]?.[0] || ''}
+                onChange={(event) => { setMuralRecipient(event.target.value); setMuralError(''); }}
+                disabled={!!slug}>
+                {recipients.map(([value,name]) => <option key={value} value={value}>{name}</option>)}
+              </select>
+            </label>
+            <label>Token ou link do mural do usuário (opcional)
+              <input type="password" autoComplete="off" spellCheck={false}
+                placeholder="m2.… ou https://…/mural/…#token=m2.…"
+                value={muralTokenInput} onChange={(event) => setMuralTokenInput(event.target.value.slice(0,1200))} />
+            </label>
+            <button type="submit" className="btn"><Eye size={17} /> Abrir visão do encontrista</button>
+          </form>
+          {muralError && <div className="notice error" role="alert">{muralError}</div>}
+          {muralSelection && <TechnicalMuralPreview
+            password={technicalPassword}
+            recipientSlug={muralSelection.recipientSlug}
+            userToken={muralSelection.userToken}
+            onClose={() => setMuralSelection(null)} />}
+        </section>
       )}
       <div className="notice admin-letters-privacy">
         <ShieldCheck size={20} />

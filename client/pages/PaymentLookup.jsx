@@ -16,6 +16,7 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
   const [query, setQuery] = useState('');
   const [recipient, setRecipient] = useState('');
   const [payer, setPayer] = useState('');
+  const [sender, setSender] = useState('');
   const [status, setStatus] = useState('');
   const [onlySent, setOnlySent] = useState(false);
   const [payments, setPayments] = useState([]);
@@ -42,9 +43,9 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
     }
   }, []);
 
-  const currentFilters = () => ({ query, recipient, payer, status, only_sent: onlySent });
+  const currentFilters = () => ({ query, recipient, payer, sender, status, only_sent: onlySent });
   useEffect(() => {
-    search({ query: '', recipient: '', payer: '', status: '', only_sent: false });
+    search({ query: '', recipient: '', payer: '', sender: '', status: '', only_sent: false });
   }, [search]);
 
   function select(payment) {
@@ -120,6 +121,11 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
           </select>
         </label>
         <label className="admin-payment-field">
+          Nome de quem enviou
+          <input type="search" value={sender} autoComplete="off"
+            onChange={(event) => setSender(event.target.value)} placeholder="Assinatura da cartinha" />
+        </label>
+        <label className="admin-payment-field">
           Nome para conferência
           <input type="search" value={payer} autoComplete="off"
             onChange={(event) => setPayer(event.target.value)} placeholder="Quem fez o pedido" />
@@ -183,7 +189,7 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
                             Ver registro {item.id}
                           </Link>
                         </span>
-                        <span>{item.submitted ? 'Cartinha enviada' : 'Ainda não enviada'}</span>
+                        <span><small>De: {item.sender_name || 'Não informado'}</small>{' · '}{item.submitted ? 'Cartinha enviada' : 'Ainda não enviada'}</span>
                       </div>
                     ))}
                   </div>

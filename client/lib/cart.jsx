@@ -2,6 +2,20 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { draftGet, draftSet, draftRemove } from './drafts';
 
 const CART_INDEX = 'ejc-cart-index-v2';
+const CHECKOUT_HISTORY = 'ejc-cart-checkouts';
+export function localCheckouts() {
+  try {
+    const sessions = JSON.parse(localStorage.getItem(CHECKOUT_HISTORY) || '[]');
+    return Array.isArray(sessions) ? sessions.filter(s => s && typeof s.token === 'string') : [];
+  } catch { return []; }
+}
+export function rememberCheckout(checkout) {
+  const previous = localCheckouts().filter(item => item.id !== checkout.id);
+  localStorage.setItem(CHECKOUT_HISTORY, JSON.stringify([checkout, ...previous].slice(0, 50)));
+}
+export function checkoutForDraft(id) {
+  return localCheckouts().find(checkout => checkout.itemIds?.includes(id)) || null;
+}
 export const cartDraftKey = (id) => 'ejc-cart-letter-' + id;
 const CartContext = createContext(null);
 
@@ -30,6 +44,11 @@ export function CartProvider({ children }) {
   async function save({ id, recipient_slug, sender_name, ...draft }) {
     if (!ready) throw new Error('O carrinho ainda está carregando.');
     const itemId = id || crypto.randomUUID();
+    const existingCheckout = checkoutForDraft(itemId);
+    if (existingCheckout) throw new Error(
+      'Esta cartinha já está vinculada ao Pix ' + existingCheckout.id +
+      '. Use o botão Editar cartinha no link privado do pagamento.'
+    );
     const saved = { ...draft, sender: sender_name || '', recipient_slug };
     await draftSet(cartDraftKey(itemId), saved);
     const entry = {
@@ -64,7 +83,7 @@ export function CartProvider({ children }) {
   }
 
   return (
-    <CartContext.Provider value={{ items, ready, save, duplicate, remove, clear }}>
+    <CartContext.Provider value={{ items, ready, save, duplicate, remove, clear, checkoutForDraft }}>
       {children}
     </CartContext.Provider>
   );

@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Copy, Heart, Plus, ShoppingBag, Trash2 } from 'lucide-react';
 import { useApp } from '../main';
-import { useCart, cartDraftKey } from '../lib/cart';
+import { useCart, cartDraftKey, localCheckouts, rememberCheckout } from '../lib/cart';
 import { draftGet } from '../lib/drafts';
 import { api, money, track } from '../lib/api';
 
@@ -12,6 +12,12 @@ export default function Cart() {
   const navigate = useNavigate();
   const [targets, setTargets] = useState({});
   const [busy, setBusy] = useState(false);
+  const [payerName, setPayerName] = useState(() => localStorage.getItem('ejc-payer-name') || '');
+  const historical = localCheckouts();
+  const alreadyLinked = cart.items.some(item => historical.some(session => session.itemIds?.includes(item.id)));
+  const linked = alreadyLinked
+    ? historical.find(session => cart.items.some(item => session.itemIds?.includes(item.id)))
+    : null;
   const checkoutLock = useRef(false);
   const [error, setError] = useState('');
   const getPerson = (slug) => recipients.find((person) => person.slug === slug);
@@ -34,11 +40,13 @@ export default function Cart() {
     setError('');
     try {
       if (!cart.items.length) throw new Error('Seu carrinho está vazio.');
+      if (alreadyLinked) throw new Error('Uma cartinha deste carrinho já tem Pix. Abra o pagamento existente para editar.');
+      if (payerName.trim().length < 2) throw new Error('Informe seu nome para conferência do Pix.');
       const drafts = await Promise.all(cart.items.map((item) => draftGet(cartDraftKey(item.id))));
       if (drafts.some((draft) => !draft)) throw new Error('Uma cartinha perdeu seu rascunho local. Edite-a antes de pagar.');
       const checkout = await api('/api/checkouts', {
         method: 'POST',
-        data: { items: cart.items.map((item, index) => ({
+        data: { payer_name: payerName.trim(), items: cart.items.map((item, index) => ({
           recipient_slug: item.recipient_slug,
           sender_name: item.sender_name,
           rich_html: drafts[index].html || '',
@@ -53,6 +61,12 @@ export default function Cart() {
       });
       localStorage.setItem('ejc-last-checkout', checkout.token);
       localStorage.setItem('ejc-checkout-' + checkout.id, checkout.token);
+      localStorage.setItem('ejc-payer-name', payerName.trim());
+      rememberCheckout({
+        id: checkout.id, token: checkout.token, payerName: payerName.trim(),
+        itemIds: cart.items.map(item => item.id), created_at: new Date().toISOString(),
+      });
+      // Clear only the active cart index. The underlying IndexedDB drafts and files remain.
       await cart.clear();
       track('checkout_created', { letters: checkout.items.length });
       navigate('/checkout/' + checkout.token);
@@ -116,10 +130,21 @@ export default function Cart() {
               <div className="cart-receipt">
                 <div className="row between"><span>{cart.items.length} cartinha(s)</span><strong>{money(total)}</strong></div>
                 <p>Um único Pix para todas. Cada encontrista recebe apenas sua própria homenagem.</p>
+                <label className="cart-payer-label" htmlFor="payer-name">
+                  Nome para conferência do Pix
+                  <input id="payer-name" type="text" autoComplete="name" maxLength={100}
+                    value={payerName} placeholder="Seu nome completo"
+                    onChange={(event) => setPayerName(event.target.value)} />
+                  <small>Usado somente para localizar seu pagamento. Não aparece na cartinha nem no mural.</small>
+                </label>
+                {alreadyLinked && linked && <div className="notice">
+                  Esta cartinha já possui Pix gerado.
+                  <Link className="btn ghost" to={'/checkout/' + linked.token}>Ver Pix {linked.id}</Link>
+                </div>}
                 {error && <div className="notice error" role="alert">{error}</div>}
                 <button className="btn wide" type="button"
-                  disabled={busy || !config?.payments_ready || !config?.open} onClick={checkout}>
-                  <ShoppingBag size={18} /> {busy ? 'Criando seu Pix...' : 'Gerar Pix de ' + money(total)}
+                  disabled={busy || alreadyLinked || payerName.trim().length < 2 || !config?.payments_ready || !config?.open} onClick={checkout}>
+                  <ShoppingBag size={18} /> {busy ? 'Criando seu Pix...' : alreadyLinked ? 'Pix já gerado' : 'Gerar Pix de ' + money(total)}
                   <ArrowRight size={18} />
                 </button>
                 {!config?.payments_ready && <p className="notice warning">A coordenação ainda precisa configurar a chave Pix.</p>}

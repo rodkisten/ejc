@@ -132,7 +132,15 @@ export default function Checkout() {
               ))}
             </div>
             <div className="checkout-total"><span>Total</span><strong>{money(order.amount_cents)}</strong></div>
-            <p className="muted small">Identificador da compra: {order.id}</p>
+            <div className="notice checkout-code">
+              <strong>Código para conferência: {order.id}</strong>
+              <small>Informe este código à coordenação para localizar suas cartinhas e o valor total.</small>
+              <button className="btn ghost" type="button" onClick={async () => {
+                try { await navigator.clipboard.writeText(order.id); setMessage('Código para conferência copiado!'); }
+                catch { setError('Não foi possível copiar o código.'); }
+              }}><Copy size={16} /> Copiar código</button>
+            </div>
+            <p className="muted small">TXID do Pix: {order.txid}</p>
             <button className="btn ghost" type="button" onClick={async()=>{
               try{
                 await navigator.clipboard.writeText(window.location.href);

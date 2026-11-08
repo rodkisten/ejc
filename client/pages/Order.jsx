@@ -15,7 +15,7 @@ import {
   Image as ImageIcon,
 } from 'lucide-react';
 import { api, btime, money, privateOrder, uploadMedia, track } from '../lib/api';
-import { draftGet, draftRemove, draftKey } from '../lib/drafts';
+import { draftGet, draftSet, draftKey } from '../lib/drafts';
 import { cartDraftKey } from '../lib/cart';
 import RichEditor from '../components/RichEditor';
 import Recorder from '../components/Recorder';
@@ -143,8 +143,20 @@ export default function Order() {
       assets.forEach((a) => URL.revokeObjectURL(a.url));
       setAssets([]);
       setProgress('Arquivos salvos!');
+      // Keep the original local drafts and attachments as an offline recovery copy,
+      // even after a Pix is generated or a letter is submitted.
+      const cartId = localStorage.getItem('ejc-cart-order-' + token);
       const slug = localStorage.getItem(`ejc-order-slug-${token}`);
-      if (slug) await draftRemove(draftKey(slug));
+      const backupKey = cartId ? cartDraftKey(cartId) : slug ? draftKey(slug) : null;
+      if (backupKey) {
+        try {
+          const previous = await draftGet(backupKey) || {};
+          await draftSet(backupKey, {
+            ...previous, sender, html, composition, updatedAt: new Date().toISOString(),
+            assets: previous.assets || [],
+          });
+        } catch { /* Server data is authoritative; local backup is best-effort. */ }
+      }
       if (withSubmit) {
         await api('/api/order/submit', { method: 'POST', token, data: {} });
         track('letter_submitted');

@@ -526,3 +526,28 @@ dimensões JPEG, bordas e área quadrada das prévias.
 
 Teste o Safari em 320px, 375px, 390px e 430px, incluindo gesto de
 arrastar, zoom, publicação e um nome de encontrista longo.
+
+
+## Conferência de Pix por código e nome de controle (migração 0010)
+
+No painel administrativo, **Localizar um Pix e suas cartinhas** permite consultar
+código da compra, TXID, referência E2E já registrada, encontrista e o **nome
+para conferência** informado por quem compra. O campo identifica o pagamento
+sem alterar a assinatura da mensagem e sem aparecer no mural. Um único Pix
+consolidado libera todas as cartinhas após conferência manual do valor e do
+crédito no extrato bancário. Nenhum texto, mídia ou token privado é retornado
+pela pesquisa de pagamentos.
+
+O checkout mantém o identificador e código Pix originais mesmo após a pessoa
+editar e confirmar o texto, a assinatura, as fotos ou os adesivos no link
+privado. O estado canônico da cartinha fica no D1, seus anexos no R2 após
+sincronização; o IndexedDB preserva rascunhos como cópias locais para recuperação,
+sem manter um carrinho faturado como compra nova. Não limpe os dados do Safari
+antes de confirmar que os anexos foram sincronizados. Os links privados da
+compra continuam funcionando em outros aparelhos após a sincronização.
+
+A migração `migrations/0010_private_payer_name.sql` cria o atributo
+`payer_name` em compras e pedidos pré-existentes com valor padrão vazio.
+Aplique as migrações antes de publicar o Worker. Para ensaio, confira pelo
+código `EJCB-...` um Pix com duas cartinhas, edite cada uma, verifique no
+extrato e confirme manualmente o pagamento no admin.

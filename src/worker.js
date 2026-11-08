@@ -1,4 +1,5 @@
 import { generatePix } from './pix.js';
+import { normalizePaymentLookup, likeTerm, maskedStatus } from './paymentSearch.js';
 import { isSquareRecipientJpeg } from './photo.js';
 import { normalizeComposition, STICKERS_BY_ID } from '../shared/letter.js';
 import { enqueue, enableReceipt, disableReceipt, confirmReceipt, markRead, queueRelease, dispatch, validateEmail, emailsReady } from './notify.js';
@@ -456,6 +457,7 @@ async function createCheckout(req,env,config) {
   if(!config.pix_key||!config.pix_name||!config.pix_city) bad('A chave Pix ainda não foi configurada.',503);
   // Up to twenty letter texts and compositions saved atomically along with the Pix.
   const input=await jsonBody(req,800000);
+  const payerName=assertText(input.payer_name||'',100,'Nome para conferência',false);
   if(!Array.isArray(input.items)||input.items.length<1||input.items.length>20)
     bad('Adicione entre 1 e 20 cartinhas ao carrinho.');
   const unit=Number(config.message_price_cents||1000);
@@ -492,8 +494,8 @@ async function createCheckout(req,env,config) {
     return {id,token:itemToken,tokenHash:await digest(itemToken),...item,index};
   }));
   const statements=[
-    env.DB.prepare('INSERT INTO checkouts(id,token_hash,txid,total_cents,pix_payload) VALUES(?,?,?,?,?)')
-      .bind(checkoutId,await digest(access),txid,amount,pix),
+    env.DB.prepare('INSERT INTO checkouts(id,token_hash,txid,total_cents,pix_payload,payer_name) VALUES(?,?,?,?,?,?)')
+      .bind(checkoutId,await digest(access),txid,amount,pix,payerName),
     ...records.map(row=>env.DB.prepare(
       'INSERT INTO orders(id,token_hash,recipient_id,sender_name,total_cents,pix_payload,txid,public_message,checkout_id,checkout_item_index,rich_html,composition_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)'
     ).bind(row.id,row.tokenHash,row.recipient.id,row.sender,unit,pix,'ITEM'+row.id.slice(4),0,checkoutId,row.index,row.html,row.composition)),
@@ -654,6 +656,7 @@ async function publicRoute(req,env,path) {
     const recipient=await env.DB.prepare('SELECT id,name,slug FROM recipients WHERE (id=? OR slug=?) AND active=1').bind(String(input.recipient_id||''),String(input.recipient_slug||'')).first();
     if(!recipient)bad('Encontrista inválido.');
     const sender=assertText(input.sender_name||'',100,'Nome de quem envia',false);
+    const payerName=assertText(input.payer_name||'',100,'Nome para conferência',false);
     if(input.notify_on_read===true && (!emailsReady(env)||!validateEmail(input.read_receipt_email)))
       bad('O aviso de leitura exige um e-mail válido e o serviço de e-mail configurado.');
     const total=Number(config.message_price_cents||1000);
@@ -664,7 +667,7 @@ async function publicRoute(req,env,path) {
     const code=randomCode(),id=`EJC-${code}`,txid=`EJC${code}`,access=token();
     const pix=generatePix({key:config.pix_key,merchantName:config.pix_name,merchantCity:config.pix_city,amountCents:total,txid});
     await env.DB.batch([
-      env.DB.prepare('INSERT INTO orders(id,token_hash,recipient_id,sender_name,total_cents,pix_payload,txid,public_message) VALUES(?,?,?,?,?,?,?,?)').bind(id,await digest(access),recipient.id,sender,total,pix,txid,0),
+      env.DB.prepare('INSERT INTO orders(id,token_hash,recipient_id,sender_name,total_cents,pix_payload,txid,public_message,payer_name) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,await digest(access),recipient.id,sender,total,pix,txid,0,payerName),
       env.DB.prepare('INSERT INTO order_rate(fingerprint,attempts,window_start) VALUES(?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET attempts=excluded.attempts,window_start=excluded.window_start').bind(ip,rate&&rate.window_start>t-3600?rate.attempts+1:1,rate&&rate.window_start>t-3600?rate.window_start:t)
     ]);
     await event(env,id,'created');
@@ -806,9 +809,88 @@ async function adminRoute(req,env,path) {
     if(r.og_key)await env.MEDIA.delete(r.og_key);
     return result({ok:true,photo_url:`/api/recipients/${r.id}/photo?v=${key.split('/').pop()}`});
   }
+  // One Pix may pay many private letters. Match payment IDs and then
+  // include all recipient names linked to the payment, never message content.
+  if(path==='/api/admin/payments/search'&&req.method==='POST'){
+    const input=await jsonBody(req,1800);
+    const query=normalizePaymentLookup(input.query||'');
+    const recipient=String(input.recipient||'').trim().slice(0,100);
+    const payer=String(input.payer||'').trim().slice(0,100);
+    const status=maskedStatus(input.status||'');
+    const where=[],args=[];
+    if(query){
+      const term=likeTerm(query.toUpperCase());
+      where.push(`(
+        UPPER(REPLACE(COALESCE(c.id,o.id),'-','')) LIKE ? ESCAPE char(92)
+        OR UPPER(REPLACE(COALESCE(c.txid,o.txid),'-','')) LIKE ? ESCAPE char(92)
+        OR UPPER(COALESCE(c.bank_reference,o.bank_reference,'')) LIKE ? ESCAPE char(92)
+        OR UPPER(COALESCE(c.payer_name,o.payer_name,'')) LIKE ? ESCAPE char(92)
+        OR UPPER(r.name) LIKE ? ESCAPE char(92)
+      )`);
+      args.push(term,term,term,term,term);
+    }
+    if(recipient){
+      where.push('UPPER(r.name) LIKE ? ESCAPE char(92)');
+      args.push(likeTerm(recipient.toUpperCase()));
+    }
+    if(payer){
+      where.push('UPPER(COALESCE(c.payer_name,o.payer_name)) LIKE ? ESCAPE char(92)');
+      args.push(likeTerm(payer.toUpperCase()));
+    }
+    if(status){
+      where.push('COALESCE(c.status,o.status)=?');
+      args.push(status);
+    }
+    if(input.only_sent===true)where.push('o.submitted_at IS NOT NULL');
+    const condition=where.length?'WHERE '+where.join(' AND '):'';
+    const sql=`
+      WITH matched AS (
+        SELECT COALESCE(o.checkout_id,o.id) AS payment_id,
+          MAX(COALESCE(c.created_at,o.created_at)) AS payment_created
+        FROM orders o
+        JOIN recipients r ON r.id=o.recipient_id
+        LEFT JOIN checkouts c ON c.id=o.checkout_id
+        ${condition}
+        GROUP BY COALESCE(o.checkout_id,o.id)
+        ORDER BY payment_created DESC LIMIT 100
+      )
+      SELECT m.payment_id,
+        COALESCE(c.status,o.status) AS payment_status,
+        COALESCE(c.total_cents,o.total_cents) AS payment_cents,
+        COALESCE(c.txid,o.txid) AS payment_txid,
+        COALESCE(c.bank_reference,o.bank_reference) AS bank_reference,
+        COALESCE(c.payer_name,o.payer_name) AS payer_name,
+        m.payment_created, o.checkout_id,o.id AS order_id,o.status AS order_status,
+        r.name AS recipient_name,
+        CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted
+      FROM matched m JOIN orders o ON COALESCE(o.checkout_id,o.id)=m.payment_id
+      JOIN recipients r ON r.id=o.recipient_id
+      LEFT JOIN checkouts c ON c.id=o.checkout_id
+      ORDER BY m.payment_created DESC,m.payment_id,o.checkout_item_index,o.created_at DESC LIMIT 2000
+    `;
+    const rows=(await env.DB.prepare(sql).bind(...args).all()).results;
+    const payments=[];
+    for(const row of rows){
+      let payment=payments[payments.length-1];
+      if(!payment || payment.id!==row.payment_id){
+        payment={
+          id:row.payment_id,checkout_id:row.checkout_id,
+          status:row.payment_status,total_cents:row.payment_cents,
+          txid:row.payment_txid,bank_reference:row.bank_reference,
+          payer_name:row.payer_name||'',created_at:row.payment_created,items:[]
+        };
+        payments.push(payment);
+      }
+      payment.items.push({
+        id:row.order_id,recipient_name:row.recipient_name,
+        status:row.order_status,submitted:!!row.submitted
+      });
+    }
+    return result({payments,limit:100});
+  }
   if(path==='/api/admin/checkouts'&&req.method==='GET'){
     const checkouts=(await env.DB.prepare(
-      "SELECT c.id,c.status,c.total_cents,c.txid,c.created_at,c.claimed_at,c.confirmed_at,c.bank_reference,COUNT(o.id) AS item_count FROM checkouts c JOIN orders o ON o.checkout_id=c.id GROUP BY c.id ORDER BY c.created_at DESC LIMIT 500"
+      "SELECT c.id,c.status,c.total_cents,c.txid,c.payer_name,c.created_at,c.claimed_at,c.confirmed_at,c.bank_reference,COUNT(o.id) AS item_count FROM checkouts c JOIN orders o ON o.checkout_id=c.id GROUP BY c.id ORDER BY c.created_at DESC LIMIT 500"
     ).all()).results;
     return result({checkouts});
   }
@@ -845,8 +927,11 @@ async function adminRoute(req,env,path) {
       env.DB.prepare('SELECT id,name,slug,active,created_at,photo_key,photo_consent,og_key,mural_code FROM recipients ORDER BY name COLLATE NOCASE').all(),
       env.DB.prepare(`SELECT o.id,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,
         CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted,o.demo,
-        r.name AS recipient_name,r.slug AS recipient_slug
-        FROM orders o JOIN recipients r ON o.recipient_id=r.id ORDER BY o.created_at DESC LIMIT 500`).all()
+        r.name AS recipient_name,r.slug AS recipient_slug,
+        COALESCE(NULLIF(c.payer_name,''),o.payer_name) AS payer_name,
+        o.checkout_id,o.txid,COALESCE(c.txid,o.txid) AS payment_txid
+        FROM orders o JOIN recipients r ON o.recipient_id=r.id
+        LEFT JOIN checkouts c ON c.id=o.checkout_id ORDER BY o.created_at DESC LIMIT 500`).all()
     ]);
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({config:{...config,logo_url:logo?`/api/branding/logo?v=${logo.uploaded?.getTime()||0}`:null},
@@ -921,7 +1006,7 @@ async function adminRoute(req,env,path) {
   const detail=path.match(/^\/api\/admin\/orders\/(EJC-[A-F0-9]{12})$/);
   if(detail&&req.method==='GET'){
     const o=await env.DB.prepare(
-      "SELECT o.id,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted,r.name AS recipient_name FROM orders o JOIN recipients r ON o.recipient_id=r.id WHERE o.id=?"
+      "SELECT o.id,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,COALESCE(c.bank_reference,o.bank_reference) AS bank_reference,COALESCE(c.payer_name,o.payer_name) AS payer_name,COALESCE(c.txid,o.txid) AS txid,o.checkout_id,CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted,r.name AS recipient_name FROM orders o JOIN recipients r ON o.recipient_id=r.id LEFT JOIN checkouts c ON c.id=o.checkout_id WHERE o.id=?"
     ).bind(detail[1]).first();
     if(!o)bad('Pedido inexistente.',404);
     // Sem texto, identidade do remetente, lista de anexos ou links de mídia.

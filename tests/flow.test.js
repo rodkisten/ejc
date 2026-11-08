@@ -15,6 +15,7 @@ function fixture(){
   sql.exec(fs.readFileSync(new URL('../migrations/0007_letter_compositions.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0008_read_receipts_notifications.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0009_checkout_cart.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0010_private_payer_name.sql',import.meta.url),'utf8'));
 
   const DB={
     prepare(query){const stmt=(...values)=>({first:async()=>sql.prepare(query).get(...values)||null,all:async()=>({results:sql.prepare(query).all(...values)}),run:async()=>({meta:sql.prepare(query).run(...values)})});return {...stmt(),bind:stmt};},
@@ -664,4 +665,96 @@ test('fotos de encontristas exigem recorte quadrado antes de serem salvas',async
   const photo=await worker.fetch(new Request('https://ejc.test'+data.photo_url),env);
   assert.equal(photo.status,200);
   assert.equal((await photo.arrayBuffer()).byteLength,jpeg(768,768).byteLength);
+});
+
+test('admin pesquisa pelo código Pix e mostra todas as cartinhas sem ler conteúdo',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const created=await call(env,'/api/checkouts','POST',{
+    payer_name:'Maria para Conferência',
+    items:[
+      {recipient_slug:list[0].slug,sender_name:'Assinatura Privada Um'},
+      {recipient_slug:list[1].slug,sender_name:'Assinatura Privada Dois'},
+    ]
+  });
+  assert.equal(created.status,201);
+  assert.match(created.data.id,/^EJCB-[A-F0-9]{12}$/);
+  const payload=created.data;
+  const search=(data,options=admin)=>call(env,'/api/admin/payments/search','POST',data,options);
+  assert.equal((await search({query:payload.id},{})).status,401);
+  const byCode=await search({query:payload.id});
+  assert.equal(byCode.status,200);
+  assert.equal(byCode.data.payments.length,1);
+  const match=byCode.data.payments[0];
+  assert.equal(match.id,payload.id);
+  assert.equal(match.items.length,2);
+  assert.deepEqual(match.items.map(item=>item.recipient_name).sort(),
+    list.map(item=>item.name).sort());
+  assert.equal(match.payer_name,'Maria para Conferência');
+  const serialized=JSON.stringify(byCode.data);
+  assert.ok(!serialized.includes('Assinatura Privada'));
+  assert.ok(!serialized.includes('rich_html'));
+  assert.ok(!serialized.includes('pix_payload'));
+  assert.ok(!serialized.includes('token'));
+  assert.equal((await search({query:payload.txid})).data.payments[0].id,payload.id);
+  assert.equal((await search({query:payload.pix_code})).data.payments[0].id,payload.id);
+  assert.equal((await search({payer:'Conferência'})).data.payments[0].id,payload.id);
+  const byRecipient=await search({recipient:list[0].name});
+  assert.equal(byRecipient.data.payments.length,1);
+  assert.equal(byRecipient.data.payments[0].items.length,2);
+  assert.equal((await search({payer:'Nome não cadastrado'})).data.payments.length,0);
+  const confirmed=await call(env,'/api/admin/checkouts/'+payload.id+'/status','PATCH',{
+    status:'paid',bank_reference:'E9876543210ABCDEF123456789012345',
+    bank_checked:true,amount_checked:true
+  },admin);
+  assert.equal(confirmed.status,200);
+  const byBank=await search({query:'E9876543210ABCDEF123456789012345'});
+  assert.equal(byBank.data.payments[0].id,payload.id);
+  assert.equal(byBank.data.payments[0].status,'paid');
+  assert.equal((await search({status:'pending',query:payload.id})).data.payments.length,0);
+  assert.equal((await search({status:'paid',query:payload.id})).data.payments.length,1);
+  const itemToken=payload.items[0].token;
+  const update=await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Texto reservado</p>',sender_name:'Assinatura Nova',composition:{}
+  },{token:itemToken});
+  assert.equal(update.status,200);
+  const updated=await call(env,'/api/order','GET',undefined,{token:itemToken});
+  assert.equal(updated.data.sender_name,'Assinatura Nova');
+  const adminResults=JSON.stringify((await search({query:payload.id})).data);
+  assert.ok(!adminResults.includes('Assinatura Nova'));
+  assert.ok(!adminResults.includes('Texto reservado'));
+});
+
+test('nome para conferência é separado da assinatura na compra individual',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:list[0].slug,
+    payer_name:'Nome particular do comprador',
+    sender_name:'Assinatura pública da carta'
+  });
+  assert.equal(created.status,201);
+  const search=await call(env,'/api/admin/payments/search','POST',{
+    query:created.data.id
+  },admin);
+  assert.equal(search.status,200);
+  assert.equal(search.data.payments.length,1);
+  assert.equal(search.data.payments[0].payer_name,'Nome particular do comprador');
+  assert.equal(search.data.payments[0].items.length,1);
+  assert.ok(!JSON.stringify(search.data).includes('Assinatura pública da carta'));
+  const publicOrder=await call(env,'/api/order','GET',undefined,{token:created.data.token});
+  assert.equal(publicOrder.data.sender_name,'Assinatura pública da carta');
+  assert.equal(publicOrder.data.payer_name,undefined);
+});
+
+test('geração do Pix mantém rascunhos e botões de edição no navegador',()=>{
+  const cart=fs.readFileSync(new URL('../client/pages/Cart.jsx',import.meta.url),'utf8');
+  const checkout=fs.readFileSync(new URL('../client/pages/Checkout.jsx',import.meta.url),'utf8');
+  const order=fs.readFileSync(new URL('../client/pages/Order.jsx',import.meta.url),'utf8');
+  assert.ok(!cart.includes('await cart.clear();'));
+  assert.ok(cart.includes('ejc-cart-active-checkout'));
+  assert.ok(cart.includes('payer_name: nameForCheckout'));
+  assert.ok(checkout.includes('Editar rascunho'));
+  assert.ok(checkout.includes('Código para conferir o Pix'));
+  assert.ok(order.includes('await draftSet('));
+  assert.ok(!order.includes('draftRemove('));
+  assert.ok(order.includes('uploadedAssets(token)'));
 });

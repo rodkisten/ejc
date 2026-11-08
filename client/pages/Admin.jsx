@@ -7,6 +7,7 @@ import Labels from './Labels';
 import StickerAdmin from './StickerAdmin';
 import { publishOgImage, publishDefaultOgImage } from '../lib/og';
 import SquarePhotoEditor from '../components/SquarePhotoEditor';
+import PaymentLookup from './PaymentLookup';
 function useAdmin(){const [info,setInfo]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const reload=useCallback(async()=>{try{setInfo(await api('/api/admin/bootstrap'));setError('');}catch(e){setError(e.message);setInfo(null);}finally{setLoading(false);}},[]);
   useEffect(()=>{reload();},[reload]);return {info,loading,error,reload};}
@@ -39,6 +40,7 @@ function AdminDashboard({ info, reload }) {
         <ShieldCheck size={19} />
         A coordenação acessa apenas dados operacionais de pagamento e envio. Mensagens, fotos e áudios não são exibidos.
       </div>
+      <PaymentLookup recipients={info.recipients} onConfirmed={reload} />
       <CheckoutList orders={info.orders} reloadOrders={reload} />
       <OrderList orders={info.orders} navigate={navigate} />
     </>
@@ -194,7 +196,11 @@ function OrderDetail({ reload }) {
     <div className="admin-detail">
       <button className="text-button" onClick={() => navigate('/admin')}>← Voltar aos pedidos</button>
       <div className="section-head">
-        <div><span className="eyebrow">{order.id}</span><h1>{order.recipient_name}</h1><p>{money(order.total_cents)}</p></div>
+        <div><span className="eyebrow">{order.id}</span><h1>{order.recipient_name}</h1>
+          <p>{money(order.total_cents)}</p>
+          <p className="muted">Nome para conferência: <strong>{order.payer_name || 'Não informado'}</strong></p>
+          <p className="muted small">TXID: {order.txid}</p>
+        </div>
         <span className={`status-pill ${paid ? 'success' : 'pending'}`}>
           {paid ? 'Pagamento confirmado' : 'Aguardando Pix'}
         </span>
@@ -204,7 +210,12 @@ function OrderDetail({ reload }) {
         Conteúdo privado. A coordenação não visualiza o texto, as imagens ou os áudios da cartinha.
       </div>
       {error && <div className="notice error">{error}</div>}
-      {!paid && (
+      {order.checkout_id && !paid && (
+        <div className="notice">Esta cartinha faz parte do Pix agrupado {order.checkout_id}.
+          Confirme o recebimento único e o valor total pela busca de pagamentos acima.
+        </div>
+      )}
+      {!paid && !order.checkout_id && (
         <section className="form-card">
           <h2>Conferir Pix no extrato</h2>
           <p className="muted">Confira a entrada do dinheiro no banco. Não libere apenas com um comprovante enviado pelo comprador.</p>

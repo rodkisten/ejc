@@ -101,7 +101,6 @@ export default function AdminLetters() {
     try {
       const summary=await api('/api/admin/cartinhas/finalize-preview');
       setFinalizeSummary(summary);
-      setFinalizeError('');
     } catch (cause) {
       setFinalizeError(cause.message);
     }
@@ -218,7 +217,7 @@ export default function AdminLetters() {
             <CheckCheck size={17} /> {finalizeBusy?'Finalizando…':'Finalizar ' + (finalizeSummary?.eligible||0) + ' cartinha(s) pagas'}
           </button>
           <button type="button" className="btn outline" disabled={finalizeBusy}
-            onClick={updateFinalizeSummary}><RefreshCw size={16} /> Recontar</button>
+            onClick={() => { setFinalizeError(''); updateFinalizeSummary(); }}><RefreshCw size={16} /> Recontar</button>
         </div>
         {finalizeProgress && <p role="status" className="notice">{finalizeProgress}</p>}
         {finalizeResult && <p role="status" className="notice success">{finalizeResult}</p>}

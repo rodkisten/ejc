@@ -17,6 +17,7 @@ function fixture(){
   sql.exec(fs.readFileSync(new URL('../migrations/0009_checkout_cart.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0010_private_payer_name.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0011_recipient_whatsapp.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0012_mini_mercado_campaign.sql',import.meta.url),'utf8'));
 
   const DB={
     prepare(query){const stmt=(...values)=>({first:async()=>sql.prepare(query).get(...values)||null,all:async()=>({results:sql.prepare(query).all(...values)}),run:async()=>({meta:sql.prepare(query).run(...values)})});return {...stmt(),bind:stmt};},

@@ -26,7 +26,6 @@ export default function SicoobReconciliation({ onConfirmed }) {
   const [batchSelected, setBatchSelected] = useState([]);
   const [batchProgress, setBatchProgress] = useState(null);
   const bulkCandidates = useMemo(() => exactPixBatchCandidates(statement, payments), [statement, payments]);
-  const eligibleCredits = new Set(bulkCandidates.map((candidate) => candidate.credit.id));
   const selectedCandidates = bulkCandidates.filter((candidate) => batchSelected.includes(candidate.credit.id));
   const batchTotalCents = selectedCandidates.reduce((sum, candidate) => sum + candidate.credit.amountCents, 0);
   const batchBusy = working === 'batch';

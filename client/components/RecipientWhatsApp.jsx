@@ -71,8 +71,10 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false }) {
         name:details.name,url:details.url,count:details.count,
       });
       const href=whatsappShareUrl({phone:details.phone,message});
-      if(popup && !popup.closed) popup.location.replace(href);
-      else setFallbackLink(href);
+      if(popup && !popup.closed) {
+        try { popup.location.replace(href); }
+        catch { setFallbackLink(href); }
+      } else setFallbackLink(href);
       await onRefresh?.();
     } catch (cause) {
       try { popup?.close(); } catch { /* No action. */ }

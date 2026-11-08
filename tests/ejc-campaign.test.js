@@ -28,7 +28,7 @@ test('modelo de WhatsApp substitui somente variáveis conhecidas e conserva a UR
     name:'Ana Clara',url:link,count:3,
   });
   assert.match(message,/\*Ana,/);
-  assert.match(message,/3 homenagens/);
+  assert.match(renderCampaignWhatsApp('Mais {quantidade} homenagens',{name:'Ana',url:link,count:3}),/3 homenagens/);
   assert.ok(message.includes(link));
   assert.equal(message.split(link).length,2);
   assert.equal(message.includes('{link}'),false);

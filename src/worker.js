@@ -993,14 +993,67 @@ async function adminRoute(req,env,path) {
     if(r.og_key)await env.MEDIA.delete(r.og_key);
     return result({ok:true,url:'/api/og/'+r.slug+'.png'});
   }
+
+  const muralOgUpload=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/mural-og$/);
+  if(muralOgUpload && req.method==='POST'){
+    const r=await env.DB.prepare(
+      'SELECT id,slug,mural_og_key,photo_key,photo_consent FROM recipients WHERE id=? AND active=1'
+    ).bind(muralOgUpload[1]).first();
+    if(!r)bad('Encontrista não encontrado.',404);
+    if(r.photo_key&&!r.photo_consent)bad('Foto sem autorização de publicação.',403);
+    const image=await receiveSafeImage(req,5*1024*1024);
+    if(image.type!=='image/png')bad('A prévia do mural deve ser PNG.',415);
+    const dimensions=new DataView(image.bytes.buffer,image.bytes.byteOffset,image.bytes.byteLength);
+    if(image.bytes.byteLength<24||dimensions.getUint32(16)!==1200||dimensions.getUint32(20)!==630)
+      bad('A OG do mural deve medir 1200 × 630 pixels.',400);
+    const key='og/mural/v1/'+r.id+'/'+newId()+'.png';
+    await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:'image/png'}});
+    await env.DB.prepare('UPDATE recipients SET mural_og_key=? WHERE id=?').bind(key,r.id).run();
+    if(r.mural_og_key)await env.MEDIA.delete(r.mural_og_key).catch(()=>{});
+    return result({ok:true,url:'/api/og/mural/'+r.slug+'.png?v='+key.split('/').pop()});
+  }
+
+  const inviteLink=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/whatsapp-link$/);
+  if(inviteLink && req.method==='POST'){
+    const person=await env.DB.prepare(
+      'SELECT id,name,slug,active,mural_code,whatsapp_phone,og_key,mural_og_key,photo_key,photo_consent FROM recipients WHERE id=?'
+    ).bind(inviteLink[1]).first();
+    if(!person || !person.active)bad('Encontrista indisponível.',404);
+    const phone=normaliseWhatsAppPhone(person.whatsapp_phone);
+    if(!phone)bad('Cadastre primeiro o WhatsApp do encontrista.',409);
+    const ready=await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM orders WHERE recipient_id=? AND submitted_at IS NOT NULL AND status IN ('paid','preparing','delivered')"
+    ).bind(person.id).first();
+    if(!ready?.count)bad('O encontrista ainda não tem cartinhas pagas e enviadas.',409);
+    if(!person.mural_og_key)bad('Gere a imagem do convite antes de compartilhar o mural.',409);
+    if(!person.mural_code){
+      const code=await nextUniqueMuralCode(env);
+      await env.DB.prepare('UPDATE recipients SET mural_code=? WHERE id=? AND mural_code IS NULL').bind(code,person.id).run();
+      const latest=await env.DB.prepare('SELECT mural_code FROM recipients WHERE id=?').bind(person.id).first();
+      person.mural_code=latest.mural_code;
+    }
+    const grant=await muralGrant(env,person);
+    const origin=new URL(env.PUBLIC_ORIGIN||req.url).origin;
+    const image=socialImage(person,null,'mural');
+    const address=new URL('/mural/'+encodeURIComponent(person.slug),origin);
+    address.searchParams.set('og',image.version);
+    // Fragment keeps the access token out of HTTP logs and OG preview crawlers.
+    address.hash='token='+encodeURIComponent(grant);
+    return result({
+      name:person.name,phone,url:address.toString(),count:ready.count,
+      og_url:origin+image.path,expires_in_days:14
+    });
+  }
+
   const photoUpload=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/photo$/);
   if(photoUpload && (req.method==='POST'||req.method==='DELETE')) {
-    const r=await env.DB.prepare('SELECT id,photo_key,og_key FROM recipients WHERE id=?').bind(photoUpload[1]).first();
+    const r=await env.DB.prepare('SELECT id,photo_key,og_key,mural_og_key FROM recipients WHERE id=?').bind(photoUpload[1]).first();
     if(!r)bad('Encontrista não encontrado.',404);
     if(req.method==='DELETE') {
-      await env.DB.prepare('UPDATE recipients SET photo_key=NULL,photo_consent=0,og_key=NULL WHERE id=?').bind(r.id).run();
+      await env.DB.prepare('UPDATE recipients SET photo_key=NULL,photo_consent=0,og_key=NULL,mural_og_key=NULL WHERE id=?').bind(r.id).run();
       if(r.photo_key)await env.MEDIA.delete(r.photo_key);
       if(r.og_key)await env.MEDIA.delete(r.og_key);
+      if(r.mural_og_key)await env.MEDIA.delete(r.mural_og_key).catch(()=>{});
       return result({ok:true});
     }
     if(req.headers.get('X-Photo-Consent')!=='confirmed')bad('Confirme a autorização para divulgação da foto.',403);
@@ -1009,9 +1062,10 @@ async function adminRoute(req,env,path) {
     if(!isSquareRecipientJpeg(image.bytes))bad('A foto precisa estar recortada em quadrado (1:1). Use o editor de fotos.',422);
     const key=`recipients/${r.id}/${newId()}`;
     await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:image.type}});
-    await env.DB.prepare('UPDATE recipients SET photo_key=?,photo_consent=1,og_key=NULL WHERE id=?').bind(key,r.id).run();
+    await env.DB.prepare('UPDATE recipients SET photo_key=?,photo_consent=1,og_key=NULL,mural_og_key=NULL WHERE id=?').bind(key,r.id).run();
     if(r.photo_key)await env.MEDIA.delete(r.photo_key);
     if(r.og_key)await env.MEDIA.delete(r.og_key);
+    if(r.mural_og_key)await env.MEDIA.delete(r.mural_og_key).catch(()=>{});
     return result({ok:true,photo_url:`/api/recipients/${r.id}/photo?v=${key.split('/').pop()}`});
   }
   // One Pix may pay many private letters. Match payment IDs and then
@@ -1228,7 +1282,7 @@ async function adminRoute(req,env,path) {
   const recipient=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})$/);
   if(recipient&&['PATCH','DELETE'].includes(req.method)){
     const existing=await env.DB.prepare(
-      'SELECT id,name,slug,active,photo_key,og_key FROM recipients WHERE id=?'
+      'SELECT id,name,slug,active,photo_key,og_key,mural_og_key,whatsapp_phone FROM recipients WHERE id=?'
     ).bind(recipient[1]).first();
     if(!existing)bad('Encontrista não encontrado.',404);
     const linked=await env.DB.prepare(
@@ -1246,11 +1300,12 @@ async function adminRoute(req,env,path) {
       if(deleted.meta.changes!==1)bad('Encontrista recebeu uma cartinha durante a exclusão. Atualize a página.',409);
       if(existing.photo_key)await env.MEDIA.delete(existing.photo_key).catch(()=>{});
       if(existing.og_key)await env.MEDIA.delete(existing.og_key).catch(()=>{});
+      if(existing.mural_og_key)await env.MEDIA.delete(existing.mural_og_key).catch(()=>{});
       return result({ok:true,mode:'deleted',linked_orders:0});
     }
     const data=await jsonBody(req,700);
     if(!data || typeof data!=='object'||Array.isArray(data))bad('Dados inválidos.');
-    if(!Object.hasOwn(data,'name')&&!Object.hasOwn(data,'active'))bad('Informe o nome ou a situação do encontrista.');
+    if(!Object.hasOwn(data,'name')&&!Object.hasOwn(data,'active')&&!Object.hasOwn(data,'whatsapp_phone'))bad('Informe nome, WhatsApp ou situação do encontrista.');
     const name=Object.hasOwn(data,'name')?assertText(data.name,100,'Nome'):existing.name;
     const active=Object.hasOwn(data,'active')
       ? (typeof data.active==='boolean'?Number(data.active):bad('A situação deve ser verdadeira ou falsa.'))
@@ -1261,11 +1316,13 @@ async function adminRoute(req,env,path) {
         bad('Já existe um encontrista com esse nome.',409);
     }
     const renamed=name!==existing.name;
-    await env.DB.prepare('UPDATE recipients SET name=?,active=?,og_key=? WHERE id=?')
-      .bind(name,active,renamed?null:existing.og_key,existing.id).run();
+    const phone=Object.hasOwn(data,'whatsapp_phone')?normaliseWhatsAppPhone(data.whatsapp_phone):existing.whatsapp_phone;
+    await env.DB.prepare('UPDATE recipients SET name=?,active=?,whatsapp_phone=?,og_key=?,mural_og_key=? WHERE id=?')
+      .bind(name,active,phone,renamed?null:existing.og_key,renamed?null:existing.mural_og_key,existing.id).run();
     if(renamed&&existing.og_key)await env.MEDIA.delete(existing.og_key).catch(()=>{});
+    if(renamed&&existing.mural_og_key)await env.MEDIA.delete(existing.mural_og_key).catch(()=>{});
     // Keep slug and mural code so existing printed QRs, tokens and links continue working.
-    return result({ok:true,name,slug:existing.slug,active:!!active,linked_orders:linked.count,
+    return result({ok:true,name,whatsapp_phone:phone,slug:existing.slug,active:!!active,linked_orders:linked.count,
       og_needs_refresh:renamed});
   }
   const detail=path.match(/^\/api\/admin\/orders\/(EJC-[A-F0-9]{12})$/);

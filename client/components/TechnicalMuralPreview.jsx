@@ -171,7 +171,11 @@ export default function TechnicalMuralPreview({ password, recipientSlug, userTok
           onChange={(event) => setOnlyVisible(event.target.checked)} />
         Exibir somente as cartinhas que o encontrista já pode ver
       </label>}
-      {loading && <p className="loading" role="status"><LoaderCircle size={18} /> Carregando mural técnico…</p>
+      {loading && (
+        <p className="loading" role="status">
+          <LoaderCircle size={18} /> Carregando mural técnico…
+        </p>
+      )}
       {data && <MuralGallery
         data={onlyVisible ? { ...data, cards: data.cards.filter((card) => card.visible_to_recipient) } : data}
         opened={opened} openBusy={openBusy} error={error}

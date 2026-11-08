@@ -33,3 +33,26 @@ Os 10 cartões usam o endereço selecionado no painel e o QR é codificado dinam
 ## OG para WhatsApp
 
 A imagem dinâmica tem dimensões de 1200 × 630; nome, foto, cruz e textos principais permanecem no centro seguro. Para substituir as imagens já publicadas no R2, após o deploy use Atualizar prévia do WhatsApp ou Gerar/atualizar prévias para WhatsApp, pois a atualização do código por si só não modifica PNGs existentes. O WhatsApp também pode conservar miniaturas em cache.
+
+## Visualização completa como o encontrista
+
+Depois do login administrativo e da senha técnica `TECH_PREVIEW_SECRET`, entre em
+`/admin/cartinhas?secret=000000` e use **Ver mural como encontrista**.
+
+- Selecione o encontrista no campo de seleção para inspecionar o mural dele.
+- Ou cole o token pessoal de acesso do encontrista no formato `m2.…`, ou o link
+  completo recebido em `/mural/<slug>#token=m2.…`. O link e o token são aceitos
+  somente no formulário técnico, não são gravados no storage nem enviados na URL.
+- O servidor valida a assinatura e validade do token pessoal antes de localizar
+  o encontrista. A autenticação técnica **continua obrigatória**, mesmo que o
+  link pessoal seja válido.
+- O mural técnico usa o mesmo `MuralGallery` e `LetterCard` que o encontrista.
+  Pode abrir cada carta ou tocar em **Abrir todas**. Fotos, áudios e decoração
+  são renderizados por requisições autorizadas.
+- O modo técnico mostra também cartas não pagas e ainda não enviadas, marcadas
+  claramente como prévias técnicas. **Isso não as libera no mural real**.
+- Abrir o mural técnico não chama `markRead` nem emite avisos, eventos de leitura
+  ou notificações ao remetente. Fechar revoga os URLs temporários das mídias.
+
+O token pessoal do mural **não é** o código Pix e **não é** a senha técnica.
+O código `?secret=000000` apenas abre a interface, sem revelar nenhuma carta.

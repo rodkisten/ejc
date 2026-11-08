@@ -1452,6 +1452,8 @@ async function adminRoute(req,env,path) {
         (SELECT COUNT(*) FROM orders o WHERE o.recipient_id=r.id) AS order_count,
         (SELECT COUNT(*) FROM orders o WHERE o.recipient_id=r.id AND o.submitted_at IS NOT NULL
           AND o.status IN ('paid','preparing','delivered')) AS ready_letter_count,
+        (SELECT COUNT(*) FROM orders gift WHERE gift.recipient_id=r.id
+          AND gift.campaign_key='pos-encontro' AND gift.submitted_at IS NOT NULL) AS campaign_letter_count,
         (SELECT d.sent_at FROM recipient_whatsapp_deliveries d WHERE d.recipient_id=r.id
           AND d.campaign_key='pos-encontro') AS campaign_wa_sent_at,
         (SELECT d.send_count FROM recipient_whatsapp_deliveries d WHERE d.recipient_id=r.id

@@ -1414,6 +1414,13 @@ test('WhatsApp exige confirmação humana da imagem e permite reenviar mantendo 
   const repeated=await call(env,route,'POST',data,admin);
   assert.equal(repeated.status,200);
   assert.equal(repeated.data.send_count,2);
+  const history=(await env.DB.prepare(
+    'SELECT image_sent,message_template,sent_by FROM recipient_whatsapp_delivery_history '+
+    'WHERE recipient_id=? AND campaign_key=?'
+  ).bind(target.id,'pos-encontro').all()).results;
+  assert.equal(history.length,2);
+  assert.ok(history.every(item=>item.image_sent===1&&item.sent_by==='admin'));
+  assert.ok(history.every(item=>!item.message_template.includes('m2.')));
   const bootstrap=await call(env,'/api/admin/bootstrap','GET',undefined,admin);
   const person=bootstrap.data.recipients.find(row=>row.id===target.id);
   assert.ok(person.campaign_wa_sent_at);

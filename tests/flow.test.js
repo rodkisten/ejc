@@ -768,11 +768,15 @@ test('admin renomeia encontristas sem quebrar links e recusa nomes duplicados',a
   const env=fixture(),{admin,list}=await setup(env);
   const first=list[0],second=list[1];
   const url='/api/admin/recipients/'+first.id;
+  await env.MEDIA.put('og/v3/old-preview.png',new Uint8Array([1,2,3]));
+  await env.DB.prepare('UPDATE recipients SET og_key=? WHERE id=?')
+    .bind('og/v3/old-preview.png',first.id).run();
   const updated=await call(env,url,'PATCH',{name:'Maria Vitória'},admin);
   assert.equal(updated.status,200);
   assert.equal(updated.data.name,'Maria Vitória');
   assert.equal(updated.data.slug,first.slug);
   assert.equal(updated.data.og_needs_refresh,true);
+  assert.equal(await env.MEDIA.head('og/v3/old-preview.png'),null);
   const publicData=(await call(env,'/api/public')).data;
   assert.equal(publicData.recipients.find(person=>person.id===first.id).name,'Maria Vitória');
   assert.equal(publicData.recipients.find(person=>person.id===first.id).slug,first.slug);
@@ -789,10 +793,16 @@ test('exclusão permanente só ocorre sem cartinhas; exclusão com pedidos arqui
   const env=fixture(),{admin,list}=await setup(env);
   const person=list[0],other=list[1];
   const endpoint='/api/admin/recipients/'+person.id;
+  await env.MEDIA.put('recipients/orphan-photo',new Uint8Array([1,2,3]));
+  await env.MEDIA.put('og/orphan-preview.png',new Uint8Array([4,5,6]));
+  await env.DB.prepare('UPDATE recipients SET photo_key=?,og_key=? WHERE id=?')
+    .bind('recipients/orphan-photo','og/orphan-preview.png',person.id).run();
   assert.equal((await call(env,endpoint,'DELETE')).status,401);
   const removed=await call(env,endpoint,'DELETE',undefined,admin);
   assert.equal(removed.status,200);
   assert.equal(removed.data.mode,'deleted');
+  assert.equal(await env.MEDIA.head('recipients/orphan-photo'),null);
+  assert.equal(await env.MEDIA.head('og/orphan-preview.png'),null);
   assert.equal((await env.DB.prepare('SELECT id FROM recipients WHERE id=?').bind(person.id).first()),null);
   assert.equal((await call(env,endpoint,'PATCH',{name:'Inexistente'},admin)).status,404);
   assert.equal((await call(env,'/api/public')).data.recipients.some(p=>p.id===person.id),false);
@@ -835,4 +845,16 @@ test('filtro de pagamento encontra nomes acentuados sem perder sigilo',async()=>
   assert.equal((await find({recipient:list[0].name})).data.payments[0]?.id,created.data.id);
   assert.ok(!JSON.stringify(byName.data).includes('Texto Secreto'));
 });
-
+test('admin oferece editar, excluir e restaurar encontristas com confirmação no mobile',()=>{
+  const admin=fs.readFileSync(new URL('../client/pages/Admin.jsx',import.meta.url),'utf8');
+  const css=fs.readFileSync(new URL('../client/styles/people-admin.css',import.meta.url),'utf8');
+  const main=fs.readFileSync(new URL('../client/main.jsx',import.meta.url),'utf8');
+  assert.ok(admin.includes('Editar nome'));
+  assert.ok(admin.includes('Excluir'));
+  assert.ok(admin.includes('Restaurar'));
+  assert.ok(admin.includes('window.confirm('));
+  assert.ok(admin.includes('person-name-editor'));
+  assert.ok(css.includes('font-size:16px'));
+  assert.ok(css.includes('@media(max-width:640px)'));
+  assert.ok(main.includes("import './styles/people-admin.css';"));
+});

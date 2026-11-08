@@ -732,6 +732,32 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
   await requireAdmin(req,env);
   if(path==='/api/admin/me')return result({authenticated:true});
+  // Prévia operacional segura: a coordenação vê remetente, status e stickers.
+  // Corpo, HTML, fotos, áudios, nome de assinatura e tokens NUNCA são serializados.
+  // Inclui cartinhas com Pix pendente e rascunhos, sem desbloquear murais.
+  if(path==='/api/admin/cartinhas' && req.method==='GET') {
+    const rows=(await env.DB.prepare(
+      `SELECT o.id,o.sender_name,o.status,o.submitted_at,o.created_at,o.composition_json,
+        r.id AS recipient_id,r.name AS recipient_name,r.slug AS recipient_slug
+        FROM orders o JOIN recipients r ON r.id=o.recipient_id
+        ORDER BY o.created_at DESC`
+    ).all()).results;
+    const letters=rows.map(row=>{
+      let design;
+      try { design=normalizeComposition(JSON.parse(row.composition_json||'{}')); }
+      catch { design=normalizeComposition({}); }
+      return {
+        id:row.id,
+        sender_name:row.sender_name||'Remetente não informado',
+        recipient_id:row.recipient_id,recipient_name:row.recipient_name,
+        recipient_slug:row.recipient_slug,status:row.status,
+        submitted:!!row.submitted_at,created_at:row.created_at,
+        theme:design.theme,stickers:design.stickers
+      };
+    });
+    return result({letters});
+  }
+
   if(path==='/api/admin/branding/logo' && req.method==='POST') {
     const image=await receiveSafeImage(req,2*1024*1024);
     await env.MEDIA.put('branding/ejc-market-logo',image.bytes,{httpMetadata:{contentType:image.type}});

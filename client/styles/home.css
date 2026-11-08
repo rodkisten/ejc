@@ -208,3 +208,33 @@
   .classic-ejc-home .paper-front { width: 192px; height: 240px; }
   .classic-hero-actions .hero-cta { width: 100%; white-space: normal; }
 }
+
+/* Admin-only quick actions are separate from the public link, without nested links. */
+.classic-recipient-grid .recipient-item { display:grid; gap:7px; min-width:0; align-content:start; }
+.classic-recipient-grid .recipient-item .classic-recipient-card { min-width:0; height:100%; }
+.home-admin-tools { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin:17px 0; padding:14px; background:#f4e8f8; border:1px solid #d8b9e6; border-radius:16px; }
+.home-admin-tools strong { display:inline-flex; align-items:center; gap:6px; color:#563077; }
+.home-admin-tools p { margin:3px 0 0; font-size:.82rem; color:#765a81; }
+.home-admin-tools form { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.home-admin-tools input, .recipient-inline-editor input { min-width:0; min-height:44px; font-size:16px; }
+.home-admin-tools form input { width:min(230px,100%); }
+.home-admin-tools .btn { min-height:42px; }
+.recipient-admin-actions { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+.recipient-admin-actions > button, .recipient-admin-actions > a, .recipient-admin-upload { display:inline-flex; align-items:center; justify-content:center; gap:5px; padding:7px 9px; border-radius:10px; border:1px solid #ddcae7; background:#fffafd; color:#643e83; font-size:.76rem; font-weight:800; text-decoration:none; min-height:38px; cursor:pointer; }
+.recipient-admin-actions > button:disabled { opacity:.55; cursor:wait; }
+.recipient-admin-actions .recipient-admin-private { background:#5a3181; color:#fff; border-color:#5a3181; }
+.recipient-admin-actions .recipient-admin-danger { color:#ac3c60; }
+.recipient-admin-upload { position:relative; overflow:hidden; }
+.recipient-admin-upload input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+.recipient-admin-upload:focus-within { outline:3px solid #b182ce; outline-offset:2px; }
+.recipient-inline-editor { display:grid; gap:9px; padding:13px; background:#fffafc; border:1px solid #ddc0e5; border-radius:13px; min-width:0; }
+.recipient-inline-editor label { font-size:.82rem; font-weight:800; color:#603b78; }
+.recipient-inline-editor input { width:100%; }
+.recipient-inline-editor .btn { min-height:42px; }
+@media (max-width:640px) {
+  .home-admin-tools { align-items:stretch; }
+  .home-admin-tools form { width:100%; }
+  .home-admin-tools form input { flex:1; }
+  .home-admin-tools > .btn { width:100%; justify-content:center; }
+  .recipient-admin-actions > button, .recipient-admin-actions > a, .recipient-admin-upload { min-height:42px; }
+}

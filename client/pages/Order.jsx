@@ -472,7 +472,7 @@ export default function Order() {
             <div className="notice">
               <LockKeyhole size={18} />
               Sua cartinha é privada: não aparece em uma galeria pública nem passa por leitura ou escuta da coordenação.
-              O painel da equipe acompanha somente o pagamento e a situação do envio.
+              O painel da equipe acompanha o pagamento e a situação do envio, além do nome do remetente e dos stickers escolhidos.
             </div>
             {error && <div className="notice error">{error}</div>}
             {progress && <div className="notice success">{progress}</div>}

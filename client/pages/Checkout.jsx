@@ -148,7 +148,7 @@ export default function Checkout() {
               }catch{setError('Não foi possível copiar o link. Salve esta página no navegador.');}
             }}><Copy size={16}/> Copiar link privado desta compra</button>
             <div className="notice"><LockKeyhole size={17} />
-              <span>Não compartilhe esta página: ela contém o acesso às cartinhas. A coordenação não vê o conteúdo de nenhuma delas.</span>
+              <span>Não compartilhe esta página: ela dá acesso às cartinhas. A coordenação vê remetente e stickers, mas não pode ler mensagens nem abrir fotos ou áudios.</span>
             </div>
             {paid && <p className="notice"><CheckCircle2 size={19} /> Pix confirmado. Você pode abrir cada cartinha acima.</p>}
           </div>

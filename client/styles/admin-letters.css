@@ -1,0 +1,50 @@
+/* A prévia nunca recebe o corpo real da cartinha. A aparência secreta é sintética. */
+.admin-letters-page { min-width: 0; }
+.admin-letters-privacy { display: flex; align-items: flex-start; gap: 10px; }
+.admin-letters-privacy svg { flex: 0 0 auto; }
+.admin-letters-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 18px 0; }
+.admin-letters-toolbar .search-box { flex: 1 1 270px; min-width: 0; max-width: none; }
+.admin-letters-toolbar input { min-width: 0; font-size: 16px; }
+.admin-letters-toolbar select { min-height: 46px; font-size: 16px; max-width: 100%; }
+.admin-letters-toolbar strong { font-size: .88rem; white-space: nowrap; }
+.admin-letters-list { display: grid; gap: 16px; }
+.admin-letter-entry { min-width: 0; }
+.admin-letter-summary { display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.admin-letter-summary > div:first-child { min-width: 0; flex: 1 1 180px; }
+.admin-letter-summary p { margin: 7px 0 3px; }
+.admin-letter-summary small { color: #896d89; overflow-wrap: anywhere; }
+.admin-letter-recipient { font-weight: 850; font-size: 1.13rem; color: #6c3c92; }
+.admin-letter-summary-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.admin-letter-summary-actions .btn { min-height: 42px; }
+.admin-letter-status { display: inline-flex; border-radius: 100px; padding: 6px 11px; font-size: .75rem; font-weight: 800; white-space: normal; }
+.admin-letter-status.is-paid { background: #def3e4; color: #285f40; }
+.admin-letter-status.is-pending { background: #fff0d6; color: #835418; }
+.admin-secret-paper { background: var(--secret-paper); border: 2px solid var(--secret-edge); border-radius: 20px; padding: clamp(18px,4vw,30px); max-width: 640px; margin: 18px auto 2px; overflow: hidden; color: var(--secret-ink); }
+.admin-secret-paper-head { text-align: center; }
+.admin-secret-paper-head > span { font-size: .68rem; font-weight: 850; letter-spacing: .15em; color: var(--secret-accent); }
+.admin-secret-paper-head h3 { font-family: 'Fraunces', Georgia, serif; font-size: clamp(1.6rem,4vw,2.5rem); margin: 15px 0 10px; }
+.admin-secret-sender { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.admin-secret-sender strong { color: var(--secret-accent); }
+.admin-secret-hidden { position: relative; display: grid; place-items: center; min-height: 230px; margin: 23px auto; border: 1px dashed var(--secret-edge); border-radius: 15px; background: #fff9; overflow: hidden; }
+.admin-secret-blur { position: absolute; inset: 20px; display: grid; gap: 11px; align-content: center; filter: blur(8px); opacity: .42; pointer-events: none; }
+.admin-secret-blur > span { display: block; height: 13px; border-radius: 99px; background: #b6a5ba; width: 90%; }
+.admin-secret-blur > span:nth-child(2) { width: 65%; }
+.admin-secret-blur > span:nth-child(3) { width: 85%; }
+.admin-secret-blur > span:nth-child(4) { width: 75%; }
+.admin-secret-blur > span:nth-child(5) { width: 45%; }
+.admin-secret-image-shapes { display: flex; gap: 12px; }
+.admin-secret-image-shapes i { display: block; width: 65px; height: 54px; border-radius: 12px; background: #c5bac8; }
+.admin-secret-lock { position: relative; z-index: 1; display: grid; justify-items: center; gap: 7px; text-align: center; max-width: 245px; padding: 17px; border-radius: 16px; background: #fffef4ee; box-shadow: 0 8px 30px #37203b24; color: #633c71; }
+.admin-secret-lock strong { font-size: 1rem; }
+.admin-secret-lock span { font-size: .77rem; line-height: 1.4; }
+.admin-secret-stickers .eyebrow { display: flex; align-items: center; gap: 6px; }
+.admin-secret-stickers .letter-sticker-board { background: #ffffff44; border: 1px solid var(--secret-edge); }
+.admin-secret-stickers-empty { text-align: center; }
+.admin-secret-footer { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 22px 0 0; font-size: .75rem; text-align: center; color: #7b657f; }
+.admin-secret-footer svg { flex: 0 0 auto; }
+@media (max-width: 600px) {
+  .admin-letter-summary-actions { width: 100%; justify-content: space-between; }
+  .admin-letter-summary-actions .btn { flex: 1; justify-content: center; }
+  .admin-secret-paper { padding: 18px; }
+  .admin-secret-hidden { min-height: 205px; }
+}

@@ -14,10 +14,12 @@ export default function Privacy() {
       <div className="form-card">
         <h2><ShieldCheck size={22} /> O que a coordenação pode ver?</h2>
         <p>
-          Somente informações operacionais para conferir o pagamento e acompanhar
-          o envio: número do pedido, destinatário, valor, situação do Pix e
-          indicação de que a cartinha foi enviada. Não há tela administrativa para
-          ler textos, ver fotos ou ouvir gravações.
+          A coordenação pode ver os dados operacionais do pedido (destinatário,
+          valor, situação do Pix e envio), o nome informado como remetente e os
+          stickers escolhidos, mesmo quando o Pix ainda não foi pago. O texto,
+          a assinatura personalizada, as fotos e os áudios permanecem secretos:
+          não são enviados à tela administrativa e não podem ser lidos, vistos
+          ou ouvidos pela coordenação. A prévia mostra apenas um blur ilustrativo.
         </p>
       </div>
       <div className="form-card">

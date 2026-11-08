@@ -30,6 +30,7 @@ import './styles/sicoob.css';
 import './styles/home.css';
 import './styles/photo-crop.css';
 import './styles/people-admin.css';
+import './styles/admin-letters.css';
 
 export const AppContext=React.createContext({ config:null, recipients:[], reload:async()=>{} });
 export function useApp(){return React.useContext(AppContext);}

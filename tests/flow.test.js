@@ -858,3 +858,62 @@ test('admin oferece editar, excluir e restaurar encontristas com confirmação n
   assert.ok(css.includes('@media(max-width:640px)'));
   assert.ok(main.includes("import './styles/people-admin.css';"));
 });
+
+
+test('coordenação vê todas as cartinhas, inclusive Pix pendente, sem receber mensagens, mídia ou tokens', async () => {
+  const env = fixture(), { admin, list } = await setup(env);
+  const person = list[0];
+  const unpaid = await call(env, '/api/orders', 'POST', {
+    recipient_slug: person.slug, sender_name: 'Remetente identificável',
+  });
+  assert.equal(unpaid.status, 201);
+  const secretText = 'TEXTO-ULTRASSECRETO-NAO-ENVIAR-AO-ADMIN';
+  const secretAuthor = 'ASSINATURA-PRIVADA-NAO-ENVIAR';
+  const token = unpaid.data.token;
+  const saved = await call(env, '/api/order/message', 'PUT', {
+    rich_html: '<p>' + secretText + '</p>',
+    composition: {
+      theme: 'rose', authorName: secretAuthor,
+      stickers: [{ id: 'sticker-1', presetId: 'jesus-ama', x: 48, y: 52, scale: 1, rotate: -4, color: 'rose' }],
+    },
+  }, { token });
+  assert.equal(saved.status, 200);
+
+  const second = await call(env, '/api/orders', 'POST', {
+    recipient_slug: list[1].slug, sender_name: 'Outra pessoa',
+  });
+  assert.equal(second.status, 201);
+  assert.equal((await call(env, '/api/admin/orders/' + second.data.id + '/status', 'PATCH', {
+    status: 'paid', bank_reference: 'E2EADMINPREVIEW123456789',
+    bank_checked: true, amount_checked: true,
+  }, admin)).status, 200);
+
+  assert.equal((await call(env, '/api/admin/cartinhas')).status, 401);
+  assert.equal((await call(env, '/api/admin/cartinhas', 'GET', undefined, {
+    token: unpaid.data.token,
+  })).status, 401);
+
+  const preview = await call(env, '/api/admin/cartinhas', 'GET', undefined, admin);
+  assert.equal(preview.status, 200);
+  assert.equal(preview.headers.get('Cache-Control'), 'no-store');
+  assert.equal(preview.data.letters.length, 2);
+  const pending = preview.data.letters.find((letter) => letter.id === unpaid.data.id);
+  const paid = preview.data.letters.find((letter) => letter.id === second.data.id);
+  assert.equal(pending.sender_name, 'Remetente identificável');
+  assert.equal(pending.recipient_slug, person.slug);
+  assert.equal(pending.status, 'pending');
+  assert.equal(pending.submitted, false);
+  assert.equal(pending.theme, 'rose');
+  assert.equal(pending.stickers.length, 1);
+  assert.equal(pending.stickers[0].presetId, 'jesus-ama');
+  assert.equal(paid.status, 'paid');
+  assert.equal(paid.sender_name, 'Outra pessoa');
+  for (const field of ['rich_html', 'composition_json', 'media', 'authorName', 'token_hash', 'pix_payload']) {
+    assert.equal(field in pending, false, 'Campo sigiloso não pode sair da API: ' + field);
+  }
+  const payload = JSON.stringify(preview.data);
+  assert.ok(!payload.includes(secretText));
+  assert.ok(!payload.includes(secretAuthor));
+  assert.ok(!payload.includes(token));
+  assert.equal((await call(env, '/api/mural/' + person.slug, 'GET', undefined, admin)).status, 403);
+});

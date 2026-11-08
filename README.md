@@ -18,6 +18,19 @@ A conexão já existente com **Resend** permanece: para receber aviso de primeir
 
 O relay da coordenação recebe eventos operacionais de pedido e Pix, nunca o texto ou a mídia das cartinhas. Use `RELAY_URL=https://xtelegram-cf.migos.club/send`, `RELAY_TOKEN` em secrets e `RELAY_CHAT_ID` conforme a configuração do bot. Rotacione qualquer credencial que tenha sido exposta anteriormente e nunca inclua tokens no código ou nos logs.
 
+## Conciliação Sicoob OFX
+
+Em **/admin → Pedidos → Conciliar extrato Pix**, a coordenação pode selecionar um arquivo OFX
+exportado do Sicoob. O extrato é interpretado **localmente no navegador**, sem upload
+de movimentações bancárias. O painel relaciona créditos Pix com pedidos pendentes
+pelo TXID e valor quando o banco inclui o TXID; caso contrário, oferece seleção
+manual por valor, sem presumir que transações de mesmo valor sejam da mesma compra.
+A coordenação precisa verificar a entrada na conta recebedora e confirmar explicitamente
+cada Pix. Referências OFX não são apresentadas como E2E e são deduplicadas antes de
+liberar cartinhas agrupadas.
+
+Guia e limitações: [docs/sicoob-ofx.md](docs/sicoob-ofx.md).
+
 ## Jornada do comprador
 
 1. A home apresenta um mural de retratos autorizados, cada um clicável, e mantém a **lista completa com busca por nome**. Clicar em qualquer encontrista abre `/enviar/:slug`.

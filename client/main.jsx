@@ -26,6 +26,7 @@ import './styles/letter-canvas.css';
 import './styles/instagram-export.css';
 import './styles/cart.css';
 import './styles/payment-lookup.css';
+import './styles/sicoob.css';
 import './styles/home.css';
 import './styles/photo-crop.css';
 import './styles/people-admin.css';

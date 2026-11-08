@@ -1,0 +1,15 @@
+.admin-tech-gate {
+  display:grid; gap:12px; margin:18px 0;
+  padding:18px; border:2px dashed #a685d1; border-radius:15px;
+  background:#faf6ff;
+}
+.admin-tech-gate strong { color:#321748; }
+.admin-tech-gate p { margin:0; font-size:.88rem; }
+.admin-tech-gate .admin-tech-entry { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+.admin-tech-gate label { display:grid; gap:6px; flex:1 1 240px; }
+.admin-tech-gate input { min-height:44px; font-size:16px; min-width:0; }
+.admin-tech-gate .btn { min-height:44px; }
+.technical-letter-preview { margin-top:16px; }
+.technical-letter-preview .letter-card { margin-top:12px; max-width:100%; }
+.technical-letter-preview .letter-card .letter-canvas { max-width:100%; }
+@media print { .admin-tech-gate,.technical-letter-preview { display:none!important; } }

@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
-import { Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, Sparkles } from 'lucide-react';
+import { CheckCheck, Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, Sparkles } from 'lucide-react';
 import { api } from '../lib/api';
 import StickerLayer from '../components/letter/StickerLayer';
 import TechnicalLetterPreview from '../components/TechnicalLetterPreview';
 import TechnicalMuralPreview, { extractMuralGrant, extractMuralCode } from '../components/TechnicalMuralPreview';
 import '../styles/technical-preview.css';
+import '../styles/admin-bulk-finalize.css';
 import { THEMES } from '../../shared/letter.js';
 
 const paid = (status) => ['paid', 'preparing', 'delivered'].includes(status);
@@ -90,6 +91,62 @@ export default function AdminLetters() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [expanded, setExpanded] = useState({});
+  const [finalizeSummary, setFinalizeSummary] = useState(null);
+  const [finalizeBusy, setFinalizeBusy] = useState(false);
+  const [finalizeProgress, setFinalizeProgress] = useState('');
+  const [finalizeError, setFinalizeError] = useState('');
+  const [finalizeResult, setFinalizeResult] = useState('');
+  const updateFinalizeSummary = useCallback(async () => {
+    if (slug) return;
+    try {
+      const summary=await api('/api/admin/cartinhas/finalize-preview');
+      setFinalizeSummary(summary);
+    } catch (cause) {
+      setFinalizeError(cause.message);
+    }
+  }, [slug]);
+
+  const finalizePaid = async () => {
+    if (finalizeBusy || !finalizeSummary?.eligible) return;
+    const accepted=window.confirm(
+      'Finalizar ' + finalizeSummary.eligible + ' cartinha(s) PAGAS com conteúdo salvo?\n\n' +
+      'Outras ' + finalizeSummary.empty + ' cartinhas pagas estão vazias e serão ignoradas.\n\n' +
+      'Ao finalizar, as cartinhas ficarão disponíveis no mural privado assim que chegar o horário de liberação. ' +
+      'A coordenação não terá acesso a textos, fotos ou áudios.'
+    );
+    if (!accepted) return;
+    setFinalizeBusy(true);setFinalizeError('');setFinalizeResult('');
+    let cursor='',finalized=0,empty=0,failed=0,scanned=0;
+    const failures=[];
+    try {
+      const seen=new Set();
+      for (;;) {
+        if(seen.has(cursor))throw new Error('A paginação não avançou. Confira as cartinhas restantes.');
+        seen.add(cursor);
+        const page=await api('/api/admin/cartinhas/finalize-paid',{
+          method:'POST',data:{cursor},
+        });
+        finalized+=page.finalized||0;
+        empty+=page.empty||0;
+        failed+=page.failed||0;
+        scanned+=page.scanned||0;
+        failures.push(...(page.failed_ids||[]));
+        setFinalizeProgress('Conferidas ' + scanned + ' cartinhas · ' + finalized + ' finalizadas…');
+        if(!page.next_cursor)break;
+        cursor=page.next_cursor;
+      }
+      setFinalizeResult(finalized + ' cartinha(s) finalizada(s). ' +
+        empty + ' sem conteúdo foram ignoradas. ' +
+        (failed ? failed + ' ocorrência(s) precisam ser verificadas: ' + failures.join(', ') : 'Tudo concluído!'));
+    } catch (cause) {
+      setFinalizeError('Processo interrompido após ' + finalized +
+        ' finalizações: ' + cause.message + '. As já finalizadas foram preservadas.');
+    } finally {
+      setFinalizeBusy(false);setFinalizeProgress('');
+      await Promise.all([refresh(),updateFinalizeSummary()]);
+    }
+  };
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
@@ -100,7 +157,7 @@ export default function AdminLetters() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { refresh(); updateFinalizeSummary(); }, [refresh, updateFinalizeSummary]);
   const selected = slug ? letters.find((letter) => letter.recipient_slug === slug) : null;
   const rows = useMemo(() => letters.filter((letter) => {
     if (slug && letter.recipient_slug !== slug) return false;
@@ -140,6 +197,31 @@ export default function AdminLetters() {
         </button>
       </div>
       {slug && <Link className="text-button" to={'/admin/cartinhas' + (technicalMode ? '?secret=000000' : '')}>← Ver todas as cartinhas</Link>}
+      {!slug && <section className="admin-bulk-finalize form-card">
+        <div>
+          <span className="eyebrow">CARTINHAS PAGAS · ENVIO EM LOTE</span>
+          <h2><CheckCheck size={22} /> Finalizar cartinhas pagas</h2>
+          <p>Cartinhas com Pix confirmado e mensagem, foto ou áudio já salvos podem ser concluídas em massa.
+            O conteúdo permanece privado e as cartinhas vazias são ignoradas.</p>
+        </div>
+        {finalizeSummary && <div className="admin-bulk-finalize-counts" role="status">
+          <span><strong>{finalizeSummary.paid_drafts}</strong> rascunhos pagos</span>
+          <span><strong>{finalizeSummary.eligible}</strong> com conteúdo salvo</span>
+          <span><strong>{finalizeSummary.empty}</strong> sem conteúdo</span>
+        </div>}
+        <div className="admin-bulk-finalize-actions">
+          <button type="button" className="btn" disabled={finalizeBusy||!finalizeSummary?.eligible}
+            onClick={finalizePaid}>
+            <CheckCheck size={17} /> {finalizeBusy?'Finalizando…':'Finalizar ' + (finalizeSummary?.eligible||0) + ' cartinha(s) pagas'}
+          </button>
+          <button type="button" className="btn outline" disabled={finalizeBusy}
+            onClick={updateFinalizeSummary}><RefreshCw size={16} /> Recontar</button>
+        </div>
+        {finalizeProgress && <p role="status" className="notice">{finalizeProgress}</p>}
+        {finalizeResult && <p role="status" className="notice success">{finalizeResult}</p>}
+        {finalizeError && <p role="alert" className="notice error">{finalizeError}</p>}
+        <small>O envio continua dependendo de pagamento confirmado. Nada é finalizado automaticamente ao abrir esta página.</small>
+      </section>}
       {technicalMode && (
         <form className="admin-tech-gate" onSubmit={(event) => {
           event.preventDefault();

@@ -124,7 +124,7 @@
     grid-template-rows:repeat(5,53mm)!important;
     gap:4mm!important;
     padding:0!important; margin:0!important; overflow:visible!important;
-    break-after:page; page-break-after:always;
+    break-inside:avoid; page-break-inside:avoid;
   }
   .ejc-mini-card {
     width:95mm!important; height:53mm!important; aspect-ratio:auto!important;

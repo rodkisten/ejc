@@ -30,8 +30,12 @@ async function jsonBody(request, max=80_000) {
   try { return JSON.parse(input); } catch { bad('JSON inválido.'); }
 }
 function normaliseWhatsAppPhone(raw) {
-  const digits=String(raw||'').replace(/\D/g,'');
-  if(!digits)return '';
+  const supplied=String(raw||'').trim();
+  // An empty field intentionally removes a saved phone. Non-empty garbage
+  // must not silently clear it (e.g. "ABC" used to return HTTP 200).
+  if(!supplied)return '';
+  const digits=supplied.replace(/\D/g,'');
+  if(!digits)bad('Informe um WhatsApp brasileiro válido com DDD (ex.: 32 99966-2604).',400);
   const canonical=(digits.length===10||digits.length===11)?'55'+digits:digits;
   if(!/^55[1-9][0-9][0-9]{8,9}$/.test(canonical))
     bad('Informe um WhatsApp brasileiro válido com DDD (ex.: 32 99966-2604).',400);

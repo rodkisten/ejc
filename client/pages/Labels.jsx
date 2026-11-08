@@ -125,8 +125,8 @@ export default function Labels({ info, reload }) {
                         <img src={person.photo_url} alt="" crossOrigin="anonymous" />
                       ) : (
                         <span aria-hidden="true">{person.name.slice(0, 2).toUpperCase()}</span>
-                      )} */ }
-                    </div>
+                      )} 
+                    </div> */ }
                     <small>UM PRESENTE PARA</small>
                     <strong>{person.name}</strong>
                     <span className="label-description">Suas cartinhas, fotos e áudios estão aqui.</span>

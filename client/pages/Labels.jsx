@@ -120,18 +120,18 @@ export default function Labels({ info, reload }) {
                 <div className="label-topline">✳ XX EJC SIMONÉSIA <span>♡</span></div>
                 <div className="label-body">
                   <div className="label-message">
-                    <div className="label-profile">
+                    { /*  <div className="label-profile">
                       {person.photo_url ? (
                         <img src={person.photo_url} alt="" crossOrigin="anonymous" />
                       ) : (
                         <span aria-hidden="true">{person.name.slice(0, 2).toUpperCase()}</span>
-                      )}
+                      )} */ }
                     </div>
                     <small>UM PRESENTE PARA</small>
                     <strong>{person.name}</strong>
                     <span className="label-description">Suas cartinhas, fotos e áudios estão aqui.</span>
                     <span className="label-personal-code">{person.mural_code}</span>
-                    <small>Ou acesse ejc.migos.club/abrir</small>
+                    <small>Ou acesse <b>ejc.migos.club/abrir</b></small>
                   </div>
                   <div className="label-qr">
                     <QrCode value={link} size={104} variant="standard" logoUrl={info.config.logo_url} />
@@ -140,7 +140,7 @@ export default function Labels({ info, reload }) {
                 </div>
                 <div className="label-bottomline">
                   <LockKeyhole size={11} /> Não compartilhe seu acesso
-                  <span>Feito com amor por Rod Costa</span>
+                  <span>Feito com amor pela equipe do Mini Mercado</span>
                 </div>
               </article>
             );

@@ -235,6 +235,71 @@ export async function publishOgImage(person) {
 }
 
 
+// Separate invitation preview: WhatsApp fetches /mural/:slug without the
+// fragment token, so the public preview NEVER reveals private letter content.
+export async function createMuralOgImage({ name, photoUrl }) {
+  try { await document.fonts.ready; } catch { /* Use bundled fallback. */ }
+  const canvas=document.createElement('canvas');
+  canvas.width=OG_WIDTH; canvas.height=OG_HEIGHT;
+  const ctx=canvas.getContext('2d',{alpha:false});
+  if(!ctx)throw new Error('Não foi possível preparar a prévia do mural.');
+
+  collageBackdrop(ctx);
+  ctx.fillStyle='#211630'; rounded(ctx,317,23,566,582,22);ctx.fill();
+  ctx.fillStyle='#fff8ea';rounded(ctx,326,32,548,562,16);ctx.fill();
+  ctx.fillStyle='#ffe03b';rounded(ctx,342,48,516,50,9);ctx.fill();
+  ctx.font='900 25px "DM Sans",Arial,sans-serif';
+  ctx.textAlign='center';ctx.fillStyle='#18429b';
+  ctx.fillText('XX EJC  ·  SIMONÉSIA-MG',600,82,480);
+
+  // Headline and cross remain entirely inside central WhatsApp square crop.
+  ctx.fillStyle='#ec287d';rounded(ctx,344,112,512,53,7);ctx.fill();
+  ctx.font='900 34px "DM Sans",Arial,sans-serif';ctx.fillStyle='#fff9e7';
+  ctx.fillText('SEU MURAL CHEGOU! ♡',600,149,480);
+  crossSticker(ctx,347,205);
+
+  const portrait=await loadPortrait(photoUrl);
+  const px=470,py=186,pw=258,ph=248;
+  ctx.fillStyle='#f4e4fb';rounded(ctx,px,py,pw,ph,10);ctx.fill();
+  if(portrait){
+    ctx.save();rounded(ctx,px,py,pw,ph,10);ctx.clip();
+    cover(ctx,portrait,px,py,pw,ph);ctx.restore();
+  }else{
+    ctx.fillStyle='#df2772';ctx.font='900 128px Georgia,serif';
+    ctx.fillText('♡',599,353);
+  }
+  ctx.lineWidth=4;ctx.strokeStyle='#30194a';
+  rounded(ctx,px,py,pw,ph,10);ctx.stroke();
+  ctx.font='900 65px Arial,sans-serif';ctx.fillStyle='#bd1568';
+  ctx.fillText('♡',795,283);
+
+  ctx.fillStyle='#ffdbeb';rounded(ctx,344,445,512,92,12);ctx.fill();
+  ctx.fillStyle='#25183e';
+  const fitted=splitName(ctx,name,465,2);
+  ctx.font='900 '+fitted.size+'px "DM Sans",Arial,sans-serif';
+  const firstY=fitted.lines.length===1?504:476;
+  fitted.lines.forEach((line,i)=>ctx.fillText(line,600,firstY+i*(fitted.size+3),464));
+
+  ctx.fillStyle='#133b8f';ctx.font='900 19px "DM Sans",Arial,sans-serif';
+  ctx.fillText('UM CARINHO PRA VOCÊ. ABRA SEU MURAL!',600,569,504);
+  return new Promise((resolve,reject)=>{
+    canvas.toBlob(blob=>blob?resolve(blob):
+      reject(new Error('Não foi possível exportar a arte do mural.')),'image/png');
+  });
+}
+
+export async function publishMuralOgImage(person) {
+  const blob=await createMuralOgImage({name:person.name,photoUrl:person.photo_url});
+  const response=await fetch('/api/admin/recipients/'+encodeURIComponent(person.id)+'/mural-og',{
+    method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':'image/png'},body:blob
+  });
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||'Falha ao publicar a prévia do mural.');
+  return data.url;
+}
+
+
 // Brand-wide OG card when the link points to the home rather than one encontrista.
 // Rendered in the authenticated admin browser and served as PNG from R2.
 export async function createDefaultOgImage() {

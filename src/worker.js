@@ -29,6 +29,14 @@ async function jsonBody(request, max=80_000) {
   if (input.length > max) bad('Requisição muito grande.',413);
   try { return JSON.parse(input); } catch { bad('JSON inválido.'); }
 }
+function normaliseWhatsAppPhone(raw) {
+  const digits=String(raw||'').replace(/\D/g,'');
+  if(!digits)return '';
+  const canonical=(digits.length===10||digits.length===11)?'55'+digits:digits;
+  if(!/^55[1-9][0-9][0-9]{8,9}$/.test(canonical))
+    bad('Informe um WhatsApp brasileiro válido com DDD (ex.: 32 99966-2604).',400);
+  return canonical;
+}
 function assertText(value, max, label, required=true) {
   if (typeof value !== 'string') bad(`${label} inválido.`);
   const s=value.trim();
@@ -368,8 +376,16 @@ function escapeMeta(value){
 // in Worker-rendered HTML, even when the admin has not generated a portrait PNG.
 const DEFAULT_OG_PATH = '/og-ejc-default.png';
 const DEFAULT_OG_VERSION = '20261107c';
-function socialImage(recipient, defaultOg=null) {
-  const personalized = recipient?.og_key && (!recipient.photo_key || recipient.photo_consent);
+function socialImage(recipient, defaultOg=null, kind='enviar') {
+  const withPhotoConsent=!recipient?.photo_key || !!recipient.photo_consent;
+  if(kind==='mural' && recipient?.mural_og_key && withPhotoConsent) {
+    const version=recipient.mural_og_key.split('/').pop();
+    return {
+      path:'/api/og/mural/'+encodeURIComponent(recipient.slug)+'.png?v='+encodeURIComponent(version),
+      version,width:1200,height:630,
+    };
+  }
+  const personalized = recipient?.og_key && withPhotoConsent;
   if (personalized) {
     const version = recipient.og_key.split('/').pop();
     return {
@@ -390,10 +406,10 @@ function buildSocialMeta(origin, recipient, kind = 'enviar', defaultOg=null) {
     : 'Cartinhas do XX EJC Simonésia';
   const description = person
     ? kind === 'mural'
-      ? 'Um cantinho privado para guardar mensagens, fotos e áudios. Acesso somente com código pessoal.'
+      ? 'Tem um carinho especial esperando por você! Abra seu mural privado do XX EJC Simonésia. Deus te ama, persevere na fé.'
       : 'Envie fotos, áudios e palavras especiais para ' + person + ' no XX EJC de Simonésia.'
     : 'Uma homenagem especial para guardar no coração. Cartinhas do XX EJC Simonésia.';
-  const image = socialImage(recipient,defaultOg);
+  const image = socialImage(recipient,defaultOg,kind);
   const imageUrl = origin + image.path;
   const canonicalPath = person
     ? '/' + kind + '/' + encodeURIComponent(recipient.slug)
@@ -414,7 +430,7 @@ function buildSocialMeta(origin, recipient, kind = 'enviar', defaultOg=null) {
     ['property', 'og:image:width', String(image.width)],
     ['property', 'og:image:height', String(image.height)],
     ['property', 'og:image:alt', person
-      ? 'Arte da cartinha dedicada a ' + person + ', XX EJC Simonésia'
+      ? (kind==='mural' ? 'Convite colorido para o mural secreto de ' : 'Arte da cartinha dedicada a ') + person + ', XX EJC Simonésia'
       : 'Cartinhas do XX EJC Simonésia'],
     ['name', 'twitter:card', 'summary_large_image'],
     ['name', 'twitter:title', title],
@@ -514,6 +530,20 @@ async function createCheckout(req,env,config) {
 }
 
 async function publicRoute(req,env,path) {
+  const muralOg=path.match(/^\/api\/og\/mural\/([a-z0-9-]+)\.png$/);
+  if(muralOg&&(req.method==='GET'||req.method==='HEAD')){
+    const r=await env.DB.prepare(
+      'SELECT mural_og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
+    ).bind(muralOg[1]).first();
+    if(!r||!r.mural_og_key||(r.photo_key&&!r.photo_consent))
+      bad('Imagem do mural não disponível.',404);
+    const image=await env.MEDIA.get(r.mural_og_key);
+    if(!image)bad('Imagem do mural não disponível.',404);
+    return new Response(req.method==='HEAD'?null:image.body,{headers:{
+      ...BASE_HEADERS,'Content-Type':'image/png','Content-Length':String(image.size),
+      'Cache-Control':'public, max-age=300'
+    }});
+  }
   const ogImage=path.match(/^\/api\/og\/([a-z0-9-]+)\.png$/);
   if(ogImage&&(req.method==='GET'||req.method==='HEAD')){
     const r=await env.DB.prepare(
@@ -963,14 +993,67 @@ async function adminRoute(req,env,path) {
     if(r.og_key)await env.MEDIA.delete(r.og_key);
     return result({ok:true,url:'/api/og/'+r.slug+'.png'});
   }
+
+  const muralOgUpload=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/mural-og$/);
+  if(muralOgUpload && req.method==='POST'){
+    const r=await env.DB.prepare(
+      'SELECT id,slug,mural_og_key,photo_key,photo_consent FROM recipients WHERE id=? AND active=1'
+    ).bind(muralOgUpload[1]).first();
+    if(!r)bad('Encontrista não encontrado.',404);
+    if(r.photo_key&&!r.photo_consent)bad('Foto sem autorização de publicação.',403);
+    const image=await receiveSafeImage(req,5*1024*1024);
+    if(image.type!=='image/png')bad('A prévia do mural deve ser PNG.',415);
+    const dimensions=new DataView(image.bytes.buffer,image.bytes.byteOffset,image.bytes.byteLength);
+    if(image.bytes.byteLength<24||dimensions.getUint32(16)!==1200||dimensions.getUint32(20)!==630)
+      bad('A OG do mural deve medir 1200 × 630 pixels.',400);
+    const key='og/mural/v1/'+r.id+'/'+newId()+'.png';
+    await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:'image/png'}});
+    await env.DB.prepare('UPDATE recipients SET mural_og_key=? WHERE id=?').bind(key,r.id).run();
+    if(r.mural_og_key)await env.MEDIA.delete(r.mural_og_key).catch(()=>{});
+    return result({ok:true,url:'/api/og/mural/'+r.slug+'.png?v='+key.split('/').pop()});
+  }
+
+  const inviteLink=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/whatsapp-link$/);
+  if(inviteLink && req.method==='POST'){
+    const person=await env.DB.prepare(
+      'SELECT id,name,slug,active,mural_code,whatsapp_phone,og_key,mural_og_key,photo_key,photo_consent FROM recipients WHERE id=?'
+    ).bind(inviteLink[1]).first();
+    if(!person || !person.active)bad('Encontrista indisponível.',404);
+    const phone=normaliseWhatsAppPhone(person.whatsapp_phone);
+    if(!phone)bad('Cadastre primeiro o WhatsApp do encontrista.',409);
+    const ready=await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM orders WHERE recipient_id=? AND submitted_at IS NOT NULL AND status IN ('paid','preparing','delivered')"
+    ).bind(person.id).first();
+    if(!ready?.count)bad('O encontrista ainda não tem cartinhas pagas e enviadas.',409);
+    if(!person.mural_og_key)bad('Gere a imagem do convite antes de compartilhar o mural.',409);
+    if(!person.mural_code){
+      const code=await nextUniqueMuralCode(env);
+      await env.DB.prepare('UPDATE recipients SET mural_code=? WHERE id=? AND mural_code IS NULL').bind(code,person.id).run();
+      const latest=await env.DB.prepare('SELECT mural_code FROM recipients WHERE id=?').bind(person.id).first();
+      person.mural_code=latest.mural_code;
+    }
+    const grant=await muralGrant(env,person);
+    const origin=new URL(env.PUBLIC_ORIGIN||req.url).origin;
+    const image=socialImage(person,null,'mural');
+    const address=new URL('/mural/'+encodeURIComponent(person.slug),origin);
+    address.searchParams.set('og',image.version);
+    // Fragment keeps the access token out of HTTP logs and OG preview crawlers.
+    address.hash='token='+encodeURIComponent(grant);
+    return result({
+      name:person.name,phone,url:address.toString(),count:ready.count,
+      og_url:origin+image.path,expires_in_days:14
+    });
+  }
+
   const photoUpload=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})\/photo$/);
   if(photoUpload && (req.method==='POST'||req.method==='DELETE')) {
-    const r=await env.DB.prepare('SELECT id,photo_key,og_key FROM recipients WHERE id=?').bind(photoUpload[1]).first();
+    const r=await env.DB.prepare('SELECT id,photo_key,og_key,mural_og_key FROM recipients WHERE id=?').bind(photoUpload[1]).first();
     if(!r)bad('Encontrista não encontrado.',404);
     if(req.method==='DELETE') {
-      await env.DB.prepare('UPDATE recipients SET photo_key=NULL,photo_consent=0,og_key=NULL WHERE id=?').bind(r.id).run();
+      await env.DB.prepare('UPDATE recipients SET photo_key=NULL,photo_consent=0,og_key=NULL,mural_og_key=NULL WHERE id=?').bind(r.id).run();
       if(r.photo_key)await env.MEDIA.delete(r.photo_key);
       if(r.og_key)await env.MEDIA.delete(r.og_key);
+      if(r.mural_og_key)await env.MEDIA.delete(r.mural_og_key).catch(()=>{});
       return result({ok:true});
     }
     if(req.headers.get('X-Photo-Consent')!=='confirmed')bad('Confirme a autorização para divulgação da foto.',403);
@@ -979,9 +1062,10 @@ async function adminRoute(req,env,path) {
     if(!isSquareRecipientJpeg(image.bytes))bad('A foto precisa estar recortada em quadrado (1:1). Use o editor de fotos.',422);
     const key=`recipients/${r.id}/${newId()}`;
     await env.MEDIA.put(key,image.bytes,{httpMetadata:{contentType:image.type}});
-    await env.DB.prepare('UPDATE recipients SET photo_key=?,photo_consent=1,og_key=NULL WHERE id=?').bind(key,r.id).run();
+    await env.DB.prepare('UPDATE recipients SET photo_key=?,photo_consent=1,og_key=NULL,mural_og_key=NULL WHERE id=?').bind(key,r.id).run();
     if(r.photo_key)await env.MEDIA.delete(r.photo_key);
     if(r.og_key)await env.MEDIA.delete(r.og_key);
+    if(r.mural_og_key)await env.MEDIA.delete(r.mural_og_key).catch(()=>{});
     return result({ok:true,photo_url:`/api/recipients/${r.id}/photo?v=${key.split('/').pop()}`});
   }
   // One Pix may pay many private letters. Match payment IDs and then
@@ -1116,8 +1200,10 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/bootstrap'&&req.method==='GET'){
     const [config,recipients,orders]=await Promise.all([
       settings(env),
-      env.DB.prepare(`SELECT r.id,r.name,r.slug,r.active,r.created_at,r.photo_key,r.photo_consent,r.og_key,r.mural_code,
-        (SELECT COUNT(*) FROM orders o WHERE o.recipient_id=r.id) AS order_count
+      env.DB.prepare(`SELECT r.id,r.name,r.slug,r.active,r.created_at,r.photo_key,r.photo_consent,r.og_key,r.mural_og_key,r.mural_code,r.whatsapp_phone,
+        (SELECT COUNT(*) FROM orders o WHERE o.recipient_id=r.id) AS order_count,
+        (SELECT COUNT(*) FROM orders o WHERE o.recipient_id=r.id AND o.submitted_at IS NOT NULL
+          AND o.status IN ('paid','preparing','delivered')) AS ready_letter_count
         FROM recipients r ORDER BY r.name COLLATE NOCASE`).all(),
       env.DB.prepare(`SELECT o.id,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,
         CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted,o.demo,
@@ -1133,6 +1219,8 @@ async function adminRoute(req,env,path) {
         ...r,
         photo_url:recipientPhotoUrl(r),
         og_url:socialImage(r).path,
+        mural_og_url:socialImage(r,null,'mural').path,
+        mural_og_ready:!!r.mural_og_key,
         og_safe:typeof r.og_key==='string'&&r.og_key.startsWith('og/v3/')
       })),orders:orders.results});
   }
@@ -1194,7 +1282,7 @@ async function adminRoute(req,env,path) {
   const recipient=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})$/);
   if(recipient&&['PATCH','DELETE'].includes(req.method)){
     const existing=await env.DB.prepare(
-      'SELECT id,name,slug,active,photo_key,og_key FROM recipients WHERE id=?'
+      'SELECT id,name,slug,active,photo_key,og_key,mural_og_key,whatsapp_phone FROM recipients WHERE id=?'
     ).bind(recipient[1]).first();
     if(!existing)bad('Encontrista não encontrado.',404);
     const linked=await env.DB.prepare(
@@ -1212,11 +1300,12 @@ async function adminRoute(req,env,path) {
       if(deleted.meta.changes!==1)bad('Encontrista recebeu uma cartinha durante a exclusão. Atualize a página.',409);
       if(existing.photo_key)await env.MEDIA.delete(existing.photo_key).catch(()=>{});
       if(existing.og_key)await env.MEDIA.delete(existing.og_key).catch(()=>{});
+      if(existing.mural_og_key)await env.MEDIA.delete(existing.mural_og_key).catch(()=>{});
       return result({ok:true,mode:'deleted',linked_orders:0});
     }
     const data=await jsonBody(req,700);
     if(!data || typeof data!=='object'||Array.isArray(data))bad('Dados inválidos.');
-    if(!Object.hasOwn(data,'name')&&!Object.hasOwn(data,'active'))bad('Informe o nome ou a situação do encontrista.');
+    if(!Object.hasOwn(data,'name')&&!Object.hasOwn(data,'active')&&!Object.hasOwn(data,'whatsapp_phone'))bad('Informe nome, WhatsApp ou situação do encontrista.');
     const name=Object.hasOwn(data,'name')?assertText(data.name,100,'Nome'):existing.name;
     const active=Object.hasOwn(data,'active')
       ? (typeof data.active==='boolean'?Number(data.active):bad('A situação deve ser verdadeira ou falsa.'))
@@ -1227,11 +1316,13 @@ async function adminRoute(req,env,path) {
         bad('Já existe um encontrista com esse nome.',409);
     }
     const renamed=name!==existing.name;
-    await env.DB.prepare('UPDATE recipients SET name=?,active=?,og_key=? WHERE id=?')
-      .bind(name,active,renamed?null:existing.og_key,existing.id).run();
+    const phone=Object.hasOwn(data,'whatsapp_phone')?normaliseWhatsAppPhone(data.whatsapp_phone):existing.whatsapp_phone;
+    await env.DB.prepare('UPDATE recipients SET name=?,active=?,whatsapp_phone=?,og_key=?,mural_og_key=? WHERE id=?')
+      .bind(name,active,phone,renamed?null:existing.og_key,renamed?null:existing.mural_og_key,existing.id).run();
     if(renamed&&existing.og_key)await env.MEDIA.delete(existing.og_key).catch(()=>{});
+    if(renamed&&existing.mural_og_key)await env.MEDIA.delete(existing.mural_og_key).catch(()=>{});
     // Keep slug and mural code so existing printed QRs, tokens and links continue working.
-    return result({ok:true,name,slug:existing.slug,active:!!active,linked_orders:linked.count,
+    return result({ok:true,name,whatsapp_phone:phone,slug:existing.slug,active:!!active,linked_orders:linked.count,
       og_needs_refresh:renamed});
   }
   const detail=path.match(/^\/api\/admin\/orders\/(EJC-[A-F0-9]{12})$/);
@@ -1375,7 +1466,7 @@ export default {
       // without the Accept/Sec-Fetch headers that Cloudflare SPA fallback expects.
       const social=path.match(/^\/(enviar|mural)\/([a-z0-9-]+)$/);
       const socialRecipient=social?await env.DB.prepare(
-        'SELECT name,slug,og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
+        'SELECT name,slug,og_key,mural_og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
       ).bind(social[2]).first():null;
       if(path==='/og-ejc-default.png'&&(request.method==='GET'||request.method==='HEAD')){
         const image=await env.MEDIA.get('og/default-v3.png');

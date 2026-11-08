@@ -16,6 +16,7 @@ function fixture(){
   sql.exec(fs.readFileSync(new URL('../migrations/0008_read_receipts_notifications.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0009_checkout_cart.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0010_private_payer_name.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0011_recipient_whatsapp.sql',import.meta.url),'utf8'));
 
   const DB={
     prepare(query){const stmt=(...values)=>({first:async()=>sql.prepare(query).get(...values)||null,all:async()=>({results:sql.prepare(query).all(...values)}),run:async()=>({meta:sql.prepare(query).run(...values)})});return {...stmt(),bind:stmt};},
@@ -1044,4 +1045,84 @@ test('modo técnico abre visão completa de um encontrista pelo token pessoal se
   assert.equal(summary.letters.length,2);
   assert.ok(!JSON.stringify(summary).includes('Primeira mensagem privada'));
   assert.ok(!JSON.stringify(summary).includes('Segunda mensagem privada'));
+});
+
+
+test('WhatsApp privado: telefone não é público, convite só para cartinha paga, enviada e com OG',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const recipient=list[0],id=recipient.id;
+  const url='/api/admin/recipients/'+id;
+  const withPhone=await call(env,url,'PATCH',{whatsapp_phone:'(32) 99966-2604'},admin);
+  assert.equal(withPhone.status,200);
+  assert.equal(withPhone.data.whatsapp_phone,'5532999662604');
+  assert.equal((await call(env,url,'PATCH',{whatsapp_phone:'ABC'},admin)).status,400);
+  const adminList=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data.recipients;
+  assert.equal(adminList.find(person=>person.id===id).whatsapp_phone,'5532999662604');
+  const publicList=(await call(env,'/api/public')).data.recipients;
+  assert.equal('whatsapp_phone' in publicList.find(person=>person.id===id),false);
+
+  const linkPath=url+'/whatsapp-link';
+  assert.equal((await call(env,linkPath,'POST',{})).status,401);
+  assert.equal((await call(env,linkPath,'POST',{},admin)).status,409);
+
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:recipient.slug,sender_name:'Uma pessoa especial'
+  });
+  assert.equal(created.status,201);
+  const buyerToken=created.data.token;
+  await call(env,'/api/order/message','PUT',{rich_html:'<p>Cartinha com amor</p>'},{token:buyerToken});
+  await call(env,'/api/order/claim','POST',{}, {token:buyerToken});
+  const paid=await call(env,'/api/admin/orders/'+created.data.id+'/status','PATCH',{
+    status:'paid',bank_reference:'WAPP98765432100001',bank_checked:true,amount_checked:true,
+  },admin);
+  assert.equal(paid.status,200);
+  assert.equal((await call(env,linkPath,'POST',{},admin)).status,409);
+  assert.equal((await call(env,'/api/order/submit','POST',{}, {token:buyerToken})).status,200);
+  assert.equal((await call(env,linkPath,'POST',{},admin)).status,409);
+
+  // A OG nunca inclui conteúdo privado, nem o token.
+  const png=new Uint8Array(24);
+  png.set([137,80,78,71,13,10,26,10],0);
+  new DataView(png.buffer).setUint32(16,1200);
+  new DataView(png.buffer).setUint32(20,630);
+  const response=await worker.fetch(new Request('https://ejc.test'+url+'/mural-og',{
+    method:'POST',headers:{Origin:'https://ejc.test',Cookie:admin.cookie,'Content-Type':'image/png'},
+    body:png,
+  }),env);
+  assert.equal(response.status,200);
+  const shared=await call(env,linkPath,'POST',{},admin);
+  assert.equal(shared.status,200);
+  assert.equal(shared.data.phone,'5532999662604');
+  assert.equal(shared.data.count,1);
+  assert.ok(shared.data.og_url.includes('/api/og/mural/'));
+  const link=new URL(shared.data.url);
+  assert.equal(link.pathname,'/mural/'+recipient.slug);
+  assert.ok(link.searchParams.get('og'));
+  assert.ok(link.hash.startsWith('#token=m2.'));
+  assert.equal(shared.data.expires_in_days,14);
+  assert.ok(!JSON.stringify(shared.data).includes('Cartinha com amor'));
+  const mural=await call(env,'/api/mural/'+recipient.slug,'GET',undefined,{
+    token:new URLSearchParams(link.hash.slice(1)).get('token'),
+  });
+  assert.equal(mural.status,200);
+  assert.equal(mural.data.locked,true);
+
+  const og=await worker.fetch(new Request('https://ejc.test/api/og/mural/'+recipient.slug+'.png'),env);
+  assert.equal(og.status,200);
+  assert.equal(og.headers.get('Content-Type'),'image/png');
+  assert.deepEqual([...new Uint8Array(await og.arrayBuffer())], [...png]);
+  const second=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data.recipients.find(person=>person.id===id);
+  assert.equal(second.ready_letter_count,1);
+  assert.equal(second.mural_og_ready,true);
+});
+
+test('convite WhatsApp mantém a chave de acesso existente, respeita alterações de telefone e arquivamento',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const person=list[0],path='/api/admin/recipients/'+person.id;
+  assert.equal((await call(env,path,'PATCH',{whatsapp_phone:'55 32 99966 2604'},admin)).data.whatsapp_phone,'5532999662604');
+  assert.equal((await call(env,path,'PATCH',{whatsapp_phone:''},admin)).data.whatsapp_phone,'');
+  assert.equal((await call(env,path,'PATCH',{active:false},admin)).status,200);
+  const row=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data.recipients.find(x=>x.id===person.id);
+  assert.equal(row.active,0);
+  assert.equal((await call(env,path+'/whatsapp-link','POST',{},admin)).status,404);
 });

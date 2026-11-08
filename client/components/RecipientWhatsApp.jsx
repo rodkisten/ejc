@@ -1,0 +1,189 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { Check, Copy, ExternalLink, ImagePlus, MessageCircle, Phone, RefreshCw } from 'lucide-react';
+import { api } from '../lib/api';
+import { publishMuralOgImage } from '../lib/og';
+import { muralInvitationMessage, whatsappShareUrl } from '../lib/recipientWhatsApp';
+import '../styles/recipient-whatsapp.css';
+
+export function RecipientPhoneEditor({ recipient, onRefresh }) {
+  const [phone, setPhone] = useState(recipient.whatsapp_phone || '');
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+  useEffect(() => setPhone(recipient.whatsapp_phone || ''), [recipient.id, recipient.whatsapp_phone]);
+
+  async function save(event) {
+    event.preventDefault();
+    setBusy(true); setNotice('');
+    try {
+      await api('/api/admin/recipients/'+recipient.id, {
+        method: 'PATCH', data: { whatsapp_phone: phone },
+      });
+      await onRefresh?.();
+      setNotice('Número salvo somente no admin.');
+    } catch (cause) { setNotice(cause.message); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <form className="recipient-phone-editor" onSubmit={save}>
+      <label htmlFor={'recipient-whatsapp-'+recipient.id}>
+        <Phone size={15} /> WhatsApp do encontrista <small>(uso privado)</small>
+      </label>
+      <div className="recipient-phone-controls">
+        <input type="tel" inputMode="tel" autoComplete="off" spellCheck={false}
+          id={'recipient-whatsapp-'+recipient.id}
+          placeholder="(32) 99966-2604" maxLength={25} value={phone}
+          onChange={(event) => { setPhone(event.target.value); setNotice(''); }}
+          disabled={busy} />
+        <button type="submit" className="btn outline" disabled={busy || phone===(recipient.whatsapp_phone||'')}>
+          <Check size={15} /> {busy ? 'Salvando…' : 'Salvar'}
+        </button>
+      </div>
+      {notice && <small className="recipient-phone-note" role="status">{notice}</small>}
+    </form>
+  );
+}
+
+export function WhatsAppShareButton({ recipient, onRefresh, compact = false }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [fallbackLink, setFallbackLink] = useState('');
+  const ready=Number(recipient.ready_letter_count || 0);
+  const canSend=recipient.active!==0 && !!recipient.whatsapp_phone && ready>0;
+
+  async function send() {
+    // Safari iOS requires opening a tab during the original tap, before awaits.
+    const popup=window.open('about:blank','_blank');
+    if(popup) {
+      popup.opener=null;
+      try {
+        popup.document.title='Preparando convite do XX EJC';
+        popup.document.body.innerText='Preparando seu WhatsApp…';
+      } catch { /* Safari may block document access. */ }
+    }
+    setBusy(true);setError('');setFallbackLink('');
+    try {
+      if(!recipient.mural_og_ready) await publishMuralOgImage(recipient);
+      const details=await api('/api/admin/recipients/'+recipient.id+'/whatsapp-link',{
+        method:'POST',data:{},
+      });
+      const message=muralInvitationMessage({
+        name:details.name,url:details.url,count:details.count,
+      });
+      const href=whatsappShareUrl({phone:details.phone,message});
+      if(popup && !popup.closed) {
+        try { popup.location.replace(href); }
+        catch { setFallbackLink(href); }
+      } else setFallbackLink(href);
+      await onRefresh?.();
+    } catch (cause) {
+      try { popup?.close(); } catch { /* No action. */ }
+      setError(cause.message||'Não foi possível preparar o convite.');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className={'whatsapp-action'+(compact?' is-compact':'')}>
+      <button type="button" className="btn whatsapp-send-button" disabled={!canSend||busy} onClick={send}
+        title={!ready?'Aguardando uma cartinha paga e enviada':!recipient.whatsapp_phone?'Cadastre o WhatsApp primeiro':''}>
+        <MessageCircle size={17} />
+        {busy?'Preparando link e OG…':'Enviar mural pelo WhatsApp'}
+      </button>
+      {ready===0 && <small className="whatsapp-action-hint">Aguardando cartinhas pagas e enviadas.</small>}
+      {ready>0 && !recipient.whatsapp_phone && <small className="whatsapp-action-hint">Salve o telefone antes de compartilhar.</small>}
+      {error && <p className="notice error" role="alert">{error}</p>}
+      {fallbackLink && <a href={fallbackLink} target="_blank" rel="noreferrer" className="btn outline">
+        <ExternalLink size={15} /> Abrir WhatsApp
+      </a>}
+    </div>
+  );
+}
+
+export default function WhatsAppAdmin({ info, reload }) {
+  const [query, setQuery] = useState('');
+  const [view, setView] = useState('all');
+  const [imageBusy, setImageBusy] = useState('');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const withLetters=useMemo(()=>info.recipients.filter(
+    person=>person.active!==0 && Number(person.order_count||0)>0
+  ),[info.recipients]);
+  const rows=useMemo(()=>withLetters.filter(person=>{
+    if(view==='ready' && Number(person.ready_letter_count||0)===0)return false;
+    if(view==='missing-phone' && person.whatsapp_phone)return false;
+    return !query || person.name.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR'));
+  }),[withLetters,view,query]);
+  const ready=withLetters.filter(person=>Number(person.ready_letter_count||0)>0).length;
+  const sendable=withLetters.filter(person=>Number(person.ready_letter_count||0)>0 && !!person.whatsapp_phone).length;
+
+  async function updateImage(person) {
+    setImageBusy(person.id);setError('');setNotice('');
+    try {
+      await publishMuralOgImage(person);
+      await reload();
+      setNotice('Arte de '+person.name+' atualizada para o convite no WhatsApp.');
+    } catch (cause) { setError(cause.message); }
+    finally { setImageBusy(''); }
+  }
+
+  return (
+    <section className="whatsapp-admin-page">
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">ENTREGA DAS CARTINHAS · XX EJC</span>
+          <h1>Convites pelo WhatsApp 💌</h1>
+          <p>Somente encontristas com cartinhas aparecem aqui. O link é pessoal, com uma mensagem de fé e prévia colorida gerada para cada mural.</p>
+        </div>
+      </div>
+      <div className="whatsapp-summary">
+        <div><strong>{withLetters.length}</strong><span>Com cartinhas vinculadas</span></div>
+        <div><strong>{ready}</strong><span>Com cartinhas prontas</span></div>
+        <div><strong>{sendable}</strong><span>Prontos para receber o convite</span></div>
+      </div>
+      <div className="notice">
+        <MessageCircle size={20} />
+        O botão abre o WhatsApp com a mensagem e o link preenchidos. Revise e toque em enviar no WhatsApp. O sistema não envia mensagens sozinho e não marca ninguém como notificado.
+      </div>
+      <div className="whatsapp-toolbar">
+        <input type="search" aria-label="Buscar encontrista" placeholder="Buscar encontrista…"
+          value={query} onChange={event=>setQuery(event.target.value)} />
+        <select aria-label="Filtrar convites" value={view} onChange={event=>setView(event.target.value)}>
+          <option value="all">Todos com cartinhas</option>
+          <option value="ready">Cartinhas prontas</option>
+          <option value="missing-phone">Sem telefone cadastrado</option>
+        </select>
+      </div>
+      {error && <p role="alert" className="notice error">{error}</p>}
+      {notice && <p role="status" className="notice success">{notice}</p>}
+      <div className="whatsapp-recipient-list">
+        {rows.map(person=>(
+          <article className="whatsapp-recipient form-card" key={person.id}>
+            <div className="whatsapp-recipient-overview">
+              {person.photo_url?
+                <img className="whatsapp-recipient-photo" src={person.photo_url} alt={'Foto de '+person.name}/>:
+                <div className="whatsapp-recipient-photo placeholder">{person.name.slice(0,2).toUpperCase()}</div>}
+              <div>
+                <strong>{person.name}</strong>
+                <small>{person.order_count} cartinha(s) vinculada(s) · {person.ready_letter_count||0} pronta(s)</small>
+                <small>{person.mural_og_ready?'Prévia personalizada pronta':'Arte do mural será gerada antes do envio'}</small>
+              </div>
+            </div>
+            {person.mural_og_url && <div className="whatsapp-og-thumb">
+              <img src={person.mural_og_url} alt={'Miniatura social de '+person.name} />
+            </div>}
+            <RecipientPhoneEditor recipient={person} onRefresh={reload}/>
+            <div className="whatsapp-recipient-actions">
+              <WhatsAppShareButton recipient={person} onRefresh={reload} />
+              <button type="button" className="btn outline" disabled={!!imageBusy}
+                onClick={()=>updateImage(person)}>
+                {imageBusy===person.id?<RefreshCw size={16}/>:<ImagePlus size={16}/>}
+                {imageBusy===person.id?'Gerando…':'Atualizar OG do mural'}
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+      {!rows.length && <p className="empty">Nenhum encontrista com cartinhas corresponde a esta busca.</p>}
+    </section>
+  );
+}

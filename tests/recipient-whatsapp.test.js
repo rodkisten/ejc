@@ -1,0 +1,43 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {
+  normalizeBrazilianWhatsApp, muralInvitationMessage, whatsappShareUrl
+} from '../client/lib/recipientWhatsApp.js';
+
+test('WhatsApp accepts mobile numbers with +55, DDD and formatting',()=>{
+  assert.equal(normalizeBrazilianWhatsApp('(32) 99966-2604'),'5532999662604');
+  assert.equal(normalizeBrazilianWhatsApp('+55 32 99966-2604'),'5532999662604');
+  assert.equal(normalizeBrazilianWhatsApp('32 99966 2604'),'5532999662604');
+  assert.equal(normalizeBrazilianWhatsApp('100'),'');
+  assert.equal(normalizeBrazilianWhatsApp(''),'');
+});
+
+test('message preserves exact recipient link and Catholic format with full Mini Mercado credits',()=>{
+  const url='https://ejc.migos.club/mural/maria?og=v123#token=m2.ABC.XYZ';
+  const message=muralInvitationMessage({name:'Maria Eduarda',url,count:3});
+  assert.match(message,/Maria, seu coração tem correspondência!/);
+  assert.match(message,/3 cartinhas especiais/);
+  assert.match(message,/Jeremias 31,3/);
+  assert.match(message,/Filipenses 1,6/);
+  assert.match(message,/Rodolfo Costa, Evelyne Pimentel/);
+  assert.match(message,/Tia Mariana e Tio Saulinho/);
+  assert.match(message,/Tia Daisy e Tio Davidson/);
+  assert.equal(message.split(url).length,2);
+  const wa=whatsappShareUrl({phone:'(32) 99966-2604',message});
+  const parsed=new URL(wa);
+  assert.equal(parsed.hostname,'wa.me');
+  assert.equal(parsed.pathname,'/5532999662604');
+  assert.equal(parsed.searchParams.get('text'),message);
+});
+
+test('no contact numbers or signed mural tokens are baked into public pages',()=>{
+  const admin=fs.readFileSync(new URL('../client/components/RecipientWhatsApp.jsx',import.meta.url),'utf8');
+  const worker=fs.readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
+  assert.match(admin,/RecipientPhoneEditor/);
+  assert.match(admin,/WhatsAppAdmin/);
+  assert.match(admin,/window\.open\('about:blank','_blank'\)/);
+  assert.match(worker,/await muralGrant\(env,person\)/);
+  assert.match(worker,/address\.hash='token='/);
+  assert.match(worker,/ready_letter_count/);
+});

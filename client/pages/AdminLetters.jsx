@@ -70,6 +70,12 @@ export default function AdminLetters() {
   const technicalMode = new URLSearchParams(location.search).get('secret') === '000000';
   const [technicalInput, setTechnicalInput] = useState('');
   const [technicalPassword, setTechnicalPassword] = useState('');
+  useEffect(() => {
+    if (!technicalMode) {
+      setTechnicalPassword('');
+      setTechnicalInput('');
+    }
+  }, [technicalMode]);
   const [letters, setLetters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

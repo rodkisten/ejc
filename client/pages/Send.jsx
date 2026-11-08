@@ -222,7 +222,7 @@ export default function Send() {
 
         <div className="notice">
           <LockKeyhole size={18} />
-          <span>Apenas quem tem o código pessoal do mural poderá ler. A coordenação confere o Pix e organiza a entrega, sem acessar o conteúdo.</span>
+          <span>Apenas quem tem o código pessoal do mural poderá ler. A coordenação pode ver o nome do remetente e os stickers, mas nunca o texto, fotos ou áudios.</span>
         </div>
         <div className="notice"><Info size={17} />
           <span>Os rascunhos com fotos e áudios ficam neste navegador até serem enviados após o pagamento. Não limpe os dados do Safari ou troque de aparelho.</span>

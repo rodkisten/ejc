@@ -60,3 +60,14 @@ test('a seleção deduplica ids repetidos para não liberar duas vezes',()=>{
     {[payments[0].id]:'E2026110812345678901234567890145'});
   assert.equal(entries.length,1);
 });
+
+test('aprovação de todos suporta mais de 100 Pix no mesmo lote',()=>{
+  const hundreds=Array.from({length:257},(_,index)=>({
+    id:'EJC-'+index.toString(16).padStart(12,'0').toUpperCase(),
+    status:'pending',total_cents:1000,bank_reference:'',
+  }));
+  const plan=prepareManualPixBatch(hundreds,hundreds.map(item=>item.id),{});
+  assert.equal(plan.length,257);
+  assert.equal(new Set(plan.map(({payment})=>payment.id)).size,257);
+  assert.ok(plan.every(({reference})=>reference===''));
+});

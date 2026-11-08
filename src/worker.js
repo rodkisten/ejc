@@ -1111,6 +1111,12 @@ async function adminRoute(req,env,path) {
       args.push(status);
     }
     if(input.only_sent===true)where.push('o.submitted_at IS NOT NULL');
+    // Paginate distinct payments, not letters: a checkout with many letters
+    // must never be split across pages. Stable ordering handles equal dates.
+    const offset=input.offset===undefined?0:input.offset;
+    if(!Number.isSafeInteger(offset)||offset<0||offset>1000000)bad('Página de pagamentos inválida.');
+    const pageSize=100;
+    if(input.pending_only===true)where.push("COALESCE(c.status,o.status) IN ('pending','claimed')");
     const condition=where.length?'WHERE '+where.join(' AND '):'';
     const sql=`
       WITH matched AS (
@@ -1121,7 +1127,7 @@ async function adminRoute(req,env,path) {
         LEFT JOIN checkouts c ON c.id=o.checkout_id
         ${condition}
         GROUP BY COALESCE(o.checkout_id,o.id)
-        ORDER BY payment_created DESC LIMIT 100
+        ORDER BY payment_created DESC,payment_id DESC LIMIT ? OFFSET ?
       )
       SELECT m.payment_id,
         COALESCE(c.status,o.status) AS payment_status,
@@ -1135,9 +1141,10 @@ async function adminRoute(req,env,path) {
       FROM matched m JOIN orders o ON COALESCE(o.checkout_id,o.id)=m.payment_id
       JOIN recipients r ON r.id=o.recipient_id
       LEFT JOIN checkouts c ON c.id=o.checkout_id
-      ORDER BY m.payment_created DESC,m.payment_id,o.checkout_item_index,o.created_at DESC LIMIT 2000
+      ORDER BY m.payment_created DESC,m.payment_id DESC,o.checkout_item_index,o.created_at DESC
     `;
-    const rows=(await env.DB.prepare(sql).bind(...args).all()).results;
+    // One extra payment determines whether another page exists.
+    const rows=(await env.DB.prepare(sql).bind(...args,pageSize+1,offset).all()).results;
     const payments=[];
     for(const row of rows){
       let payment=payments[payments.length-1];
@@ -1155,7 +1162,11 @@ async function adminRoute(req,env,path) {
         status:row.order_status,submitted:!!row.submitted
       });
     }
-    return result({payments,limit:100});
+    return result({
+      payments:payments.slice(0,pageSize),
+      limit:pageSize,
+      next_offset:payments.length>pageSize?offset+pageSize:null
+    });
   }
   // Only operational payment metadata is returned; letter content remains private.
   if(path==='/api/admin/reconciliation/payments'&&req.method==='GET'){

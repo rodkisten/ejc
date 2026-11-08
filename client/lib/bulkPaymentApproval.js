@@ -5,7 +5,7 @@ export function prepareManualPixBatch(payments, selectedIds, references) {
   if (!Array.isArray(payments) || !Array.isArray(selectedIds) ||
     !references || typeof references !== 'object') throw new Error('Seleção inválida.');
   const ids = [...new Set(selectedIds)];
-  if (!ids.length || ids.length > 100) throw new Error('Selecione de 1 a 100 pagamentos.');
+  if (!ids.length) throw new Error('Selecione ao menos um pagamento.');
   const byId = new Map(payments.map((payment) => [payment.id, payment]));
   const existing = new Set(payments.filter((payment) => !ids.includes(payment.id))
     .map((payment) => String(payment.bank_reference || '').trim().toUpperCase()).filter(Boolean));

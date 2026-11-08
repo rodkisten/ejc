@@ -22,12 +22,19 @@ Esses casos permanecem para conferência individual no Sicoob.
 ## 2. Sem OFX, pela pesquisa de pagamentos
 
 1. Em Admin → Pedidos → **Localizar um Pix e suas cartinhas**, filtre os pagamentos.
-2. Use **Selecionar N pendentes desta busca**, ou marque os Pix desejados.
+2. Clique em **Selecionar TODOS os pendentes desta busca**. O sistema percorre
+   todas as páginas da consulta, mesmo com centenas de pagamentos. A lista comum
+   continua paginada, com **Carregar mais pagamentos**, para não pesar no celular.
+   Alternativamente, selecione apenas os pendentes já carregados ou marque cada Pix.
 3. O **código Pix / referência bancária E2E/FITID é opcional** por pagamento.
    Preencha quando tiver essa informação. Não invente códigos.
 4. Marque as confirmações de crédito recebido e de valor conferido.
 5. Pressione **Confirmar N Pix de uma vez** e autorize o lote apenas uma vez.
-   A confirmação mostra quantos pagamentos estão sem referência.
+   Não há mais o limite de 100 confirmações. A confirmação informa a quantidade,
+   o valor total e quantos pagamentos estão sem referência.
+6. Mantenha a página aberta enquanto os pagamentos são processados. Um progresso
+   mostra os sucessos e falhas; itens não confirmados permanecem selecionados
+   para uma tentativa posterior.
 
 Se informar códigos, cada Pix precisa de sua referência individual:
 o formulário rejeita referências repetidas ou inválidas. Se não houver código,

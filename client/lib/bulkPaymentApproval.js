@@ -1,6 +1,6 @@
-// Batch selection is explicit, but the admin must enter a distinct bank
-// reference for EVERY Pix. A common reference cannot confirm unrelated
-// transfers, and the server rechecks status and reuse before updating.
+// Batch selection requires explicit bank/amount verification. Bank references
+// are optional, but supplied references must be valid and unique. Never
+// generate a fake transaction identifier for payments without one.
 export function prepareManualPixBatch(payments, selectedIds, references) {
   if (!Array.isArray(payments) || !Array.isArray(selectedIds) ||
     !references || typeof references !== 'object') throw new Error('Seleção inválida.');
@@ -15,11 +15,11 @@ export function prepareManualPixBatch(payments, selectedIds, references) {
     if (!payment || !['pending', 'claimed'].includes(payment.status))
       throw new Error('O pagamento ' + id + ' não está mais aguardando Pix.');
     const reference = String(references[id] || '').trim().toUpperCase();
-    if (!/^[A-Z0-9:/._-]{8,128}$/.test(reference))
-      throw new Error('Informe a referência bancária completa de ' + id + '.');
-    if (used.has(reference) || existing.has(reference))
+    if (reference && !/^[A-Z0-9:/._-]{8,128}$/.test(reference))
+      throw new Error('Informe uma referência bancária válida para ' + id + ', ou deixe o campo vazio.');
+    if (reference && (used.has(reference) || existing.has(reference)))
       throw new Error('A referência ' + reference + ' está duplicada.');
-    used.add(reference);
+    if (reference) used.add(reference);
     return { payment, reference };
   });
 }

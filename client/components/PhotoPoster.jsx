@@ -39,9 +39,9 @@ export default function PhotoPoster({ value, recipientName, photoUrl }) {
         <strong>cartinha!</strong>
         <i aria-hidden="true">♡</i>
       </section>
-      <div className="poster-wish">
+      <div className={photoUrl ? 'poster-wish with-photo' : 'poster-wish'}>
         <span>{recipientName ? 'UM CARINHO PARA' : 'PARABENIZE UM ENCONTRISTA'}</span>
-        {recipientName ? <strong>{recipientName}</strong> : <strong>com fé e carinho</strong>}
+        {recipientName ? <strong style={{ fontSize: recipientName.length > 32 ? '3cqw' : recipientName.length > 20 ? '3.6cqw' : '4.4cqw' }}>{recipientName}</strong> : <strong>com fé e carinho</strong>}
       </div>
       {photoUrl && (
         <div className="poster-photo">

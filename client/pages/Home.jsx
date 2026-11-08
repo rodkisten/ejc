@@ -9,6 +9,7 @@ import { useApp } from '../main';
 import { useCart } from '../lib/cart';
 import { api, money, track } from '../lib/api';
 import SquarePhotoEditor from '../components/SquarePhotoEditor';
+import RecipientPolaroidWall from '../components/RecipientPolaroidWall';
 import { publishOgImage } from '../lib/og';
 import { avatarColor, avatarInitials, visibleRecipients } from '../lib/recipient-wall';
 
@@ -196,6 +197,8 @@ export default function Home() {
         <span><PenLine size={17} /> Papel e adesivos</span>
         <span><LockKeyhole size={17} /> Mural privado</span>
       </div>
+
+      <RecipientPolaroidWall recipients={recipients} />
 
       <section id="encontristas" className="find-section classic-people-wall"
         aria-labelledby="recipient-heading">

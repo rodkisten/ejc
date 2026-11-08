@@ -582,7 +582,7 @@ async function publicRoute(req,env,path) {
     const attempts=await env.DB.prepare('SELECT attempts,window_start FROM mural_code_attempts WHERE fingerprint=?').bind(fingerprint).first();
     if(attempts && attempts.window_start>seconds-900 && attempts.attempts>=100)
       bad('Muitas tentativas. Aguarde 15 minutos.',429);
-    const person=await env.DB.prepare('SELECT id,slug,mural_code FROM recipients WHERE mural_code=? AND active=1').bind(code).first();
+    const person=await env.DB.prepare('SELECT id,slug,mural_code FROM recipients WHERE mural_code=?').bind(code).first();
     if(!person) {
       const active=attempts&&attempts.window_start>seconds-900;
       await env.DB.prepare('INSERT INTO mural_code_attempts(fingerprint,attempts,window_start) VALUES(?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET attempts=excluded.attempts,window_start=excluded.window_start')
@@ -597,7 +597,7 @@ async function publicRoute(req,env,path) {
   const mural=path.match(/^\/api\/mural\/([a-z0-9-]+)$/);
   if((mural||cardPath)&&req.method==='GET'){
     const slug=mural?mural[1]:cardPath[1];
-    const person=await env.DB.prepare('SELECT id,name,slug,mural_code,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1')
+    const person=await env.DB.prepare('SELECT id,name,slug,mural_code,photo_key,photo_consent FROM recipients WHERE slug=?')
       .bind(slug).first();
     if(!person)bad('Encontrista não encontrado.',404);
     const grant=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
@@ -819,23 +819,23 @@ async function adminRoute(req,env,path) {
     const status=maskedStatus(input.status||'');
     const where=[],args=[];
     if(query){
-      const term=likeTerm(query.toUpperCase());
+      const term=likeTerm(query);
       where.push(`(
         UPPER(REPLACE(COALESCE(c.id,o.id),'-','')) LIKE ? ESCAPE char(92)
         OR UPPER(REPLACE(COALESCE(c.txid,o.txid),'-','')) LIKE ? ESCAPE char(92)
         OR UPPER(COALESCE(c.bank_reference,o.bank_reference,'')) LIKE ? ESCAPE char(92)
         OR UPPER(COALESCE(c.payer_name,o.payer_name,'')) LIKE ? ESCAPE char(92)
-        OR UPPER(r.name) LIKE ? ESCAPE char(92)
+        OR r.name LIKE ? ESCAPE char(92) COLLATE NOCASE
       )`);
       args.push(term,term,term,term,term);
     }
     if(recipient){
-      where.push('UPPER(r.name) LIKE ? ESCAPE char(92)');
-      args.push(likeTerm(recipient.toUpperCase()));
+      where.push('r.name LIKE ? ESCAPE char(92) COLLATE NOCASE');
+      args.push(likeTerm(recipient));
     }
     if(payer){
-      where.push('UPPER(COALESCE(c.payer_name,o.payer_name)) LIKE ? ESCAPE char(92)');
-      args.push(likeTerm(payer.toUpperCase()));
+      where.push('COALESCE(c.payer_name,o.payer_name) LIKE ? ESCAPE char(92) COLLATE NOCASE');
+      args.push(likeTerm(payer));
     }
     if(status){
       where.push('COALESCE(c.status,o.status)=?');
@@ -924,7 +924,9 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/bootstrap'&&req.method==='GET'){
     const [config,recipients,orders]=await Promise.all([
       settings(env),
-      env.DB.prepare('SELECT id,name,slug,active,created_at,photo_key,photo_consent,og_key,mural_code FROM recipients ORDER BY name COLLATE NOCASE').all(),
+      env.DB.prepare(`SELECT r.id,r.name,r.slug,r.active,r.created_at,r.photo_key,r.photo_consent,r.og_key,r.mural_code,
+        (SELECT COUNT(*) FROM orders o WHERE o.recipient_id=r.id) AS order_count
+        FROM recipients r ORDER BY r.name COLLATE NOCASE`).all(),
       env.DB.prepare(`SELECT o.id,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,
         CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted,o.demo,
         r.name AS recipient_name,r.slug AS recipient_slug,
@@ -998,10 +1000,47 @@ async function adminRoute(req,env,path) {
     return result({ok:true,inserted});
   }
   const recipient=path.match(/^\/api\/admin\/recipients\/([a-f0-9-]{36})$/);
-  if(recipient&&req.method==='PATCH'){
-    const data=await jsonBody(req),name=assertText(data.name,100,'Nome');
-    await env.DB.prepare('UPDATE recipients SET name=?,active=? WHERE id=?').bind(name,data.active!==false?1:0,recipient[1]).run();
-    return result({ok:true});
+  if(recipient&&['PATCH','DELETE'].includes(req.method)){
+    const existing=await env.DB.prepare(
+      'SELECT id,name,slug,active,photo_key,og_key FROM recipients WHERE id=?'
+    ).bind(recipient[1]).first();
+    if(!existing)bad('Encontrista não encontrado.',404);
+    const linked=await env.DB.prepare(
+      'SELECT COUNT(*) AS count FROM orders WHERE recipient_id=?'
+    ).bind(existing.id).first();
+    if(req.method==='DELETE'){
+      if(linked.count>0){
+        // Keep bank records and private letters intact; hide from new purchases.
+        await env.DB.prepare('UPDATE recipients SET active=0 WHERE id=?').bind(existing.id).run();
+        return result({ok:true,mode:'archived',linked_orders:linked.count});
+      }
+      const deleted=await env.DB.prepare(
+        'DELETE FROM recipients WHERE id=? AND NOT EXISTS (SELECT 1 FROM orders WHERE recipient_id=?)'
+      ).bind(existing.id,existing.id).run();
+      if(deleted.meta.changes!==1)bad('Encontrista recebeu uma cartinha durante a exclusão. Atualize a página.',409);
+      if(existing.photo_key)await env.MEDIA.delete(existing.photo_key).catch(()=>{});
+      if(existing.og_key)await env.MEDIA.delete(existing.og_key).catch(()=>{});
+      return result({ok:true,mode:'deleted',linked_orders:0});
+    }
+    const data=await jsonBody(req,700);
+    if(!data || typeof data!=='object'||Array.isArray(data))bad('Dados inválidos.');
+    if(!Object.hasOwn(data,'name')&&!Object.hasOwn(data,'active'))bad('Informe o nome ou a situação do encontrista.');
+    const name=Object.hasOwn(data,'name')?assertText(data.name,100,'Nome'):existing.name;
+    const active=Object.hasOwn(data,'active')
+      ? (typeof data.active==='boolean'?Number(data.active):bad('A situação deve ser verdadeira ou falsa.'))
+      : existing.active;
+    if(name!==existing.name){
+      const people=(await env.DB.prepare('SELECT id,name FROM recipients WHERE id<>?').bind(existing.id).all()).results;
+      if(people.some(person=>person.name.toLocaleLowerCase('pt-BR')===name.toLocaleLowerCase('pt-BR')))
+        bad('Já existe um encontrista com esse nome.',409);
+    }
+    const renamed=name!==existing.name;
+    await env.DB.prepare('UPDATE recipients SET name=?,active=?,og_key=? WHERE id=?')
+      .bind(name,active,renamed?null:existing.og_key,existing.id).run();
+    if(renamed&&existing.og_key)await env.MEDIA.delete(existing.og_key).catch(()=>{});
+    // Keep slug and mural code so existing printed QRs, tokens and links continue working.
+    return result({ok:true,name,slug:existing.slug,active:!!active,linked_orders:linked.count,
+      og_needs_refresh:renamed});
   }
   const detail=path.match(/^\/api\/admin\/orders\/(EJC-[A-F0-9]{12})$/);
   if(detail&&req.method==='GET'){

@@ -16,6 +16,7 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
   const [query, setQuery] = useState('');
   const [recipient, setRecipient] = useState('');
   const [payer, setPayer] = useState('');
+  const [sender, setSender] = useState('');
   const [status, setStatus] = useState('');
   const [onlySent, setOnlySent] = useState(false);
   const [payments, setPayments] = useState([]);
@@ -42,9 +43,9 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
     }
   }, []);
 
-  const currentFilters = () => ({ query, recipient, payer, status, only_sent: onlySent });
+  const currentFilters = () => ({ query, recipient, payer, sender, status, only_sent: onlySent });
   useEffect(() => {
-    search({ query: '', recipient: '', payer: '', status: '', only_sent: false });
+    search({ query: '', recipient: '', payer: '', sender: '', status: '', only_sent: false });
   }, [search]);
 
   function select(payment) {
@@ -118,6 +119,11 @@ export default function PaymentLookup({ recipients, onConfirmed }) {
             {(recipients || []).filter((person) => person.active !== 0).map((person) =>
               <option key={person.id} value={person.name}>{person.name}</option>)}
           </select>
+        </label>
+        <label className="admin-payment-field">
+          Nome de quem enviou
+          <input type="search" value={sender} autoComplete="off"
+            onChange={(event) => setSender(event.target.value)} placeholder="Assinatura da cartinha" />
         </label>
         <label className="admin-payment-field">
           Nome para conferência

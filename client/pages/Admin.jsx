@@ -3,6 +3,7 @@ import {NavLink,Routes,Route,useNavigate,useParams} from 'react-router-dom';
 import {ShieldCheck,ClipboardList,UsersRound,Settings2,QrCode as QrIcon,Eye,Check,Copy,Trash2,Sparkles,Printer,Download,LogOut,ExternalLink,RefreshCw,Heart,ImagePlus,Pencil,RotateCcw,X} from 'lucide-react';
 import { api, money, btime, track,download } from '../lib/api';
 import QrCode from '../components/QrCode';
+import PhotoPoster from '../components/PhotoPoster';
 import Labels from './Labels';
 import StickerAdmin from './StickerAdmin';
 import { publishOgImage, publishDefaultOgImage } from '../lib/og';
@@ -533,21 +534,61 @@ function Config({info,reload}){
   const save=async()=>{setBusy(true);try{await api('/api/admin/settings',{method:'PUT',data:{...form,message_price_cents:Number(form.message_price_cents)}});setNotice('Configurações salvas.');await reload();}catch(e){setNotice(e.message);}finally{setBusy(false);}};
   return <><div className="section-head"><div><span className="eyebrow">CONFIGURAÇÕES</span><h1>Controle do evento</h1><p>O prazo de edição e a abertura do mural são horários independentes.</p></div></div><section className="form-card settings-form"><label className="toggle-line"><input type="checkbox" checked={!!form.open} onChange={e=>setForm(f=>({...f,open:e.target.checked}))}/> Aceitar novas cartinhas</label>{fields.map(([key,label,type])=><div className="field" key={key}><label htmlFor={key}>{label}</label><input id={key} type={type} value={form[key]||''} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}/></div>)}<button className="btn" disabled={busy} onClick={save}><Check size={17}/> Salvar configurações</button>{notice&&<div className="notice">{notice}</div>}</section><BrandLogo info={info} reload={reload}/></>;
 }
-function DecorQr({value,title,subtitle,color='rose',logoUrl,photoUrl}){
-  const el=useRef(null);
-  const savePng = () => {
-    const canvas = el.current?.querySelector('canvas');
-    if (!canvas) return;
-    canvas.toBlob((blob) => {
-      if (blob) download(blob, `qr-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`, 'image/png');
-    }, 'image/png');
-  };
-  return <div className={`decorated-qr ${color}`} ref={el}><div className="qr-kicker">✳ XX EJC SIMONÉSIA ✳</div>{photoUrl&&<img className="poster-recipient-photo" src={photoUrl} alt="Encontrista"/>}<h3>{title}</h3><p>{subtitle}</p><QrCode value={value} size={212} variant="decorated" logoUrl={logoUrl}/><div className="qr-under">ESCANEIE &amp; ENVIE UM CARINHO ♡</div><div className="qr-tools no-print"><button className="btn ghost" onClick={savePng}><Download size={15}/> Baixar QR PNG</button></div></div>;
-}
-function QrPrint({info}){const [person,setPerson]=useState(''),[color,setColor]=useState('rose');const selected=info.recipients.find(r=>r.id===person);
-  const version=selected?.og_url?new URL(selected.og_url,location.origin).searchParams.get('v')||'20261107b':'20261107b';
-  const url=selected?`${location.origin}/enviar/${selected.slug}?og=${encodeURIComponent(version)}`:`${location.origin}/?og=20261107b`;
-  return <><div className="section-head no-print"><div><span className="eyebrow">MATERIAL IMPRESSO</span><h1>QR Codes decorados</h1><p>Para plaquinhas, cartazes e distribuição nas ruas.</p></div><button className="btn" onClick={()=>window.print()}><Printer size={16}/> Imprimir A4</button></div><div className="form-card no-print"><div className="row filters"><select value={person} onChange={e=>setPerson(e.target.value)}><option value="">QR geral: lista de encontristas</option>{info.recipients.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select><select value={color} onChange={e=>setColor(e.target.value)}><option value="rose">Rosa</option><option value="blue">Azul</option><option value="mint">Verde</option><option value="orange">Laranja</option></select></div><p className="muted small">Os QR Codes são links para o formulário, não para o Pix bancário nem para o mural secreto.</p></div><div className="qr-print-grid"><DecorQr value={url} title={selected?`Para ${selected.name}`:'Cartinhas do XX EJC'} subtitle="Suas palavras. Sua voz. Um encontro especial." color={color} logoUrl={info.config.logo_url} photoUrl={selected?.photo_url}/><DecorQr value={url} title={selected?`Um carinho para ${selected.name}`:'Uma mensagem de coração'} subtitle="Grave sua voz, adicione fotos, mande uma cartinha." color={color} logoUrl={info.config.logo_url} photoUrl={selected?.photo_url}/></div></>;
+function QrPrint({ info }) {
+  const [person, setPerson] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const [ogNotice, setOgNotice] = useState('');
+  const selected = info.recipients.find((recipient) => recipient.id === person);
+  // The live destination is encoded by the QR component; no generated QR bitmap
+  // or placeholder is ever reused in the printable document.
+  const url = selected
+    ? location.origin + '/enviar/' + encodeURIComponent(selected.slug)
+    : location.origin + '/';
+  async function publishPreview() {
+    setPublishing(true);
+    setOgNotice('');
+    try {
+      const published = selected ? await publishOgImage(selected) : await publishDefaultOgImage();
+      setOgNotice('Prévia PNG atualizada para WhatsApp: ' + published);
+    } catch (cause) {
+      setOgNotice('Não foi possível atualizar a prévia: ' + cause.message);
+    } finally { setPublishing(false); }
+  }
+  return (
+    <>
+      <div className="section-head no-print">
+        <div>
+          <span className="eyebrow">MATERIAL IMPRESSO · PAPEL FOTOGRÁFICO</span>
+          <h1>Cartaz A4 das cartinhas</h1>
+          <p>Uma arte inteira por folha A4, com cores vibrantes, QR verdadeiro e margem de segurança para impressão.</p>
+        </div>
+        <button className="btn" type="button" onClick={() => window.print()}>
+          <Printer size={16} /> Imprimir cartaz A4
+        </button>
+      </div>
+      <div className="form-card no-print">
+        <label htmlFor="poster-recipient">Link que o QR Code vai abrir</label>
+        <select id="poster-recipient" value={person} onChange={(event) => setPerson(event.target.value)}>
+          <option value="">Página geral: escolher encontrista</option>
+          {info.recipients.filter((recipient) => recipient.active !== 0).map((recipient) => (
+            <option key={recipient.id} value={recipient.id}>{recipient.name}</option>
+          ))}
+        </select>
+        <button className="btn outline" type="button" disabled={publishing} onClick={publishPreview}>
+          <ImagePlus size={16} /> {publishing ? 'Gerando prévia...' : 'Atualizar prévia do WhatsApp'}
+        </button>
+        {ogNotice && <p className="notice" role="status">{ogNotice}</p>}
+        <p className="muted small">
+          A prévia usa o endereço real, gerado dinamicamente. Imprima em tamanho real, no modo
+          qualidade fotográfica e com gráficos de fundo ativados. O QR leva ao envio de cartinhas,
+          não ao banco nem ao mural privado.
+        </p>
+      </div>
+      <div className="qr-print-grid photo-print-sheet">
+        <PhotoPoster value={url} recipientName={selected?.name} photoUrl={selected?.photo_url} />
+      </div>
+    </>
+  );
 }
 function Demo({reload}){const [message,setMessage]=useState(''),[busy,setBusy]=useState(false);async function run(action){if(action==='clear'&&!confirm('Apagar todos os pedidos de DEMONSTRAÇÃO?'))return;setBusy(true);try{const data=await api(`/api/admin/demo/${action}`,{method:action==='seed'?'POST':'DELETE',data:action==='seed'?{}:undefined});setMessage(`Concluído: ${data.inserted??data.deleted} demonstrações.`);await reload();}catch(e){setMessage(e.message);}finally{setBusy(false);}}
   return <><div className="section-head"><div><span className="eyebrow">AMBIENTE DE TESTE</span><h1>Demonstração</h1><p>Dados fictícios para explorar os estados do sistema. Nunca são cobrados por Pix.</p></div></div><section className="form-card"><h2>Exemplos de pedidos e situações de pagamento</h2><div className="inline-actions"><button className="btn" disabled={busy} onClick={()=>run('seed')}><Sparkles size={16}/> Criar exemplos</button><button className="btn danger-btn" disabled={busy} onClick={()=>run('clear')}><Trash2 size={16}/> Apagar exemplos</button></div>{message&&<div className="notice">{message}</div>}</section></>;

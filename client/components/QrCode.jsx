@@ -15,6 +15,7 @@ const variants = {
   pix: { fgColor: '#221a34', qrStyle: 'squares', ecLevel: 'H', eyeRadius: 4 },
   standard: { fgColor: '#352051', qrStyle: 'squares', ecLevel: 'H', eyeRadius: 5 },
   decorated: { fgColor: '#552c80', qrStyle: 'dots', ecLevel: 'H', eyeRadius: 6 },
+  print: { fgColor: '#111111', qrStyle: 'squares', ecLevel: 'H', eyeRadius: 0 },
 };
 
 export default function QrCode({ value, size = 210, variant = 'standard', logoUrl }) {
@@ -23,6 +24,7 @@ export default function QrCode({ value, size = 210, variant = 'standard', logoUr
   const settings = variants[variant] ?? variants.standard;
   // Pix payloads are dense. Keep the mark intentionally small and preserve
   // the light quiet zone to maximise compatibility with banking scanners.
+  const isPrint = variant === 'print';
   const logoWidth = Math.round(size * (variant === 'pix' ? 0.12 : 0.15));
 
   return (
@@ -32,15 +34,15 @@ export default function QrCode({ value, size = 210, variant = 'standard', logoUr
         value={value}
         size={size}
         bgColor="#ffffff"
-        quietZone={18}
+        quietZone={isPrint ? 28 : 18}
         pixelRatio={3}
         {...settings}
-        logoImage={logoUrl || fallbackLogo}
-        logoWidth={logoWidth}
-        logoHeight={logoWidth}
+        logoImage={isPrint ? undefined : logoUrl || fallbackLogo}
+        logoWidth={isPrint ? 0 : logoWidth}
+        logoHeight={isPrint ? 0 : logoWidth}
         logoPadding={2}
         logoPaddingStyle="circle"
-        removeQrCodeBehindLogo
+        removeQrCodeBehindLogo={!isPrint}
         enableCORS={false}
       />
     </div>

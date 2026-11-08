@@ -21,6 +21,7 @@ import RichEditor from '../components/RichEditor';
 import Recorder from '../components/Recorder';
 import VoicePlayer from '../components/VoicePlayer';
 import QrCode from '../components/QrCode';
+import CheckoutSupport from '../components/CheckoutSupport';
 import { useApp } from '../main';
 import { LetterCard } from '../components/LetterCard';
 import LetterControls from '../components/letter/LetterControls';
@@ -318,11 +319,7 @@ export default function Order() {
           <button className="btn ghost wide" onClick={reload}>
             <RefreshCw size={16} /> Atualizar situação do pagamento
           </button>
-          <div className="notice warning">
-            <Clock3 size={17} />
-            <span>O botão “Já paguei” não libera o envio automaticamente.
-              A equipe precisa conferir a entrada do dinheiro no banco.</span>
-          </div>
+          <div className="notice warning" role="status"><Clock3 size={17} /><span><strong>Confirmação manual pelo extrato bancário.</strong> Como usamos uma conta de pessoa física, não temos integração para validar Pix automaticamente. Mesmo após “Já paguei”, a coordenação confere o crédito e o valor no extrato antes de liberar o envio. Guarde somente o código <strong>{order.id}</strong>; não é necessário enviar comprovantes.</span></div>
         </section>
         <aside className="form-card pix-access">
           <h3>Guarde o acesso à sua cartinha 🔐</h3>
@@ -344,6 +341,7 @@ export default function Order() {
       </div>
 
             )}
+        <CheckoutSupport step={paid ? 'Editor de cartinha paga' : order.status === 'claimed' ? 'Pix informado · em conferência' : 'Editor / Pix individual'} orderId={order.id} checkoutId={order.checkout_id} recipientNames={[order.recipient_name]} />
         <div className="compose-layout">
           <div className="compose-main">
             <div className="notice success">

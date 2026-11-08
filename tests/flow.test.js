@@ -1323,3 +1323,145 @@ test('finalização administrativa percorre todos os lotes sem perder cartas',as
   ).first()).n;
   assert.equal(notices,87);
 });
+
+
+test('campanha gratuita publica uma carta por encontrista sem criar Pix ou expor conteúdo no admin',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const uri='/api/admin/campaign/mini-mercado';
+  assert.equal((await call(env,uri)).status,401);
+  const original=(await call(env,uri,'GET',undefined,admin)).data;
+  assert.equal(original.active_recipients,2);
+  assert.equal(original.published_count,0);
+  assert.match(original.campaign.markdown,/Não suma/);
+  assert.match(original.campaign.whatsapp,/\{link\}/);
+
+  const saved=await call(env,uri,'PUT',{
+    ...original.campaign,title:'Para nossa nova família',
+    markdown:original.campaign.markdown+'\\n\\n**Uma família que persevera.**',
+  },admin);
+  assert.equal(saved.status,200);
+  const published=await call(env,uri+'/publish','POST',{cursor:''},admin);
+  assert.equal(published.status,200);
+  assert.equal(published.data.created,2);
+  assert.equal(published.data.next_cursor,null);
+  const rows=(await env.DB.prepare(
+    'SELECT id,recipient_id,campaign_key,total_cents,pix_payload,txid,status,submitted_at,sender_name,rich_html '+
+    'FROM orders ORDER BY id'
+  ).all()).results;
+  assert.equal(rows.length,2);
+  assert.ok(rows.every(row=>row.status==='paid'&&row.submitted_at&&row.total_cents===0));
+  assert.ok(rows.every(row=>row.campaign_key==='pos-encontro'&&row.pix_payload==='CORTESIA-SEM-PIX'));
+  assert.ok(rows.every(row=>row.sender_name==='Mini Mercado XX EJC Simonésia'));
+  assert.ok(rows.every(row=>row.rich_html.includes('<strong>Uma família que persevera.</strong>')));
+  assert.equal((await call(env,uri,'GET',undefined,admin)).data.published_count,2);
+
+  const republish=await call(env,uri+'/publish','POST',{cursor:''},admin);
+  assert.equal(republish.status,200);
+  assert.equal(republish.data.created,0);
+  assert.equal((await env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM orders WHERE campaign_key=?'
+  ).bind('pos-encontro').first()).n,2);
+  const paymentLookup=await call(env,'/api/admin/payments/search','POST',{},admin);
+  assert.equal(paymentLookup.status,200);
+  assert.equal(paymentLookup.data.payments.length,0);
+  const recon=await call(env,'/api/admin/reconciliation/payments','GET',undefined,admin);
+  assert.equal(recon.data.payments.length,0);
+  const bootstrap=await call(env,'/api/admin/bootstrap','GET',undefined,admin);
+  assert.equal(bootstrap.data.orders.length,0); // never count gifts as sales
+  assert.ok(bootstrap.data.recipients.every(person=>
+    person.ready_letter_count===1 && person.campaign_letter_count===1));
+  assert.equal((await call(env,'/api/admin/cartinhas','GET',undefined,admin)).data.letters.length,2);
+});
+
+test('campanha permite revisão do texto antes de ler, mas preserva cartas já lidas',async()=>{
+  const env=fixture(),{admin}=await setup(env);
+  const url='/api/admin/campaign/mini-mercado';
+  assert.equal((await call(env,url+'/publish','POST',{},admin)).status,200);
+  const order=(await env.DB.prepare(
+    'SELECT id,rich_html FROM orders WHERE campaign_key=? ORDER BY id'
+  ).bind('pos-encontro').all()).results[0];
+  await env.DB.prepare('UPDATE orders SET first_read_at=? WHERE id=?')
+    .bind('2026-11-08T10:00:00.000Z',order.id).run();
+  const current=(await call(env,url,'GET',undefined,admin)).data.campaign;
+  const revised=await call(env,url,'PUT',{
+    ...current,markdown:current.markdown+'\\n\\n**Novo pós-texto**',
+  },admin);
+  assert.equal(revised.status,200);
+  const again=await call(env,url+'/publish','POST',{},admin);
+  assert.equal(again.status,200);
+  assert.equal(again.data.unchanged,1);
+  const protectedOrder=await env.DB.prepare('SELECT rich_html FROM orders WHERE id=?')
+    .bind(order.id).first();
+  assert.equal(protectedOrder.rich_html,order.rich_html);
+  assert.equal((await call(env,url,'PUT',{...current,whatsapp:'sem link'},admin)).status,400);
+});
+
+test('WhatsApp exige confirmação humana da imagem e permite reenviar mantendo contagem',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const target=list[0];
+  const route='/api/admin/whatsapp/deliveries';
+  assert.equal((await call(env,'/api/admin/recipients/'+target.id,'PATCH',{
+    whatsapp_phone:'(33) 99999-9876'
+  },admin)).status,200);
+  const data={recipient_id:target.id,campaign_key:'pos-encontro',image_sent:true};
+  assert.equal((await call(env,route,'POST',data)).status,401);
+  assert.equal((await call(env,route,'POST',{...data,image_sent:false},admin)).status,400);
+  assert.equal((await call(env,route,'POST',{...data,campaign_key:'fake'},admin)).status,400);
+  const first=await call(env,route,'POST',data,admin);
+  assert.equal(first.status,200);
+  assert.equal(first.data.send_count,1);
+  assert.equal(first.data.image_sent,1);
+  const repeated=await call(env,route,'POST',data,admin);
+  assert.equal(repeated.status,200);
+  assert.equal(repeated.data.send_count,2);
+  const bootstrap=await call(env,'/api/admin/bootstrap','GET',undefined,admin);
+  const person=bootstrap.data.recipients.find(row=>row.id===target.id);
+  assert.ok(person.campaign_wa_sent_at);
+  assert.equal(person.campaign_wa_send_count,2);
+  assert.equal(bootstrap.data.recipients.find(row=>row.id!==target.id).campaign_wa_sent_at,null);
+});
+
+test('apenas modo técnico com senha aprova rascunhos pagos após visualizar conteúdo salvo',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  env.TECH_PREVIEW_SECRET='conferencia-tecnica-ejc-2026-muito-segura';
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:list[0].slug,sender_name:'Remetente particular',
+  });
+  assert.equal(created.status,201);
+  const url='/api/admin/technical-preview/'+created.data.id;
+  const approvedUrl=url+'/finalize';
+  const password=env.TECH_PREVIEW_SECRET;
+  assert.equal((await call(env,approvedUrl,'POST',{password})).status,401);
+  assert.equal((await call(env,approvedUrl,'POST',{password},admin)).status,409); // unpaid
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Uma mensagem de coragem e fé.</p>',
+  },{token:created.data.token})).status,200);
+  assert.equal((await call(env,'/api/admin/orders/'+created.data.id+'/status','PATCH',{
+    status:'paid',bank_reference:'RECEBIDOCONFERIDO2026',
+    bank_checked:true,amount_checked:true
+  },admin)).status,200);
+  const missingPassword=await call(env,approvedUrl,'POST',{},admin);
+  assert.equal(missingPassword.status,403);
+  const technicalPreview=await call(env,url,'POST',{password},admin);
+  assert.equal(technicalPreview.status,200);
+  assert.match(technicalPreview.data.rich_html,/coragem e fé/);
+  const standard=await call(env,'/api/admin/cartinhas','GET',undefined,admin);
+  assert.ok(!JSON.stringify(standard.data).includes('Uma mensagem de coragem'));
+  const done=await call(env,approvedUrl,'POST',{password},admin);
+  assert.equal(done.status,200);
+  const order=await env.DB.prepare(
+    'SELECT submitted_at,moderation FROM orders WHERE id=?'
+  ).bind(created.data.id).first();
+  assert.ok(order.submitted_at);
+  assert.equal(order.moderation,'approved');
+  assert.equal((await call(env,approvedUrl,'POST',{password},admin)).status,409);
+
+  const empty=await call(env,'/api/orders','POST',{recipient_slug:list[1].slug});
+  assert.equal(empty.status,201);
+  assert.equal((await call(env,'/api/admin/orders/'+empty.data.id+'/status','PATCH',{
+    status:'paid',bank_reference:'RECEBIDOCONFERIDO2027',
+    bank_checked:true,amount_checked:true
+  },admin)).status,200);
+  assert.equal((await call(env,'/api/admin/technical-preview/'+empty.data.id+'/finalize',
+    'POST',{password},admin)).status,409);
+});

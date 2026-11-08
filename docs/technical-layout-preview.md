@@ -56,3 +56,10 @@ Depois do login administrativo e da senha técnica `TECH_PREVIEW_SECRET`, entre 
 
 O token pessoal do mural **não é** o código Pix e **não é** a senha técnica.
 O código `?secret=000000` apenas abre a interface, sem revelar nenhuma carta.
+
+Também é possível colar diretamente o **código de seis caracteres** da etiqueta do
+mural (por exemplo, `ABC234`). Ele é usado apenas para localizar a pessoa após
+a autenticação administrativa e técnica. A opção **Exibir somente as cartinhas
+que o encontrista já pode ver** permite comparar a visualização real com a
+prévia técnica completa, que inclui pendentes. Nenhuma prévia altera status de
+leitura, publicação ou pagamento.

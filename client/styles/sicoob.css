@@ -1,0 +1,111 @@
+.sicoob-reconciliation {
+  display: grid;
+  gap: 16px;
+}
+.sicoob-reconciliation h2 {
+  margin: 5px 0 6px;
+}
+.sicoob-upload {
+  display: flex;
+  position: relative;
+  align-items: center;
+  gap: 14px;
+  border: 1.5px dashed var(--rose, #a14269);
+  border-radius: 18px;
+  padding: 20px;
+  background: var(--paper, #fffdf9);
+  cursor: pointer;
+}
+.sicoob-upload span {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.sicoob-upload small {
+  color: var(--muted, #776d78);
+  font-size: 13px;
+}
+.sicoob-upload input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.sicoob-upload:focus-within {
+  outline: 3px solid var(--rose, #a14269);
+  outline-offset: 3px;
+}
+.sicoob-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.sicoob-summary span {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--border, #e8dce1);
+  border-radius: 12px;
+  font-size: 13px;
+}
+.sicoob-summary strong {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.sicoob-transactions {
+  display: grid;
+  max-height: 640px;
+  overflow: auto;
+  gap: 12px;
+  padding: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+.sicoob-transaction {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border, #e8dce1);
+  border-radius: 16px;
+  background: var(--paper, #fffdf9);
+}
+.sicoob-note {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.sicoob-exact,
+.sicoob-confirmed {
+  color: #187047;
+  font-weight: 700;
+}
+.sicoob-confirmed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sicoob-reconciliation input:not([type='file']):not([type='checkbox']),
+.sicoob-reconciliation select {
+  width: 100%;
+  min-height: 46px;
+  font-size: 16px;
+}
+.sicoob-reconciliation .btn {
+  min-height: 44px;
+}
+@media (max-width: 640px) {
+  .sicoob-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .sicoob-summary span {
+    padding: 10px;
+    font-size: 11px;
+  }
+  .sicoob-summary strong {
+    font-size: 20px;
+  }
+  .sicoob-upload {
+    padding: 18px 13px;
+  }
+}

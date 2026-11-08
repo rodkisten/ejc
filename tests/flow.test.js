@@ -43,7 +43,7 @@ async function call(env,path,method='GET',data,options={}){
   if(options.raw){body=data;headers['Content-Type']='application/octet-stream';}
   else if(data!==undefined){body=JSON.stringify(data);headers['Content-Type']='application/json';}
   const response=await worker.fetch(new Request(url,{method,headers,body}),env);
-  return {status:response.status, data:await response.json(), headers:response.headers};
+  return {status:response.status, data:options.binary ? new Uint8Array(await response.arrayBuffer()) : await response.json(), headers:response.headers};
 }
 async function setup(env){
   const login=await call(env,'/api/admin/login','POST',{password:env.ADMIN_PASSWORD});
@@ -918,4 +918,59 @@ test('coordenação vê todas as cartinhas, inclusive Pix pendente, sem receber 
   assert.ok(!payload.includes(secretAuthor));
   assert.ok(!payload.includes(token));
   assert.equal((await call(env, '/api/mural/' + person.slug, 'GET', undefined, admin)).status, 403);
+});
+
+
+test('prévia técnica exige sessão admin e segredo independente, incluindo mídia',async()=>{
+  const env=fixture();
+  env.TECH_PREVIEW_SECRET='technical-test-only-32-character-secret';
+  const {admin,list}=await setup(env);
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:list[0].slug,sender_name:'Remetente particular'
+  });
+  assert.equal(created.status,201);
+  const id=created.data.id, token=created.data.token;
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Conteúdo privado só técnico</p>',sender_name:'Remetente particular',
+  },{token})).status,200);
+  const route='/api/admin/technical-preview/'+id;
+  assert.equal((await call(env,route,'GET',undefined,admin)).status,404);
+  assert.equal((await call(env,route,'POST',{password:env.TECH_PREVIEW_SECRET})).status,401);
+  const masked=(await call(env,'/api/admin/cartinhas','GET',undefined,admin)).data;
+  assert.equal('rich_html' in masked.letters[0],false);
+  assert.ok(!JSON.stringify(masked).includes('Conteúdo privado'));
+  assert.equal((await call(env,route,'POST',{password:'another-invalid-password-with-32-characters'},admin)).status,403);
+  const preview=await call(env,route,'POST',{password:env.TECH_PREVIEW_SECRET},admin);
+  assert.equal(preview.status,200);
+  assert.match(preview.data.rich_html,/Conteúdo privado só técnico/);
+  assert.equal(preview.data.sender_name,'Remetente particular');
+  assert.equal(preview.headers.get('Cache-Control'),'no-store');
+  assert.equal('token_hash' in preview.data,false);
+
+  const uploaded=await call(env,'/api/order/media/init','POST',
+    {kind:'image',filename:'private.png',content_type:'image/png'},{token});
+  assert.equal(uploaded.status,200);
+  const mediaId=uploaded.data.id;
+  assert.equal((await call(env,'/api/order/media/'+mediaId+'/part/1','PUT',
+    new Uint8Array([137,80,78,71,1,2,3]),{token,raw:true})).status,200);
+  assert.equal((await call(env,'/api/order/media/'+mediaId+'/complete','POST',{}, {token})).status,200);
+  const mediaRoute=route+'/media/'+mediaId;
+  assert.equal((await call(env,mediaRoute,'POST',{password:env.TECH_PREVIEW_SECRET})).status,401);
+  assert.equal((await call(env,mediaRoute,'POST',{password:'another-invalid-password-with-32-characters'},admin)).status,403);
+  const media=await call(env,mediaRoute,'POST',{password:env.TECH_PREVIEW_SECRET},{...admin,binary:true});
+  assert.equal(media.status,200);
+  assert.equal(media.headers.get('Cache-Control'),'no-store');
+  assert.equal(media.headers.get('Content-Type'),'image/png');
+  assert.deepEqual([...media.data],[137,80,78,71,1,2,3]);
+  assert.ok(!JSON.stringify((await call(env,'/api/admin/cartinhas','GET',undefined,admin)).data).includes('private.png'));
+});
+
+test('prévia técnica fica desativada sem segredo forte',async()=>{
+  const env=fixture();
+  const {admin,list}=await setup(env);
+  const created=await call(env,'/api/orders','POST',{recipient_slug:list[0].slug});
+  env.TECH_PREVIEW_SECRET='000000';
+  const response=await call(env,'/api/admin/technical-preview/'+created.data.id,
+    'POST',{password:'000000'},admin);
+  assert.equal(response.status,503);
 });

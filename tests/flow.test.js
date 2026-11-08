@@ -1027,6 +1027,15 @@ test('modo técnico abre visão completa de um encontrista pelo token pessoal se
   },admin);
   assert.equal(byRecipient.status,200);
   assert.equal(byRecipient.data.cards.length,2);
+  const byPrintedCode=await call(env,path,'POST',{
+    password:env.TECH_PREVIEW_SECRET,mural_code:accessCode
+  },admin);
+  assert.equal(byPrintedCode.status,200);
+  assert.equal(byPrintedCode.data.recipient.slug,recipient.slug);
+  assert.equal(byPrintedCode.data.cards.length,2);
+  assert.equal((await call(env,path,'POST',{
+    password:env.TECH_PREVIEW_SECRET,mural_code:'ZZZZZZ'
+  },admin)).status,403);
   const publicMural=await call(env,'/api/mural/'+recipient.slug,'GET',undefined,{token:grant});
   assert.equal(publicMural.status,200);
   assert.equal(publicMural.data.cards.length,0);

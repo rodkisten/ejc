@@ -101,6 +101,18 @@ export default function Home() {
     finally { setSavingId(''); }
   }
 
+  async function reframePhoto(person) {
+    setAdminError('');
+    try {
+      const response = await fetch(person.photo_url, { credentials: 'same-origin' });
+      if (!response.ok) throw new Error('Foto anterior indisponível.');
+      const file = await response.blob();
+      setPhotoSelection({ person, file: new File([file], 'foto-existente.jpg', {
+        type: file.type || 'image/jpeg',
+      }) });
+    } catch (cause) { setAdminError(cause.message); }
+  }
+
   async function removePhoto(person) {
     if (!window.confirm('Remover a foto de ' + person.name + '?')) return;
     setSavingId(person.id); setAdminError(''); setNotice('');
@@ -273,6 +285,10 @@ export default function Home() {
                         event.target.value = '';
                       }} />
                   </label>
+                  {person.photo_url && (
+                    <button type="button" disabled={!!savingId} onClick={() => reframePhoto(person)}
+                      title="Reenquadrar foto atual"><ImagePlus size={15} /> Ajustar</button>
+                  )}
                   {person.photo_url && (
                     <button type="button" disabled={!!savingId} title="Remover foto"
                       aria-label={'Remover foto de ' + person.name} onClick={() => removePhoto(person)}>

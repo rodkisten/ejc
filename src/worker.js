@@ -888,6 +888,17 @@ async function adminRoute(req,env,path) {
     }
     return result({payments,limit:100});
   }
+  // Only operational payment metadata is returned; letter content remains private.
+  if(path==='/api/admin/reconciliation/payments'&&req.method==='GET'){
+    const payments=(await env.DB.prepare(
+      "SELECT id,txid,total_cents,status,created_at,payer_name,bank_reference,'checkout' AS type FROM checkouts " +
+      "UNION ALL " +
+      "SELECT id,txid,total_cents,status,created_at,payer_name,bank_reference,'order' AS type " +
+      "FROM orders WHERE checkout_id IS NULL AND COALESCE(demo,0)=0 " +
+      "ORDER BY created_at DESC LIMIT 1500"
+    ).all()).results;
+    return result({payments});
+  }
   if(path==='/api/admin/checkouts'&&req.method==='GET'){
     const checkouts=(await env.DB.prepare(
       "SELECT c.id,c.status,c.total_cents,c.txid,c.payer_name,c.created_at,c.claimed_at,c.confirmed_at,c.bank_reference,COUNT(o.id) AS item_count FROM checkouts c JOIN orders o ON o.checkout_id=c.id GROUP BY c.id ORDER BY c.created_at DESC LIMIT 500"
@@ -1065,7 +1076,8 @@ async function adminRoute(req,env,path) {
     if(!/^[A-Z0-9:/._-]{8,128}$/.test(ref))bad('Informe o identificador bancário completo.');
     if(data.bank_checked!==true||data.amount_checked!==true)bad('Confira recebimento e valor no extrato.');
     const already=await env.DB.prepare('SELECT id FROM orders WHERE bank_reference=?').bind(ref).first();
-    if(already)bad('Transação já associada a outro pedido.',409);
+    const alreadyCheckout=await env.DB.prepare('SELECT id FROM checkouts WHERE bank_reference=?').bind(ref).first();
+    if(already||alreadyCheckout)bad('Transação já associada a outro pagamento.',409);
     try {
       const changed=await env.DB.prepare("UPDATE orders SET status='paid',bank_reference=?,confirmed_at=?,updated_at=? WHERE id=? AND status IN ('pending','claimed')").bind(ref,now(),now(),order.id).run();
       if(changed.meta.changes!==1)bad('Pedido alterado por outro administrador.',409);

@@ -536,12 +536,24 @@ function Config({info,reload}){
 }
 function QrPrint({ info }) {
   const [person, setPerson] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const [ogNotice, setOgNotice] = useState('');
   const selected = info.recipients.find((recipient) => recipient.id === person);
   // The live destination is encoded by the QR component; no generated QR bitmap
   // or placeholder is ever reused in the printable document.
   const url = selected
     ? location.origin + '/enviar/' + encodeURIComponent(selected.slug)
     : location.origin + '/';
+  async function publishPreview() {
+    setPublishing(true);
+    setOgNotice('');
+    try {
+      const published = selected ? await publishOgImage(selected) : await publishDefaultOgImage();
+      setOgNotice('Prévia PNG atualizada para WhatsApp: ' + published);
+    } catch (cause) {
+      setOgNotice('Não foi possível atualizar a prévia: ' + cause.message);
+    } finally { setPublishing(false); }
+  }
   return (
     <>
       <div className="section-head no-print">
@@ -562,6 +574,10 @@ function QrPrint({ info }) {
             <option key={recipient.id} value={recipient.id}>{recipient.name}</option>
           ))}
         </select>
+        <button className="btn outline" type="button" disabled={publishing} onClick={publishPreview}>
+          <ImagePlus size={16} /> {publishing ? 'Gerando prévia...' : 'Atualizar prévia do WhatsApp'}
+        </button>
+        {ogNotice && <p className="notice" role="status">{ogNotice}</p>}
         <p className="muted small">
           A prévia usa o endereço real, gerado dinamicamente. Imprima em tamanho real, no modo
           qualidade fotográfica e com gráficos de fundo ativados. O QR leva ao envio de cartinhas,

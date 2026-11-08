@@ -1,7 +1,7 @@
-import React, { useCallback, useState } from 'react';
-import { CheckCircle2, FileUp, RefreshCw, ShieldCheck } from 'lucide-react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { CheckCircle2, FileUp, RefreshCw, ShieldCheck, CheckCheck } from 'lucide-react';
 import { api, money } from '../lib/api';
-import { candidatesForCredit, decodeSicoobOfxFile, ofxBankReference, parseSicoobOfx } from '../lib/sicoobOfx';
+import { candidatesForCredit, decodeSicoobOfxFile, exactPixBatchCandidates, ofxBankReference, parseSicoobOfx } from '../lib/sicoobOfx';
 
 const isWaiting = (status) => ['pending', 'claimed'].includes(status);
 const displayStatus = {
@@ -23,6 +23,12 @@ export default function SicoobReconciliation({ onConfirmed }) {
   const [completed, setCompleted] = useState({});
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [batchSelected, setBatchSelected] = useState([]);
+  const [batchProgress, setBatchProgress] = useState(null);
+  const bulkCandidates = useMemo(() => exactPixBatchCandidates(statement, payments), [statement, payments]);
+  const selectedCandidates = bulkCandidates.filter((candidate) => batchSelected.includes(candidate.credit.id));
+  const batchTotalCents = selectedCandidates.reduce((sum, candidate) => sum + candidate.credit.amountCents, 0);
+  const batchBusy = working === 'batch';
 
   const refresh = useCallback(async () => {
     const data = await api('/api/admin/reconciliation/payments');
@@ -39,6 +45,8 @@ export default function SicoobReconciliation({ onConfirmed }) {
     setReferenceOverride({});
     setCheckedBank(false);
     setCheckedValue(false);
+    setBatchSelected([]);
+    setBatchProgress(null);
     setError('');
     setMessage('');
     if (file.size > 3 * 1024 * 1024) {
@@ -51,6 +59,8 @@ export default function SicoobReconciliation({ onConfirmed }) {
       const ledger = await api('/api/admin/reconciliation/payments');
       setPayments(ledger.payments || []);
       setStatement({ ...parsed, filename: file.name });
+      setBatchSelected(exactPixBatchCandidates(parsed, ledger.payments || [])
+        .map((candidate) => candidate.credit.id));
       setMessage('Extrato carregado apenas neste navegador. Nenhum dado bancário foi enviado ao servidor.');
     } catch (cause) {
       setError(cause.message);
@@ -93,11 +103,84 @@ export default function SicoobReconciliation({ onConfirmed }) {
           bank_checked: true, amount_checked: true } }
       );
       setCompleted((current) => ({ ...current, [credit.id]: chosen.id }));
+      setBatchSelected((current) => current.filter((id) => id !== credit.id));
       await refresh();
       await onConfirmed?.();
       setMessage('Pagamento ' + chosen.id + ' confirmado. O mesmo lançamento não pode ser confirmado novamente.');
     } catch (cause) {
       setError(cause.message);
+    } finally {
+      setWorking('');
+    }
+  }
+
+
+  async function approveBatch() {
+    if (working || !statement || !checkedBank || !checkedValue || !selectedCandidates.length) return;
+    // Recheck current Sicoob ledger before the single approval decision.
+    setWorking('batch');
+    setError('');
+    setMessage('');
+    setBatchProgress({ done: 0, total: selectedCandidates.length });
+    let succeeded = [];
+    let failed = [];
+    try {
+      const latest = await api('/api/admin/reconciliation/payments');
+      const validNow = exactPixBatchCandidates(statement, latest.payments || []);
+      const exactMap = new Map(validNow.map((candidate) => [candidate.credit.id, candidate]));
+      const chosen = selectedCandidates.map((candidate) => exactMap.get(candidate.credit.id));
+      if (chosen.some((candidate) => !candidate) ||
+          chosen.some((candidate, index) =>
+            candidate.payment.id !== selectedCandidates[index].payment.id)) {
+        throw new Error('Os pagamentos mudaram. Atualize o extrato antes de confirmar o lote.');
+      }
+      const accepted = window.confirm(
+        'Confirmar ' + chosen.length + ' Pix de uma vez?\n\n' +
+        'Total de créditos no extrato: ' + money(batchTotalCents) + '.\n' +
+        'Somente TXID e valor exatos, com referência bancária rastreável.\n\n' +
+        'Confirme apenas se conferiu que são créditos RECEBIDOS no Sicoob. ' +
+        'A confirmação libera as cartinhas vinculadas e não pode ser desfeita automaticamente.'
+      );
+      if (!accepted) {
+        setBatchProgress(null);
+        return;
+      }
+      for (let index = 0; index < chosen.length; index++) {
+        const { credit, payment } = chosen[index];
+        try {
+          const reference = await ofxBankReference(credit, statement.accountId);
+          if (!reference) throw new Error('Sem referência bancária rastreável.');
+          const url = payment.type === 'checkout'
+            ? '/api/admin/checkouts/' + encodeURIComponent(payment.id) + '/status'
+            : '/api/admin/orders/' + encodeURIComponent(payment.id) + '/status';
+          await api(url, {
+            method: 'PATCH',
+            data: {
+              status: 'paid',
+              bank_reference: reference,
+              bank_checked: true,
+              amount_checked: true,
+            },
+          });
+          succeeded.push({ creditId: credit.id, paymentId: payment.id });
+        } catch (cause) {
+          failed.push(payment.id + ': ' + (cause.message || 'Falha na confirmação.'));
+        }
+        setBatchProgress({ done: index + 1, total: chosen.length });
+      }
+      if (succeeded.length) {
+        setCompleted((current) => Object.assign({}, current,
+          ...succeeded.map(({ creditId, paymentId }) => ({ [creditId]: paymentId }))));
+        setBatchSelected((current) => current.filter((id) =>
+          !succeeded.some((entry) => entry.creditId === id)));
+      }
+      await refresh();
+      await onConfirmed?.();
+      setMessage(succeeded.length + ' Pix confirmado(s) em lote. ' +
+        (failed.length ? failed.length + ' precisa(m) de revisão.' : 'Tudo concluído!'));
+      if (failed.length) setError(failed.join(' | '));
+    } catch (cause) {
+      setError(cause.message || 'Não foi possível confirmar o lote.');
     } finally {
       setWorking('');
     }
@@ -157,6 +240,58 @@ export default function SicoobReconciliation({ onConfirmed }) {
               onChange={(event) => setCheckedValue(event.target.checked)} />
             Vou confirmar somente os créditos recebidos e os valores correspondentes.
           </label>
+          <div className="sicoob-batch">
+            <div className="sicoob-batch-head">
+              <div>
+                <h3><CheckCheck size={19} /> Aprovar Pix em massa</h3>
+                <p className="muted small">
+                  Apenas créditos Pix com TXID único, valor exato e identificador bancário.
+                  Casos sem vínculo inequívoco continuam para conferência individual.
+                </p>
+              </div>
+              <div className="sicoob-batch-total">
+                <strong>{selectedCandidates.length} selecionado(s)</strong>
+                <span>{money(batchTotalCents)}</span>
+              </div>
+            </div>
+            {bulkCandidates.length > 0 ? (
+              <>
+                <div className="sicoob-batch-controls">
+                  <button type="button" className="btn ghost" disabled={Boolean(working)}
+                    onClick={() => setBatchSelected(bulkCandidates.map(({ credit }) => credit.id))}>
+                    Selecionar {bulkCandidates.length} correspondências exatas
+                  </button>
+                  <button type="button" className="btn ghost" disabled={Boolean(working)}
+                    onClick={() => setBatchSelected([])}>Limpar seleção</button>
+                </div>
+                <div className="sicoob-batch-items" aria-label="Pix elegíveis para aprovação em lote">
+                  {bulkCandidates.map(({ credit, payment }) => (
+                    <label key={credit.id} className="sicoob-batch-item">
+                      <input type="checkbox" disabled={Boolean(working)}
+                        checked={batchSelected.includes(credit.id)}
+                        onChange={(event) => setBatchSelected((current) =>
+                          event.target.checked ? [...new Set([...current, credit.id])] :
+                            current.filter((id) => id !== credit.id))} />
+                      <span><strong>{payment.id}</strong>
+                        <small>TXID {credit.txid} · {credit.date}</small>
+                      </span>
+                      <strong>{money(credit.amountCents)}</strong>
+                    </label>
+                  ))}
+                </div>
+                <button type="button" className="btn sicoob-batch-submit"
+                  disabled={Boolean(working) || !checkedBank || !checkedValue || !selectedCandidates.length}
+                  onClick={approveBatch}>
+                  <CheckCheck size={18} />
+                  {batchBusy ? 'Confirmando lote…' : 'Aprovar ' + selectedCandidates.length + ' Pix de uma vez'}
+                </button>
+                {batchProgress && <p role="status" className="muted small">
+                  {batchBusy ? 'Processando ' : 'Processados '}
+                  {batchProgress.done} de {batchProgress.total} pagamentos.
+                </p>}
+              </>
+            ) : <p className="muted small">Nenhuma correspondência exata e segura para aprovação em massa neste extrato.</p>}
+          </div>
           <div className="sicoob-transactions">
             {statement.transactions.map((credit) => {
               const matched = candidatesForCredit(credit, payments);

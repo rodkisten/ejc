@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { CheckCircle2, FileUp, RefreshCw, ShieldCheck } from 'lucide-react';
 import { api, money } from '../lib/api';
-import { candidatesForCredit, ofxBankReference, parseSicoobOfx } from '../lib/sicoobOfx';
+import { candidatesForCredit, decodeSicoobOfxFile, ofxBankReference, parseSicoobOfx } from '../lib/sicoobOfx';
 
 const isWaiting = (status) => ['pending', 'claimed'].includes(status);
 const displayStatus = {
@@ -47,7 +47,7 @@ export default function SicoobReconciliation({ onConfirmed }) {
     }
     setWorking('file');
     try {
-      const parsed = parseSicoobOfx(await file.text());
+      const parsed = parseSicoobOfx(await decodeSicoobOfxFile(file));
       const ledger = await api('/api/admin/reconciliation/payments');
       setPayments(ledger.payments || []);
       setStatement({ ...parsed, filename: file.name });

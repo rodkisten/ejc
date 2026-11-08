@@ -1126,3 +1126,61 @@ test('convite WhatsApp mantém a chave de acesso existente, respeita alteraçõe
   assert.equal(row.active,0);
   assert.equal((await call(env,path+'/whatsapp-link','POST',{},admin)).status,404);
 });
+
+
+test('aprovação manual em lote aceita Pix sem referência apenas com conferência explícita', async () => {
+  const env=fixture(),{admin,list}=await setup(env);
+  const first=await call(env,'/api/orders','POST',{recipient_slug:list[0].slug,sender_name:'Primeira carta'});
+  const second=await call(env,'/api/orders','POST',{recipient_slug:list[1].slug,sender_name:'Segunda carta'});
+  assert.equal(first.status,201);
+  assert.equal(second.status,201);
+  const path=(id)=>'/api/admin/orders/'+id+'/status';
+  const input={status:'paid',bank_reference:'',bank_checked:true,amount_checked:true};
+  assert.equal((await call(env,path(first.data.id),'PATCH',input,admin)).status,400);
+  assert.equal((await call(env,path(first.data.id),'PATCH',
+    {...input,manual_batch:true,bank_checked:false},admin)).status,400);
+  assert.equal((await call(env,path(first.data.id),'PATCH',
+    {...input,manual_batch:true,amount_checked:false},admin)).status,400);
+  assert.equal((await call(env,path(first.data.id),'PATCH',
+    {...input,manual_batch:true},admin)).status,200);
+  assert.equal((await call(env,path(second.data.id),'PATCH',
+    {...input,manual_batch:true},admin)).status,200);
+  const rows=(await env.DB.prepare('SELECT id,status,bank_reference FROM orders WHERE id IN (?,?)')
+    .bind(first.data.id,second.data.id).all()).results;
+  assert.equal(rows.length,2);
+  assert.ok(rows.every(row=>row.status==='paid' && row.bank_reference===null));
+  const events=(await env.DB.prepare(
+    "SELECT detail FROM order_events WHERE order_id=? AND type='payment_confirmed'"
+  ).bind(first.data.id).all()).results;
+  assert.equal(events[0].detail,'manual_batch_no_reference');
+});
+
+test('aprovação em lote sem referência libera checkout agrupado sem gerar código falso',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const checkout=await call(env,'/api/checkouts','POST',{
+    items:[
+      {recipient_slug:list[0].slug,sender_name:'Carta A'},
+      {recipient_slug:list[1].slug,sender_name:'Carta B'},
+    ],
+  });
+  assert.equal(checkout.status,201);
+  const url='/api/admin/checkouts/'+checkout.data.id+'/status';
+  const input={status:'paid',bank_reference:'',bank_checked:true,amount_checked:true};
+  assert.equal((await call(env,url,'PATCH',input,admin)).status,400);
+  assert.equal((await call(env,url,'PATCH',
+    {...input,manual_batch:true,bank_checked:false},admin)).status,400);
+  const done=await call(env,url,'PATCH',{...input,manual_batch:true},admin);
+  assert.equal(done.status,200);
+  assert.equal(done.data.letters,2);
+  const state=await env.DB.prepare('SELECT status,bank_reference FROM checkouts WHERE id=?')
+    .bind(checkout.data.id).first();
+  assert.equal(state.status,'paid');
+  assert.equal(state.bank_reference,null);
+  assert.equal((await call(env,url,'PATCH',{...input,manual_batch:true},admin)).status,409);
+  const childEvents=(await env.DB.prepare(
+    "SELECT detail FROM order_events WHERE type='payment_confirmed' AND order_id IN " +
+    '(SELECT id FROM orders WHERE checkout_id=?)'
+  ).bind(checkout.data.id).all()).results;
+  assert.equal(childEvents.length,2);
+  assert.ok(childEvents.every(row=>row.detail==='manual_batch_no_reference'));
+});

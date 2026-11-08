@@ -551,3 +551,11 @@ A migração `migrations/0010_private_payer_name.sql` cria o atributo
 Aplique as migrações antes de publicar o Worker. Para ensaio, confira pelo
 código `EJCB-...` um Pix com duas cartinhas, edite cada uma, verifique no
 extrato e confirme manualmente o pagamento no admin.
+
+## Administração de encontristas: edição e exclusão
+
+Na rota `/admin/encontristas`, cada cadastro tem **Editar nome** e **Excluir**, além das ações de foto e imagem de compartilhamento. Renomear um encontrista preserva seu `id`, `slug` e código do mural, para não invalidar links e QR Codes já impressos. A imagem OG é regenerada com o novo nome no painel, quando possível.
+
+**Exclusão segura:** sem pedidos vinculados, o cadastro é removido definitivamente do D1 e as imagens associadas são limpas do R2. Se houver pedidos ou cartinhas, **Excluir** arquiva o encontrista (`active = 0`), retirando-o da lista pública e impedindo novas compras, mas preservando pagamentos e a leitura das cartas antigas pelo código privado. O filtro **Mostrar arquivados** permite restaurar o cadastro; os arquivos não são apagados nesse caso. Todas as ações exigem login administrativo e a exclusão pede confirmação.
+
+A busca administrativa de pagamentos usa `LIKE ... COLLATE NOCASE` sem aplicar `UPPER` à cadeia com acentos, corrigindo a pesquisa por valores como “Conferência”. O teste antigo que exigia a remoção do rascunho ao gerar o Pix foi atualizado: agora o carrinho ativo é esvaziado, mas o conteúdo e os anexos locais continuam preservados, com a versão canônica no servidor.

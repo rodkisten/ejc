@@ -28,6 +28,7 @@ import './styles/cart.css';
 import './styles/payment-lookup.css';
 import './styles/home.css';
 import './styles/photo-crop.css';
+import './styles/people-admin.css';
 
 export const AppContext=React.createContext({ config:null, recipients:[], reload:async()=>{} });
 export function useApp(){return React.useContext(AppContext);}

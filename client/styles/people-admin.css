@@ -1,0 +1,48 @@
+/* Administração de encontristas: ações acessíveis e toque confortável no Safari iOS. */
+.person-admin-toolbar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  margin:20px 0 12px;
+}
+.person-admin-toggle {
+  display:inline-flex;
+  align-items:center;
+  gap:9px;
+  font-size:.9rem;
+  cursor:pointer;
+}
+.person-admin-toggle input {width:18px;height:18px;accent-color:#b44485}
+.person-archived {opacity:.76;border-style:dashed}
+.person-name-details {min-width:0;display:grid;gap:5px}
+.person-name-details > strong {overflow-wrap:anywhere}
+.person-name-editor {display:grid;gap:9px;width:min(100%,440px);min-width:0}
+.person-name-editor label {font-size:.82rem;font-weight:750}
+.person-name-editor input {
+  width:100%;
+  min-width:0;
+  font-size:16px;
+  min-height:44px;
+  padding:10px 12px;
+}
+.person-name-editor-actions {display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.person-name-editor-actions .btn {min-height:42px}
+.person-status {display:inline-flex;width:fit-content;padding:4px 9px;border-radius:999px;background:#eee3ec;color:#745b72;font-size:.72rem;font-weight:800}
+.person-admin-actions {align-items:center;flex-wrap:wrap;gap:8px}
+.person-admin-actions .btn {min-height:42px;white-space:normal;text-align:center}
+.person-delete-button {border-color:#d9a4ad!important;color:#9c364e!important}
+.person-delete-button:hover:not(:disabled) {background:#fff0f2!important}
+@media(max-width:640px){
+  .person-row {align-items:stretch}
+  .person-with-photo {width:100%;align-items:flex-start}
+  .person-name-details {flex:1}
+  .person-name-editor {width:100%}
+  .person-admin-actions {width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .person-admin-actions > .btn,.person-admin-actions > label.btn {
+    width:100%;display:flex;justify-content:center;align-items:center;
+    min-width:0;padding:10px 8px;font-size:.84rem;
+  }
+  .person-admin-actions > span {max-width:100%}
+}

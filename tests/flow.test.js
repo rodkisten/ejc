@@ -745,16 +745,116 @@ test('nome para conferência é separado da assinatura na compra individual',asy
   assert.equal(publicOrder.data.payer_name,undefined);
 });
 
-test('geração do Pix mantém rascunhos e botões de edição no navegador',()=>{
+test('geração do Pix preserva rascunhos individuais e permite edição no link privado',()=>{
   const cart=fs.readFileSync(new URL('../client/pages/Cart.jsx',import.meta.url),'utf8');
   const checkout=fs.readFileSync(new URL('../client/pages/Checkout.jsx',import.meta.url),'utf8');
   const order=fs.readFileSync(new URL('../client/pages/Order.jsx',import.meta.url),'utf8');
-  assert.ok(!cart.includes('await cart.clear();'));
-  assert.ok(cart.includes('ejc-cart-active-checkout'));
-  assert.ok(cart.includes('payer_name: nameForCheckout'));
-  assert.ok(checkout.includes('Editar rascunho'));
-  assert.ok(checkout.includes('Código para conferir o Pix'));
-  assert.ok(order.includes('await draftSet('));
+  const cartStorage=fs.readFileSync(new URL('../client/lib/cart.jsx',import.meta.url),'utf8');
+  assert.ok(cart.includes('rich_html: drafts[index].html'));
+  assert.ok(cart.includes('composition: drafts[index].composition'));
+  assert.ok(cart.includes('payer_name: payerName.trim()'));
+  assert.ok(cart.includes('rememberCheckout('));
+  assert.ok(cart.includes('await cart.clear();')); // clears only the cart index, not the drafts
+  assert.ok(cartStorage.includes('// Keep source drafts'));
+  assert.ok(cartStorage.includes('checkoutForDraft('));
+  assert.ok(checkout.includes('Editar cartinha'));
+  assert.ok(checkout.includes('Código para conferência'));
+  assert.ok(order.includes('await draftSet(')); // local offline copy
   assert.ok(!order.includes('draftRemove('));
-  assert.ok(order.includes('uploadedAssets(token)'));
+  assert.ok(order.includes('uploadMedia(')); // server is the canonical copy
+});
+
+test('admin renomeia encontristas sem quebrar links e recusa nomes duplicados',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const first=list[0],second=list[1];
+  const url='/api/admin/recipients/'+first.id;
+  await env.MEDIA.put('og/v3/old-preview.png',new Uint8Array([1,2,3]));
+  await env.DB.prepare('UPDATE recipients SET og_key=? WHERE id=?')
+    .bind('og/v3/old-preview.png',first.id).run();
+  const updated=await call(env,url,'PATCH',{name:'Maria Vitória'},admin);
+  assert.equal(updated.status,200);
+  assert.equal(updated.data.name,'Maria Vitória');
+  assert.equal(updated.data.slug,first.slug);
+  assert.equal(updated.data.og_needs_refresh,true);
+  assert.equal(await env.MEDIA.head('og/v3/old-preview.png'),null);
+  const publicData=(await call(env,'/api/public')).data;
+  assert.equal(publicData.recipients.find(person=>person.id===first.id).name,'Maria Vitória');
+  assert.equal(publicData.recipients.find(person=>person.id===first.id).slug,first.slug);
+  const duplicated=await call(env,url,'PATCH',{name:second.name.toLocaleUpperCase('pt-BR')},admin);
+  assert.equal(duplicated.status,409);
+  assert.equal((await call(env,url,'PATCH',{active:'false'},admin)).status,400);
+  assert.equal((await call(env,url,'PATCH',{name:'Outra pessoa'})).status,401);
+  assert.equal((await call(env,url,'PATCH',{name:''},admin)).status,400);
+  const adminData=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data;
+  assert.equal(adminData.recipients.find(p=>p.id===first.id).order_count,0);
+});
+
+test('exclusão permanente só ocorre sem cartinhas; exclusão com pedidos arquiva e permite restaurar',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const person=list[0],other=list[1];
+  const endpoint='/api/admin/recipients/'+person.id;
+  await env.MEDIA.put('recipients/orphan-photo',new Uint8Array([1,2,3]));
+  await env.MEDIA.put('og/orphan-preview.png',new Uint8Array([4,5,6]));
+  await env.DB.prepare('UPDATE recipients SET photo_key=?,og_key=? WHERE id=?')
+    .bind('recipients/orphan-photo','og/orphan-preview.png',person.id).run();
+  assert.equal((await call(env,endpoint,'DELETE')).status,401);
+  const removed=await call(env,endpoint,'DELETE',undefined,admin);
+  assert.equal(removed.status,200);
+  assert.equal(removed.data.mode,'deleted');
+  assert.equal(await env.MEDIA.head('recipients/orphan-photo'),null);
+  assert.equal(await env.MEDIA.head('og/orphan-preview.png'),null);
+  assert.equal((await env.DB.prepare('SELECT id FROM recipients WHERE id=?').bind(person.id).first()),null);
+  assert.equal((await call(env,endpoint,'PATCH',{name:'Inexistente'},admin)).status,404);
+  assert.equal((await call(env,'/api/public')).data.recipients.some(p=>p.id===person.id),false);
+
+  const created=await call(env,'/api/orders','POST',{recipient_slug:other.slug,sender_name:'Privado'});
+  assert.equal(created.status,201);
+  assert.equal((await call(env,'/api/admin/mural-codes/generate','POST',{},admin)).status,200);
+  const before=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data;
+  const code=before.recipients.find(p=>p.id===other.id).mural_code;
+  const otherUrl='/api/admin/recipients/'+other.id;
+  const archived=await call(env,otherUrl,'DELETE',undefined,admin);
+  assert.equal(archived.status,200);
+  assert.equal(archived.data.mode,'archived');
+  assert.equal(archived.data.linked_orders,1);
+  assert.equal((await call(env,'/api/public')).data.recipients.some(p=>p.id===other.id),false);
+  const adminAfter=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data;
+  assert.equal(adminAfter.recipients.find(p=>p.id===other.id).active,0);
+  assert.equal(adminAfter.recipients.find(p=>p.id===other.id).order_count,1);
+  assert.equal((await call(env,'/api/order','GET',undefined,{token:created.data.token})).status,200);
+  const grant=await call(env,'/api/mural/redeem','POST',{code});
+  assert.equal(grant.status,200);
+  assert.equal((await call(env,'/api/mural/'+other.slug,'GET',undefined,{token:grant.data.grant})).status,200);
+  const restored=await call(env,otherUrl,'PATCH',{active:true},admin);
+  assert.equal(restored.status,200);
+  assert.equal(restored.data.slug,other.slug);
+  assert.equal((await call(env,'/api/public')).data.recipients.some(p=>p.id===other.id),true);
+});
+
+test('filtro de pagamento encontra nomes acentuados sem perder sigilo',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const created=await call(env,'/api/checkouts','POST',{
+    payer_name:'João da Conceição',items:[{recipient_slug:list[0].slug,sender_name:'Texto Secreto'}]
+  });
+  assert.equal(created.status,201);
+  const find=async data=>call(env,'/api/admin/payments/search','POST',data,admin);
+  const byName=await find({payer:'Conceição'});
+  assert.equal(byName.status,200);
+  assert.equal(byName.data.payments[0]?.id,created.data.id);
+  assert.equal((await find({payer:'conceição'})).data.payments[0]?.id,created.data.id);
+  assert.equal((await find({recipient:list[0].name})).data.payments[0]?.id,created.data.id);
+  assert.ok(!JSON.stringify(byName.data).includes('Texto Secreto'));
+});
+test('admin oferece editar, excluir e restaurar encontristas com confirmação no mobile',()=>{
+  const admin=fs.readFileSync(new URL('../client/pages/Admin.jsx',import.meta.url),'utf8');
+  const css=fs.readFileSync(new URL('../client/styles/people-admin.css',import.meta.url),'utf8');
+  const main=fs.readFileSync(new URL('../client/main.jsx',import.meta.url),'utf8');
+  assert.ok(admin.includes('Editar nome'));
+  assert.ok(admin.includes('Excluir'));
+  assert.ok(admin.includes('Restaurar'));
+  assert.ok(admin.includes('window.confirm('));
+  assert.ok(admin.includes('person-name-editor'));
+  assert.ok(css.includes('font-size:16px'));
+  assert.ok(css.includes('@media(max-width:640px)'));
+  assert.ok(main.includes("import './styles/people-admin.css';"));
 });

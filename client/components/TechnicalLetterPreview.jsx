@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Eye, LockKeyhole, RefreshCw } from 'lucide-react';
-import LetterCard from './LetterCard';
+import { LetterCard } from './LetterCard';
 
 // No media URL or letter body is available via the standard admin list.
 // Each technical preview requires a valid admin cookie plus the *separate*

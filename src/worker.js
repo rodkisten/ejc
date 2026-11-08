@@ -764,6 +764,80 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
   await requireAdmin(req,env);
   if(path==='/api/admin/me')return result({authenticated:true});
+  // Complete recipient-point-of-view diagnostics. A user's mural grant is only
+  // a recipient selector here: it NEVER replaces the logged-in admin session
+  // and separate technical credential. No first-read tracking or notifications.
+  if (path==='/api/admin/technical-mural' && req.method==='POST') {
+    const input=await jsonBody(req,3000);
+    await requireTechnicalPreview(req,env,input && typeof input==='object' ? input.password : null);
+    const rawToken=typeof input.mural_token==='string' ? input.mural_token.trim() : '';
+    const slug=typeof input.recipient_slug==='string' ? input.recipient_slug.trim() : '';
+    let recipient=null;
+    if (rawToken) {
+      const parts=rawToken.split('.');
+      if(parts.length!==3 || parts[0]!=='m2' ||
+        parts[1].length>500 || parts[2].length>200 ||
+        !/^[A-Za-z0-9_-]+$/.test(parts[1]) ||
+        !/^[A-Za-z0-9_-]+$/.test(parts[2])) {
+        bad('Token de acesso do encontrista inválido.',403);
+      }
+      let recipientId='';
+      try {
+        const payload=JSON.parse(new TextDecoder().decode(unb64url(parts[1])));
+        recipientId=typeof payload.id==='string' && /^[a-f0-9-]{36}$/i.test(payload.id) ? payload.id : '';
+      } catch { /* Never trust decoded claims until verified. */ }
+      if(!recipientId)bad('Token de acesso do encontrista inválido.',403);
+      recipient=await env.DB.prepare(
+        'SELECT id,name,slug,active,photo_key,photo_consent,mural_code FROM recipients WHERE id=?'
+      ).bind(recipientId).first();
+      if(!recipient || !await validMuralGrant(env,rawToken,recipient))
+        bad('Token pessoal inválido, expirado ou revogado.',403);
+    } else {
+      if(!/^[a-z0-9-]{1,65}$/.test(slug))bad('Selecione um encontrista ou informe seu token pessoal.',400);
+      recipient=await env.DB.prepare(
+        'SELECT id,name,slug,active,photo_key,photo_consent,mural_code FROM recipients WHERE slug=?'
+      ).bind(slug).first();
+      if(!recipient)bad('Encontrista não encontrado.',404);
+    }
+
+    const rows=(await env.DB.prepare(
+      "SELECT o.id,o.status,o.submitted_at,o.created_at,o.sender_name,o.rich_html,o.composition_json "+
+      "FROM orders o WHERE o.recipient_id=? ORDER BY o.created_at DESC,o.id"
+    ).bind(recipient.id).all()).results;
+    const mediaRows=(await env.DB.prepare(
+      "SELECT m.id,m.order_id,m.kind,m.filename,m.content_type,m.bytes "+
+      "FROM media m JOIN orders o ON o.id=m.order_id "+
+      "WHERE o.recipient_id=? AND m.status='ready' ORDER BY m.created_at"
+    ).bind(recipient.id).all()).results;
+    const byOrder=new Map();
+    for(const m of mediaRows) {
+      if(!byOrder.has(m.order_id))byOrder.set(m.order_id,[]);
+      byOrder.get(m.order_id).push({
+        id:m.id,kind:m.kind,filename:m.filename,
+        content_type:m.content_type,bytes:m.bytes
+      });
+    }
+    const config=await settings(env);
+    const recipientVisible=released(config);
+    return result({
+      recipient:{name:recipient.name,slug:recipient.slug,
+        photo_url:recipient.active ? recipientPhotoUrl(recipient) : null},
+      locked:!recipientVisible,
+      release_at:config.release_at,
+      technical:true,
+      cards:rows.map(row=>({
+        id:row.id,status:row.status,submitted:!!row.submitted_at,
+        created_at:row.created_at,submitted_at:row.submitted_at,
+        visible_to_recipient:recipientVisible && !!row.submitted_at && activeOrder(row),
+        sender_name:row.sender_name || 'Uma pessoa especial',
+        recipient_name:recipient.name,
+        rich_html:row.rich_html || '',
+        composition:normalizeComposition(JSON.parse(row.composition_json||'{}')),
+        media:byOrder.get(row.id)||[]
+      }))
+    });
+  }
+
   // Isolated, opt-in diagnostic access. The ordinary coordinator route below
   // continues to omit text, photos and audio. Never cache this response.
   const technicalLetter=path.match(/^\/api\/admin\/technical-preview\/(EJC-[A-F0-9]{12})$/);

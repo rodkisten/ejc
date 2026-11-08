@@ -4,7 +4,7 @@ import { Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, Sparkles } fr
 import { api } from '../lib/api';
 import StickerLayer from '../components/letter/StickerLayer';
 import TechnicalLetterPreview from '../components/TechnicalLetterPreview';
-import TechnicalMuralPreview, { extractMuralGrant } from '../components/TechnicalMuralPreview';
+import TechnicalMuralPreview, { extractMuralGrant, extractMuralCode } from '../components/TechnicalMuralPreview';
 import '../styles/technical-preview.css';
 import { THEMES } from '../../shared/letter.js';
 
@@ -119,10 +119,11 @@ export default function AdminLetters() {
     setMuralError('');
     const raw=muralTokenInput.trim();
     const grant=raw ? extractMuralGrant(raw) : '';
-    if(raw && !grant){ setMuralError('Cole um token do mural ou link pessoal válido (#token=m2...).'); return; }
+    const code=raw ? extractMuralCode(raw) : '';
+    if(raw && !grant && !code){ setMuralError('Cole o código pessoal de seis caracteres, um token m2. ou o link do mural.'); return; }
     const recipientSlug=slug || muralRecipient || recipients[0]?.[0];
-    if(!grant && !recipientSlug){setMuralError('Selecione um encontrista ou cole o token do mural.');return;}
-    setMuralSelection({recipientSlug:grant ? '' : recipientSlug,userToken:grant});
+    if(!grant && !code && !recipientSlug){setMuralError('Selecione um encontrista ou cole o token do mural.');return;}
+    setMuralSelection({recipientSlug:grant || code ? '' : recipientSlug,userToken:grant,userCode:code});
     setMuralTokenInput('');
   }
 
@@ -181,9 +182,9 @@ export default function AdminLetters() {
                 {recipients.map(([value,name]) => <option key={value} value={value}>{name}</option>)}
               </select>
             </label>
-            <label>Token ou link do mural do usuário (opcional)
+            <label>Código, token ou link do mural do usuário (opcional)
               <input type="password" autoComplete="off" spellCheck={false}
-                placeholder="m2.… ou https://…/mural/…#token=m2.…"
+                placeholder="ABC234, m2.… ou link com #token=…"
                 value={muralTokenInput} onChange={(event) => setMuralTokenInput(event.target.value.slice(0,1200))} />
             </label>
             <button type="submit" className="btn"><Eye size={17} /> Abrir visão do encontrista</button>
@@ -193,6 +194,7 @@ export default function AdminLetters() {
             password={technicalPassword}
             recipientSlug={muralSelection.recipientSlug}
             userToken={muralSelection.userToken}
+            userCode={muralSelection.userCode}
             onClose={() => setMuralSelection(null)} />}
         </section>
       )}

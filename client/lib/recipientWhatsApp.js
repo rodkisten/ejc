@@ -28,10 +28,10 @@ export function muralInvitationMessage({ name, url, count=1 }) {
     '_Este link é só seu, válido por 14 dias. Guarde com carinho e não compartilhe._',
     '_Se ainda aparecer fechado, ele abrirá no horário de liberação do Encontro._',
     '',
-    '💗 *Com muito amor, equipe do Mini Mercado do XX EJC Simonésia:*',
+    '💗 *Este cantinho digital foi criado com muito amor pela equipe do Mini Mercado do XX EJC Simonésia:*',
     'Rodolfo Costa, Evelyne Pimentel, Tia Mariana e Tio Saulinho, Tia Daisy e Tio Davidson.',
     '',
-    '✨ _Feito com carinho para celebrar sua caminhada com Jesus!_',
+    '✨ _Com carinho, de quem acredita na sua fé e na sua caminhada com Jesus!_',
   ].join('\n');
 }
 

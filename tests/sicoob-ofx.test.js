@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSicoobOfx, candidatesForCredit, ofxBankReference } from '../client/lib/sicoobOfx.js';
+import { parseSicoobOfx, candidatesForCredit, exactPixBatchCandidates, ofxBankReference } from '../client/lib/sicoobOfx.js';
 
 const statement = [
   'OFXHEADER:100',
@@ -66,4 +66,65 @@ test('OFX XML também é aceito', () => {
     '<DTPOSTED>20261108</DTPOSTED><TRNAMT>12.50</TRNAMT><FITID>AB3</FITID>' +
     '<MEMO>PIX RECEBIDO</MEMO></STMTTRN></OFX>';
   assert.equal(parseSicoobOfx(xml).transactions[0].amountCents, 1250);
+});
+
+
+test('aprovação em massa sugere somente TXID exclusivo e valor idêntico', () => {
+  const { transactions, accountId } = parseSicoobOfx(statement);
+  const payments = [
+    { id: 'EJCB-ABCDEF123456', type: 'checkout',
+      txid: 'EJCBABCDEF123456', total_cents: 2000, status: 'claimed' },
+    { id: 'EJC-111111111111', type: 'order',
+      txid: 'EJC111111111111', total_cents: 1000, status: 'pending' },
+  ];
+  assert.equal(exactPixBatchCandidates({ transactions, accountId }, payments).length, 1);
+  assert.equal(exactPixBatchCandidates({ transactions, accountId }, payments)[0].payment.id,
+    'EJCB-ABCDEF123456');
+  // The second entry has only a matching amount and must stay for manual review.
+  assert.ok(!exactPixBatchCandidates({ transactions, accountId }, payments)
+    .some(({ payment }) => payment.id === 'EJC-111111111111'));
+});
+
+test('batch excludes duplicates, completed payments, mismatched totals and missing trace IDs', () => {
+  const accountId = 'sicoob-12345';
+  const base = {
+    id: 'credit-1', date: '2026-11-08', isPix: true,
+    txid: 'EJCABCDEF123456', amountCents: 1000, fitId: 'PIX42', e2eid: '',
+  };
+  const payment = {
+    id: 'EJC-ABCDEF123456', type: 'order',
+    txid: 'EJCABCDEF123456', total_cents: 1000, status: 'claimed',
+  };
+  const stmt=(entries)=>({ accountId, transactions: entries });
+  const plan=(entries, payments=[payment])=>exactPixBatchCandidates(stmt(entries),payments);
+  assert.equal(plan([base]).length,1);
+  assert.equal(plan([{ ...base, isPix:false }]).length,0);
+  assert.equal(plan([{ ...base, fitId:'' }]).length,0);
+  assert.equal(plan([{ ...base, amountCents:2000 }]).length,0);
+  assert.equal(plan([base],[{...payment,status:'paid'}]).length,0);
+  assert.equal(plan([base], [payment, { ...payment, id:'EJC-OTHER' }]).length,0);
+  assert.equal(plan([base,{...base,id:'credit-2',fitId:'PIX43'}]).length,0);
+  assert.equal(plan([base,{...base,id:'credit-2'}]).length,0);
+  assert.equal(plan([{...base,e2eid:'E2026110812345678901234567890123'}],
+    [{...payment,bank_reference:'E2026110812345678901234567890123'}]).length,0);
+  assert.equal(plan([{...base,e2eid:'E2026110812345678901234567890123'}],
+    [{...payment},{id:'PAID',status:'paid',bank_reference:'E2026110812345678901234567890123'}]).length,0);
+});
+
+test('batch only accepts traceable Pix for a unique checkout or individual order', () => {
+  const accountId='123';
+  const payments=[
+    {id:'EJCB-111111111111',type:'checkout',txid:'EJCB111111111111',
+      total_cents:2000,status:'claimed'},
+    {id:'EJC-222222222222',type:'order',txid:'EJC222222222222',
+      total_cents:1000,status:'pending'},
+  ];
+  const transactions=[
+    {id:'a',date:'2026-11-08',isPix:true,txid:'EJCB111111111111',fitId:'I1',
+      amountCents:2000,e2eid:''},
+    {id:'b',date:'2026-11-08',isPix:true,txid:'EJC222222222222',fitId:'I2',
+      amountCents:1000,e2eid:''}
+  ];
+  assert.deepEqual(exactPixBatchCandidates({accountId,transactions},payments)
+    .map(({payment})=>payment.id),payments.map((p)=>p.id));
 });

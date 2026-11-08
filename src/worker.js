@@ -793,6 +793,23 @@ async function requireTechnicalPreview(req, env, password) {
   await env.DB.prepare('DELETE FROM login_attempts WHERE fingerprint=?').bind(fingerprint).run();
 }
 
+// Paginated, private-only eligibility scan. Never return saved letter HTML to the admin.
+async function paidDraftRows(env,cursor='',limit=60) {
+  const sql=`
+    SELECT o.id,o.rich_html,EXISTS(
+      SELECT 1 FROM media m WHERE m.order_id=o.id AND m.status='ready'
+    ) AS has_ready_media
+    FROM orders o WHERE o.submitted_at IS NULL
+      AND o.status IN ('paid','preparing','delivered')
+      AND o.id > ?
+    ORDER BY o.id LIMIT ?
+  `;
+  return (await env.DB.prepare(sql).bind(cursor,limit).all()).results;
+}
+function paidDraftHasContent(row) {
+  return Boolean(excerpt(row.rich_html) || row.has_ready_media);
+}
+
 async function adminRoute(req,env,path) {
   if(path==='/api/admin/login'&&req.method==='POST')return login(req,env);
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
@@ -918,6 +935,55 @@ async function adminRoute(req,env,path) {
   // Prévia operacional segura: a coordenação vê remetente, status e stickers.
   // Corpo, HTML, fotos, áudios, nome de assinatura e tokens NUNCA são serializados.
   // Inclui cartinhas com Pix pendente e rascunhos, sem desbloquear murais.
+  // Operational-only counts: the coordinator never receives the letter body.
+  if(path==='/api/admin/cartinhas/finalize-preview' && req.method==='GET') {
+    const summary={paid_drafts:0,eligible:0,empty:0};
+    let cursor='';
+    for (;;) {
+      const rows=await paidDraftRows(env,cursor,200);
+      for(const row of rows) {
+        summary.paid_drafts++;
+        if(paidDraftHasContent(row))summary.eligible++;
+        else summary.empty++;
+      }
+      if(rows.length<200)break;
+      cursor=rows[rows.length-1].id;
+    }
+    return result(summary);
+  }
+  if(path==='/api/admin/cartinhas/finalize-paid' && req.method==='POST') {
+    const input=await jsonBody(req,256);
+    const cursor=input && typeof input==='object' ? (input.cursor??'') : '';
+    if(typeof cursor!=='string' || (cursor&&!/^EJC-[A-F0-9]{12}$/.test(cursor)))
+      bad('Cursor de finalização inválido.');
+    // Each request processes one bounded batch, to remain responsive on mobile.
+    const rows=await paidDraftRows(env,cursor,40);
+    let finalized=0,empty=0;
+    const failures=[];
+    for(const row of rows) {
+      if(!paidDraftHasContent(row)){empty++;continue;}
+      try {
+        const timestamp=now();
+        const changed=await env.DB.prepare(
+          "UPDATE orders SET moderation='approved',public_message=0,moderation_note='',"+
+          "submitted_at=?,approved_at=?,release_override=0,updated_at=? "+
+          "WHERE id=? AND submitted_at IS NULL AND status IN ('paid','preparing','delivered')"
+        ).bind(timestamp,timestamp,timestamp,row.id).run();
+        if(changed.meta.changes!==1)continue; // Already sent or payment changed.
+        finalized++;
+        await event(env,row.id,'letter_sent','admin_bulk_finalize');
+        await enqueue(env,row.id,'letter_sent');
+      } catch (cause) {
+        // A submitted order is never reset on an event/notification failure.
+        failures.push(row.id);
+      }
+    }
+    return result({
+      scanned:rows.length,finalized,empty,failed:failures.length,failed_ids:failures,
+      next_cursor:rows.length===40?rows[rows.length-1].id:null
+    });
+  }
+
   if(path==='/api/admin/cartinhas' && req.method==='GET') {
     const rows=(await env.DB.prepare(
       `SELECT o.id,o.sender_name,o.status,o.submitted_at,o.created_at,o.composition_json,

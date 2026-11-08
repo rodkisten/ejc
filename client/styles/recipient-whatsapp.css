@@ -53,3 +53,8 @@
   .whatsapp-recipient-actions>.whatsapp-action{width:100%}
 }
 @media print { .whatsapp-admin-page,.recipient-phone-editor,.person-row-phone-share{display:none!important;} }
+
+.people-list .person-row { flex-wrap:wrap; align-items:flex-start; }
+.people-list .person-row-phone-share {flex:1 1 100%;max-width:none;grid-template-columns:minmax(0,1fr) minmax(170px,.6fr);align-items:end;}
+.people-list .person-admin-actions {flex:1 1 100%;}
+@media(max-width:650px){.people-list .person-row-phone-share{grid-template-columns:1fr;}}

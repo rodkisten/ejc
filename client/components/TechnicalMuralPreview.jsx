@@ -26,6 +26,7 @@ export default function TechnicalMuralPreview({ password, recipientSlug, userTok
   const [allBusy, setAllBusy] = useState(false);
   const files = useRef(new Set());
   const active = useRef(true);
+  const generation = useRef(0);
 
   const post = useCallback(async (url, signal) => {
     const response = await fetch(url, {
@@ -45,6 +46,7 @@ export default function TechnicalMuralPreview({ password, recipientSlug, userTok
 
   useEffect(() => {
     active.current = true;
+    const currentGeneration = ++generation.current;
     const controller = new AbortController();
     setLoading(true);
     setData(null);
@@ -68,16 +70,17 @@ export default function TechnicalMuralPreview({ password, recipientSlug, userTok
           throw new Error(payload.error || 'Acesso técnico recusado.');
         }
         const payload = await response.json();
-        if (!controller.signal.aborted) setData(payload);
+        if (!controller.signal.aborted && generation.current === currentGeneration) setData(payload);
       } catch (cause) {
-        if (!controller.signal.aborted) setError(cause.message || 'Não foi possível abrir o mural.');
+        if (!controller.signal.aborted && generation.current === currentGeneration) setError(cause.message || 'Não foi possível abrir o mural.');
       } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted && generation.current === currentGeneration) setLoading(false);
       }
     }
     load();
     return () => {
       active.current = false;
+      generation.current++;
       controller.abort();
       for (const url of files.current) URL.revokeObjectURL(url);
       files.current.clear();
@@ -88,6 +91,7 @@ export default function TechnicalMuralPreview({ password, recipientSlug, userTok
     if (!data || opened[id] || openBusy) return;
     const card = data.cards.find((item) => item.id === id);
     if (!card) return;
+    const currentGeneration = generation.current;
     setOpenBusy(id);
     setError('');
     const urls = [];
@@ -101,29 +105,31 @@ export default function TechnicalMuralPreview({ password, recipientSlug, userTok
         urls.push(url);
         media.push({ ...attachment, url });
       }
-      if (active.current) {
+      if (active.current && generation.current === currentGeneration) {
         urls.forEach((url) => files.current.add(url));
         setOpened((current) => ({ ...current, [id]: { ...card, media } }));
       } else urls.forEach((url) => URL.revokeObjectURL(url));
     } catch (cause) {
       urls.forEach((url) => URL.revokeObjectURL(url));
-      if (active.current) setError(cause.message || 'Não foi possível abrir a cartinha.');
+      if (active.current && generation.current === currentGeneration) setError(cause.message || 'Não foi possível abrir a cartinha.');
     } finally {
-      if (active.current) setOpenBusy('');
+      if (active.current && generation.current === currentGeneration) setOpenBusy('');
     }
   };
 
   const openAll = async () => {
     if (!data || allBusy) return;
+    const currentGeneration = generation.current;
     setAllBusy(true);
     try {
       // Respect the mobile browser: handle one letter at a time.
       for (const card of data.cards) {
+        if (generation.current !== currentGeneration || !active.current) break;
         // The next render will update opened; repeated opens are harmless.
         if (!opened[card.id]) await openLetter(card.id);
       }
     } finally {
-      if (active.current) setAllBusy(false);
+      if (active.current && generation.current === currentGeneration) setAllBusy(false);
     }
   };
 
@@ -135,7 +141,7 @@ export default function TechnicalMuralPreview({ password, recipientSlug, userTok
           <p>Mesmo mural do usuário, sem modificar leitura, pagamentos ou avisos.</p>
         </div>
         <div className="inline-actions">
-          <button className="btn outline" type="button" disabled={loading || allBusy}
+          <button className="btn outline" type="button" disabled={loading || allBusy || !!openBusy}
             onClick={openAll}>{allBusy ? <LoaderCircle size={16} /> : <Eye size={16} />}
             {allBusy ? 'Abrindo...' : 'Abrir todas'}
           </button>

@@ -929,11 +929,23 @@ async function adminRoute(req,env,path) {
     if(!person||!person.active||!person.whatsapp_phone)
       bad('Encontrista sem WhatsApp ativo.',409);
     const sent=now();
-    await env.DB.prepare(
-      'INSERT INTO recipient_whatsapp_deliveries(recipient_id,campaign_key,sent_at,send_count,image_sent) '+
-      'VALUES(?,?,?,1,1) ON CONFLICT(recipient_id,campaign_key) DO UPDATE SET '+
-      'sent_at=excluded.sent_at,send_count=send_count+1,image_sent=1'
-    ).bind(person.id,data.campaign_key,sent).run();
+    const authored=data.campaign_key===CAMPAIGN_KEY
+      ? await env.DB.prepare('SELECT whatsapp FROM ejc_campaigns WHERE key=?').bind(CAMPAIGN_KEY).first()
+      : null;
+    // Store the reusable message template, NOT an expanded token-bearing personal URL.
+    const template=authored?.whatsapp || (data.campaign_key==='mural'?'mural_invitation_v1':'campaign_default_v1');
+    await env.DB.batch([
+      env.DB.prepare(
+        'INSERT INTO recipient_whatsapp_deliveries(recipient_id,campaign_key,sent_at,send_count,image_sent) '+
+        'VALUES(?,?,?,1,1) ON CONFLICT(recipient_id,campaign_key) DO UPDATE SET '+
+        'sent_at=excluded.sent_at,send_count=send_count+1,image_sent=1'
+      ).bind(person.id,data.campaign_key,sent),
+      env.DB.prepare(
+        'INSERT INTO recipient_whatsapp_delivery_history('+
+        'id,recipient_id,campaign_key,sent_at,sent_by,image_sent,message_template) '+
+        'VALUES(?,?,?,?,?,?,?)'
+      ).bind(newId(),person.id,data.campaign_key,sent,'admin',1,template),
+    ]);
     const record=await env.DB.prepare(
       'SELECT sent_at,send_count,image_sent FROM recipient_whatsapp_deliveries '+
       'WHERE recipient_id=? AND campaign_key=?'

@@ -12,6 +12,7 @@ import PaymentLookup from './PaymentLookup';
 import SicoobReconciliation from '../components/SicoobReconciliation';
 import AdminLetters from './AdminLetters';
 import WhatsAppAdmin, { RecipientPhoneEditor, WhatsAppShareButton } from '../components/RecipientWhatsApp';
+import RecipientPhoneBulkImport from '../components/RecipientPhoneBulkImport';
 function useAdmin(){const [info,setInfo]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const reload=useCallback(async()=>{try{setInfo(await api('/api/admin/bootstrap'));setError('');}catch(e){setError(e.message);setInfo(null);}finally{setLoading(false);}},[]);
   useEffect(()=>{reload();},[reload]);return {info,loading,error,reload};}
@@ -402,6 +403,7 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
   }
   const add=async()=>{try{const r=await api('/api/admin/recipients/import',{method:'POST',data:{names:names.split(/\r?\n/).filter(Boolean)}});setNotice(`${r.inserted} nomes importados.`);setNames('');await reload();}catch(e){setError(e.message);}};
   return <><div className="section-head"><div><span className="eyebrow">ENCONTRISTAS</span><h1>Nomes, fotos e links exclusivos</h1><p>A coordenação gerencia os nomes, fotos e QR Codes, mas não lê nem escuta as cartinhas. Entregue os códigos dos murais individualmente.</p></div></div><section className="form-card"><label>Importar nomes (um por linha)</label><textarea rows={4} value={names} onChange={e=>setNames(e.target.value)} placeholder={'Maria Eduarda\nJoão Pedro\nAna Clara'}/><button className="btn" onClick={add}>Adicionar encontristas</button></section>
+    <RecipientPhoneBulkImport recipients={info.recipients} onRefresh={reload} />
     <section className="form-card">
       <h2>Imagens para redes sociais</h2>
       <p className="muted small">Atualize a arte da home e as prévias individuais (nome e foto). O WhatsApp e o Telegram receberão PNGs com dimensões reais.</p>

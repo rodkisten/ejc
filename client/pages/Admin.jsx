@@ -1,6 +1,6 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {NavLink,Routes,Route,useNavigate,useParams,useLocation} from 'react-router-dom';
-import {ShieldCheck,ClipboardList,UsersRound,Settings2,QrCode as QrIcon,Eye,Check,Copy,Trash2,Sparkles,Printer,Download,LogOut,ExternalLink,RefreshCw,Heart,ImagePlus,Pencil,RotateCcw,X} from 'lucide-react';
+import {ShieldCheck,ClipboardList,UsersRound,Settings2,QrCode as QrIcon,Eye,Check,Copy,Trash2,Sparkles,Printer,Download,LogOut,ExternalLink,RefreshCw,Heart,ImagePlus,Pencil,RotateCcw,X,MessageCircle} from 'lucide-react';
 import { api, money, btime, track,download } from '../lib/api';
 import QrCode from '../components/QrCode';
 import MiniQrCard from '../components/MiniQrCard';
@@ -11,6 +11,7 @@ import SquarePhotoEditor from '../components/SquarePhotoEditor';
 import PaymentLookup from './PaymentLookup';
 import SicoobReconciliation from '../components/SicoobReconciliation';
 import AdminLetters from './AdminLetters';
+import WhatsAppAdmin, { RecipientPhoneEditor, WhatsAppShareButton } from '../components/RecipientWhatsApp';
 function useAdmin(){const [info,setInfo]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const reload=useCallback(async()=>{try{setInfo(await api('/api/admin/bootstrap'));setError('');}catch(e){setError(e.message);setInfo(null);}finally{setLoading(false);}},[]);
   useEffect(()=>{reload();},[reload]);return {info,loading,error,reload};}
@@ -457,6 +458,10 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
           )}
         </div>
       </div>
+      <div className="person-row-phone-share">
+        <RecipientPhoneEditor recipient={r} onRefresh={reload} />
+        <WhatsAppShareButton recipient={r} onRefresh={reload} compact />
+      </div>
       <div className="inline-actions person-admin-actions">
         <button className="btn ghost" type="button" disabled={!!savingRecipient}
           onClick={()=>editingId===r.id?cancelEdit():beginEdit(r)}>
@@ -600,5 +605,5 @@ export default function Admin(){const currentLocation=useLocation();const techni
   const login=async e=>{e.preventDefault();setBusy(true);try{await api('/api/admin/login',{method:'POST',data:{password}});setAuthenticated(true);setLoginError('');await reload();}catch(e){setLoginError(e.message);}finally{setBusy(false);}};
   if(loading||authenticated===null)return <div className="loading">Carregando administração...</div>;
   if(!authenticated)return <div className="admin-login"><div className="form-card"><ShieldCheck size={40}/><h1>Coordenação do EJC</h1><p>Área reservada aos administradores das homenagens.</p><form onSubmit={login}><label htmlFor="admin-password">Senha da administração</label><input type="password" id="admin-password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)}/><button disabled={busy} className="btn wide">Entrar no painel</button></form>{loginError&&<div className="notice error">{loginError}</div>}</div></div>;
-  return <div className="admin-layout"><nav className="admin-nav no-print" aria-label="Navegação administrativa"><NavLink end to="/admin"><ClipboardList size={17}/> Pedidos</NavLink><NavLink to="/admin/encontristas"><UsersRound size={17}/> Encontristas</NavLink><NavLink to={technicalMode ? "/admin/cartinhas?secret=000000" : "/admin/cartinhas"}><Eye size={17}/> Cartinhas</NavLink><NavLink to="/admin/stickers"><ImagePlus size={17}/> Stickers PNG</NavLink><NavLink to="/admin/configuracoes"><Settings2 size={17}/> Configurações</NavLink><NavLink to="/admin/qrcodes"><QrIcon size={17}/> QR e impressão</NavLink><NavLink to="/admin/etiquetas"><Printer size={17}/> Etiquetas do mural</NavLink><NavLink to="/admin/demo"><Sparkles size={17}/> Demonstração</NavLink><button onClick={async()=>{await api('/api/admin/logout',{method:'POST',data:{}});setAuthenticated(false);}}><LogOut size={17}/> Sair</button></nav><div className="admin-content">{error&&<div className="notice error">{error}</div>}<Routes><Route index element={<AdminDashboard info={info} reload={reload}/>}/><Route path="pedidos/:id" element={<OrderDetail reload={reload}/>}/><Route path="encontristas" element={<People info={info} reload={reload}/>}/><Route path="cartinhas" element={<AdminLetters/>}/><Route path="cartinhas/:slug" element={<AdminLetters/>}/><Route path="stickers" element={<StickerAdmin/>}/><Route path="configuracoes" element={<Config info={info} reload={reload}/>}/><Route path="qrcodes" element={<QrPrint info={info}/>}/><Route path="etiquetas" element={<Labels info={info} reload={reload}/>}/><Route path="demo" element={<Demo reload={reload}/>}/></Routes></div></div>;
+  return <div className="admin-layout"><nav className="admin-nav no-print" aria-label="Navegação administrativa"><NavLink end to="/admin"><ClipboardList size={17}/> Pedidos</NavLink><NavLink to="/admin/encontristas"><UsersRound size={17}/> Encontristas</NavLink><NavLink to={technicalMode ? "/admin/cartinhas?secret=000000" : "/admin/cartinhas"}><Eye size={17}/> Cartinhas</NavLink><NavLink to="/admin/whatsapp"><MessageCircle size={17}/> WhatsApp</NavLink><NavLink to="/admin/stickers"><ImagePlus size={17}/> Stickers PNG</NavLink><NavLink to="/admin/configuracoes"><Settings2 size={17}/> Configurações</NavLink><NavLink to="/admin/qrcodes"><QrIcon size={17}/> QR e impressão</NavLink><NavLink to="/admin/etiquetas"><Printer size={17}/> Etiquetas do mural</NavLink><NavLink to="/admin/demo"><Sparkles size={17}/> Demonstração</NavLink><button onClick={async()=>{await api('/api/admin/logout',{method:'POST',data:{}});setAuthenticated(false);}}><LogOut size={17}/> Sair</button></nav><div className="admin-content">{error&&<div className="notice error">{error}</div>}<Routes><Route index element={<AdminDashboard info={info} reload={reload}/>}/><Route path="pedidos/:id" element={<OrderDetail reload={reload}/>}/><Route path="encontristas" element={<People info={info} reload={reload}/>}/><Route path="cartinhas" element={<AdminLetters/>}/><Route path="whatsapp" element={<WhatsAppAdmin info={info} reload={reload}/>}/><Route path="cartinhas/:slug" element={<AdminLetters/>}/><Route path="stickers" element={<StickerAdmin/>}/><Route path="configuracoes" element={<Config info={info} reload={reload}/>}/><Route path="qrcodes" element={<QrPrint info={info}/>}/><Route path="etiquetas" element={<Labels info={info} reload={reload}/>}/><Route path="demo" element={<Demo reload={reload}/>}/></Routes></div></div>;
 }

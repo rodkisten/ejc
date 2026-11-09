@@ -1705,3 +1705,59 @@ test('link temporário permite ao remetente concluir rascunho pago vazio sem inv
   assert.ok(saved.submitted_at);
   assert.match(saved.rich_html,/Persevere na fé/);
 });
+
+test('rascunho pago vazio é acompanhado até recuperação e aviso WhatsApp manual',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const person=list[0];
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:person.slug,sender_name:'Remetente do teste'
+  });
+  assert.equal(created.status,201);
+  const id=created.data.id;
+  const token=created.data.token;
+  const paid=await call(env,'/api/admin/orders/'+id+'/status','PATCH',{
+    status:'paid',bank_reference:'E2ERECOVER12345678',bank_checked:true,amount_checked:true
+  },admin);
+  assert.equal(paid.status,200);
+
+  let letters=(await call(env,'/api/admin/cartinhas','GET',undefined,admin)).data.letters;
+  let letter=letters.find(row=>row.id===id);
+  assert.equal(letter.empty_paid_observed,true);
+  assert.equal(letter.recovered_at,null);
+  assert.equal(letter.has_content,false);
+
+  const saved=await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Mensagem de carinho recuperada.</p>',
+    sender_name:'Remetente do teste'
+  },{token});
+  assert.equal(saved.status,200);
+  assert.equal(saved.data.repaired,true);
+  letters=(await call(env,'/api/admin/cartinhas','GET',undefined,admin)).data.letters;
+  letter=letters.find(row=>row.id===id);
+  assert.ok(letter.recovered_at);
+  assert.equal(letter.has_content,true);
+  assert.equal(letter.submitted,false);
+  assert.equal('rich_html' in letter,false);
+  assert.equal('media' in letter,false);
+
+  assert.equal((await call(env,'/api/order/submit','POST',{}, {token})).status,200);
+  assert.equal((await call(env,'/api/admin/recipients/'+person.id,'PATCH',{
+    whatsapp_phone:'33999546031'
+  },admin)).status,200);
+  const prepared=await call(env,'/api/admin/cartinhas/'+id+'/ready-whatsapp',
+    'POST',{},admin);
+  assert.equal(prepared.status,200);
+  assert.equal(prepared.data.phone,'5533999546031');
+  assert.equal(prepared.data.order_id,id);
+  const url=new URL(prepared.data.url);
+  assert.equal(url.searchParams.get('utm_campaign'),'cartinha_recuperada');
+  assert.ok(url.hash.startsWith('#token=m2.'));
+  assert.equal(url.searchParams.has('token'),false);
+  const sent=await call(env,'/api/admin/cartinhas/'+id+'/ready-whatsapp/confirm',
+    'POST',{},admin);
+  assert.equal(sent.status,200);
+  letters=(await call(env,'/api/admin/cartinhas','GET',undefined,admin)).data.letters;
+  assert.ok(letters.find(row=>row.id===id).recipient_notified_at);
+  const events=(await call(env,'/api/admin/orders/'+id,'GET',undefined,admin)).data.history;
+  assert.ok(events.some(event=>event.type==='empty_draft_recovered'));
+});

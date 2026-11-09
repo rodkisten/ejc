@@ -181,10 +181,19 @@ export default function Checkout() {
             <p className="muted small">TXID do Pix: {order.txid}</p>
             <button className="btn ghost" type="button" onClick={async()=>{
               try{
-                await navigator.clipboard.writeText(window.location.href);
-                setMessage('Link privado do carrinho copiado. Guarde-o para continuar depois.');
-              }catch{setError('Não foi possível copiar o link. Salve esta página no navegador.');}
-            }}><Copy size={16}/> Copiar link privado desta compra</button>
+                const short=await api('/api/links/shorten',{
+                  method:'POST',token,data:{url:window.location.href}
+                });
+                try{
+                  await navigator.clipboard.writeText(short.url);
+                  setMessage('Link curto e privado copiado. Guarde-o para continuar depois.');
+                }catch{
+                  window.prompt('Copie seu link curto e privado:',short.url);
+                }
+              }catch(cause){
+                setError(cause.message||'Não foi possível encurtar seu acesso.');
+              }
+            }}><Copy size={16}/> Copiar link curto desta compra</button>
             <div className="notice"><LockKeyhole size={17} />
               <span>Não compartilhe esta página: ela dá acesso às cartinhas. A coordenação vê remetente e stickers, mas não pode ler mensagens nem abrir fotos ou áudios.</span>
             </div>

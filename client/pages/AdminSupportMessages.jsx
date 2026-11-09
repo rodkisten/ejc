@@ -127,15 +127,18 @@ export default function AdminSupportMessages({ info }) {
   async function copyMessage() {
     if (blocked || !text.trim()) return;
     try {
-      let ogNote='';
+      // Clipboard needs the user gesture, particularly on iPhone Safari.
+      // Publish the image only after successfully capturing the copied text.
+      await navigator.clipboard.writeText(text);
+      setNotice('✅ Mensagem copiada com a formatação do WhatsApp!');
       try {
         const generated=await ensurePersonalizedDraftOg();
-        if(generated)ogNote=' OG personalizada de '+generated.recipients.join(', ')+' publicada.';
+        if(generated)setNotice('✅ Mensagem copiada! OG personalizada para '+
+          generated.recipients.join(', ')+' publicada automaticamente.');
       } catch (cause) {
-        ogNote=' Não foi possível publicar a OG personalizada: '+cause.message;
+        setNotice('✅ Mensagem copiada. A prévia personalizada não pôde ser publicada: '+
+          cause.message);
       }
-      await navigator.clipboard.writeText(text);
-      setNotice('✅ Mensagem copiada com a formatação do WhatsApp!'+ogNote);
       track('admin_support_template_copied', { stage: template });
     } catch {
       window.prompt('Copie a mensagem:', text);

@@ -1317,14 +1317,65 @@ async function adminRoute(req,env,path) {
     });
   }
 
+  // Only authenticated admins may create a ready-to-open, private mural invitation.
+  const readyMessage=path.match(/^\\/api\\/admin\\/cartinhas\\/(EJC-[A-F0-9]{12})\\/ready-whatsapp(?:\\/confirm)?$/);
+  if(readyMessage&&req.method==='POST'){
+    const confirm=path.endsWith('/confirm');
+    const row=await env.DB.prepare(
+      "SELECT o.id,o.submitted_at,o.status,r.id AS recipient_id,r.name AS recipient_name,"+
+      "r.slug,r.active,r.whatsapp_phone,r.mural_code,d.recovered_at,d.recipient_notified_at "+
+      "FROM orders o JOIN recipients r ON r.id=o.recipient_id "+
+      "JOIN draft_recovery d ON d.order_id=o.id WHERE o.id=?"
+    ).bind(readyMessage[1]).first();
+    if(!row||!row.recovered_at||!row.submitted_at||!activeOrder(row)||!row.active)
+      bad('Esta cartinha recuperada ainda não está pronta para avisar.',409);
+    if(!row.whatsapp_phone)bad('Cadastre o WhatsApp do encontrista primeiro.',409);
+    if(confirm){
+      await env.DB.prepare("UPDATE draft_recovery SET recipient_notified_at=? WHERE order_id=?")
+        .bind(now(),row.id).run();
+      await event(env,row.id,'recovered_letter_notice_confirmed');
+      return result({ok:true,notified:true});
+    }
+    if(!row.mural_code){
+      const code=await nextUniqueMuralCode(env);
+      await env.DB.prepare("UPDATE recipients SET mural_code=? WHERE id=? AND mural_code IS NULL")
+        .bind(code,row.recipient_id).run();
+      row.mural_code=(await env.DB.prepare("SELECT mural_code FROM recipients WHERE id=?")
+        .bind(row.recipient_id).first()).mural_code;
+    }
+    const grant=await muralGrant(env,{id:row.recipient_id,mural_code:row.mural_code});
+    const link=new URL('/mural/'+encodeURIComponent(row.slug),env.PUBLIC_ORIGIN||req.url);
+    link.searchParams.set('utm_source','whatsapp');
+    link.searchParams.set('utm_medium','mensagem');
+    link.searchParams.set('utm_campaign','cartinha_recuperada');
+    link.searchParams.set('utm_content','aviso_encontrista');
+    link.hash='token='+encodeURIComponent(grant);
+    return result({phone:row.whatsapp_phone,recipient_name:row.recipient_name,
+      order_id:row.id,url:link.toString(),released:released(await settings(env)),
+      already_notified:!!row.recipient_notified_at});
+  }
+  if(path==='/api/admin/help-link/stats'&&req.method==='GET'){
+    const rows=(await env.DB.prepare(
+      "SELECT day,campaign,clicks FROM help_link_counts ORDER BY day DESC,campaign LIMIT 100"
+    ).all()).results;
+    return result({rows});
+  }
   if(path==='/api/admin/cartinhas' && req.method==='GET') {
     const rows=(await env.DB.prepare(
       `SELECT o.id,o.sender_name,o.status,o.submitted_at,o.created_at,o.composition_json,o.campaign_key,o.rich_html,
         EXISTS(SELECT 1 FROM media m WHERE m.order_id=o.id AND m.status='ready') AS has_ready_media,
+        d.empty_seen_at,d.recovered_at,d.recipient_notified_at,
         r.id AS recipient_id,r.name AS recipient_name,r.slug AS recipient_slug
         FROM orders o JOIN recipients r ON r.id=o.recipient_id
+        LEFT JOIN draft_recovery d ON d.order_id=o.id
         ORDER BY o.created_at DESC`
     ).all()).results;
+    // Register paid empty drafts seen by the admin, including older data.
+    const missing=rows.filter(row=>activeOrder(row)&&!row.submitted_at&&!row.campaign_key&&
+      !visibleDraftText(row.rich_html)&&!row.has_ready_media&&!row.empty_seen_at);
+    if(missing.length)await env.DB.batch(missing.map(row=>
+      env.DB.prepare("INSERT OR IGNORE INTO draft_recovery(order_id,empty_seen_at) VALUES(?,?)")
+        .bind(row.id,now())));
     const letters=rows.map(row=>{
       let design;
       try { design=normalizeComposition(JSON.parse(row.composition_json||'{}')); }
@@ -1335,13 +1386,29 @@ async function adminRoute(req,env,path) {
         recipient_id:row.recipient_id,recipient_name:row.recipient_name,
         recipient_slug:row.recipient_slug,status:row.status,gift:!!row.campaign_key,
         submitted:!!row.submitted_at,created_at:row.created_at,
-        has_content:!!excerpt(row.rich_html)||!!row.has_ready_media,
+        has_content:visibleDraftText(row.rich_html)||!!row.has_ready_media,
+        empty_paid_observed:!!row.empty_seen_at||missing.some(item=>item.id===row.id),
+        recovered_at:row.recovered_at||null,recipient_notified_at:row.recipient_notified_at||null,
         theme:design.theme,stickers:design.stickers
       };
     });
     return result({letters});
   }
 
+  // Publish the supplied OG artwork in R2, without changing other site images.
+  if(path==='/api/admin/og/help-finished'&&req.method==='GET'){
+    const image=await env.MEDIA.head('og/help-finished-v1.png');
+    return result({ready:!!image,url:'/og-ajuda-cartinhas.png?v=20261109b',bytes:image?.size||0});
+  }
+  if(path==='/api/admin/og/help-finished'&&req.method==='POST'){
+    const image=await receiveSafeImage(req,2*1024*1024);
+    if(image.type!=='image/png')bad('A imagem OG deve ser PNG.',415);
+    const view=new DataView(image.bytes.buffer,image.bytes.byteOffset,image.bytes.byteLength);
+    if(image.bytes.byteLength<24||view.getUint32(16)!==1200||view.getUint32(20)!==630)
+      bad('A imagem OG deve medir 1200 × 630 pixels.',400);
+    await env.MEDIA.put('og/help-finished-v1.png',image.bytes,{httpMetadata:{contentType:'image/png'}});
+    return result({ok:true,url:'/og-ajuda-cartinhas.png?v='+Date.now()});
+  }
   if(path==='/api/admin/branding/logo' && req.method==='POST') {
     const image=await receiveSafeImage(req,2*1024*1024);
     await env.MEDIA.put('branding/ejc-market-logo',image.bytes,{httpMetadata:{contentType:image.type}});

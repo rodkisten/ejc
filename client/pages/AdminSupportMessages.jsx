@@ -320,8 +320,8 @@ export default function AdminSupportMessages({ info }) {
       setResumeUrl(created.length===1?created[0].url:
         created.map(item=>'• '+item.name+': '+item.url).join('\n'));
       try{
-        await publishDraftOg(drafts);
-        setNotice('✅ '+created.length+' link(s) privado(s) e OG personalizada gerados com os nomes selecionados.');
+        await ensurePersonalizedDraftOg();
+        setNotice('✅ '+created.length+' link(s) privados e OGs personalizadas gerados para cada encontrista.');
       }catch(ogError){
         setNotice('✅ '+created.length+' link(s) privado(s) gerados. A OG personalizada não pôde ser publicada: '+
           ogError.message);
@@ -334,7 +334,10 @@ export default function AdminSupportMessages({ info }) {
     const drafts=selectedOrders.filter(order=>
       !order.submitted&&['paid','preparing','delivered'].includes(order.status));
     if(!drafts.length)return null;
-    return publishDraftOg(drafts);
+    // Every continuation URL represents one letter. Its OG image key is
+    // calculated from that single order ID, not the whole selection.
+    await Promise.all(drafts.map(letter=>publishDraftOg([letter])));
+    return {recipients:[...new Set(drafts.map(letter=>letter.recipient_name))]};
   }
 
   async function copyMessage() {

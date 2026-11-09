@@ -4,6 +4,7 @@ import { CheckCheck, Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, S
 import { api, track } from '../lib/api';
 import { readyLetterWhatsAppMessage } from '../lib/helpLink.js';
 import { whatsappShareUrl } from '../lib/recipientWhatsApp.js';
+import { validContactName, createSupportMessage } from '../lib/supportMessages.js';
 import StickerLayer from '../components/letter/StickerLayer';
 import TechnicalLetterPreview from '../components/TechnicalLetterPreview';
 import TechnicalMuralPreview, { extractMuralGrant, extractMuralCode } from '../components/TechnicalMuralPreview';
@@ -75,10 +76,14 @@ function ResumeDraftLink({ letter }) {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const recipient = letter.sender_name || 'remetente';
-  const shareText = recovery
-    ? 'Olá, ' + recipient + '! 💌 Sua cartinha para ' + letter.recipient_name +
-      ' foi paga, mas ainda está como rascunho. Use este link privado para continuar a edição, ' +
-      'salvar suas fotos e áudios e enviar a cartinha: ' + recovery.resume_url
+  const [contactName, setContactName] = useState(validContactName(letter.sender_name) ? letter.sender_name : '');
+  const shareText = recovery && validContactName(contactName)
+    ? createSupportMessage('rascunho_vazio', {
+      contactName, recipientNames: [letter.recipient_name],
+      recipients: [{ name:letter.recipient_name, slug:letter.recipient_slug }],
+      orders: [{ id:letter.id, recipient_name:letter.recipient_name }],
+      resumeUrl: recovery.resume_url, origin: window.location.origin,
+    })
     : '';
 
   async function createLink() {
@@ -98,6 +103,10 @@ function ResumeDraftLink({ letter }) {
   }
 
   async function copyMessage() {
+    if (!shareText) {
+      setError('Informe o nome de quem entrou em contato antes de enviar a mensagem.');
+      return;
+    }
     try {
       await navigator.clipboard.writeText(shareText);
       setCopied(true);
@@ -110,6 +119,12 @@ function ResumeDraftLink({ letter }) {
     <div className="admin-draft-recovery">
       <p><strong>⚠️ Sem conteúdo salvo no servidor.</strong> O pagamento foi confirmado,
         mas ainda não há texto, foto ou áudio finalizado para aprovar.</p>
+      {!validContactName(contactName) && <div className="field">
+        <label htmlFor={'draft-contact-'+letter.id}>Como se chama a pessoa que entrou em contato?</label>
+        <input id={'draft-contact-'+letter.id} value={contactName} maxLength={100}
+          onChange={event => setContactName(event.target.value)} placeholder="Nome da pessoa" />
+        <small>O nome não foi informado no rascunho. Peça-o antes de responder.</small>
+      </div>}
       {!recovery ? (
         <button type="button" className="btn outline" disabled={busy} onClick={createLink}>
           <LockKeyhole size={16} /> {busy ? 'Criando link…' : 'Criar link para ' + recipient + ' continuar'}
@@ -122,7 +137,7 @@ function ResumeDraftLink({ letter }) {
             {recovery.resume_url}
           </a>
           <div className="inline-actions">
-            <button type="button" className="btn" onClick={copyMessage}>
+            <button type="button" className="btn" onClick={copyMessage} disabled={!shareText}>
               {copied ? '✓ Mensagem copiada' : 'Copiar mensagem e link'}
             </button>
             <button type="button" className="btn ghost" onClick={createLink} disabled={busy}>
@@ -131,6 +146,11 @@ function ResumeDraftLink({ letter }) {
           </div>
         </div>
       )}
+      <Link className="btn outline" to="/admin/mensagens" state={{ support: {
+        template:'rascunho_vazio',recipient_slug:letter.recipient_slug,
+        order_id:letter.id,contact_name:contactName,
+        resume_url:recovery?.resume_url||''
+      }}}>💌 Personalizar no editor de mensagens</Link>
       {error && <p className="notice error" role="alert">{error}</p>}
     </div>
   );
@@ -479,6 +499,11 @@ export default function AdminLetters() {
                 <span className={'admin-letter-status ' + (paid(letter.status) ? 'is-paid' : 'is-pending')}>
                   {statusText(letter)}
                 </span>
+                <Link className="btn ghost" to="/admin/mensagens" state={{support:{
+                  template:letter.submitted?'recebida':!letter.has_content?'rascunho_vazio':'aguardando',
+                  recipient_slug:letter.recipient_slug, order_id:letter.id,
+                  contact_name:validContactName(letter.sender_name)?letter.sender_name:''
+                }}}>💬 Responder</Link>
                 <button type="button" className="btn outline" aria-expanded={!!expanded[letter.id]}
                   onClick={() => setExpanded((previous) => ({
                     ...previous, [letter.id]: !previous[letter.id],

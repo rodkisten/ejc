@@ -1,6 +1,5 @@
 import React from 'react';
 import { Heart, LifeBuoy, RefreshCw } from 'lucide-react';
-import { SUPPORT_WHATSAPP } from '../lib/checkoutSupport.js';
 import '../styles/unfinished-letter.css';
 
 const EMPTY_NAMES = new Set([
@@ -13,10 +12,8 @@ export function displaySenderName(value) {
   return name && !EMPTY_NAMES.has(name.toLocaleLowerCase('pt-BR')) ? name : '';
 }
 
-export default function UnfinishedLetterNotice({ senderName, onRefresh }) {
+export default function UnfinishedLetterNotice({ senderName, onRefresh, onSupportClick }) {
   const author = displaySenderName(senderName);
-  const supportText = 'Olá! 💌 Preciso de ajuda com uma cartinha do XX EJC Simonésia que ainda não foi finalizada.';
-  const supportUrl = 'https://wa.me/' + SUPPORT_WHATSAPP + '?text=' + encodeURIComponent(supportText);
 
   return (
     <article className="unfinished-letter-note" aria-label="Cartinha ainda em preparação">
@@ -46,9 +43,14 @@ export default function UnfinishedLetterNotice({ senderName, onRefresh }) {
             <RefreshCw size={17} /> Conferir novamente
           </button>
         )}
-        <a className="btn ghost" href={supportUrl} target="_blank" rel="noopener noreferrer">
-          <LifeBuoy size={17} /> Precisa de ajuda? Fale com o suporte
-        </a>
+        {onSupportClick
+          ? <button type="button" className="btn ghost" onClick={onSupportClick}>
+              <LifeBuoy size={17}/> Precisa de ajuda? Fale com o suporte
+            </button>
+          : <a className="btn ghost" href="/ajuda/minha-cartinha" target="_blank"
+              rel="noopener noreferrer">
+              <LifeBuoy size={17}/> Precisa de ajuda? Fale com o suporte
+            </a>}
       </div>
       <small><Heart size={14} aria-hidden="true" /> Com carinho, equipe do Mini Mercado · XX EJC Simonésia</small>
     </article>

@@ -18,8 +18,9 @@ test('link curto abre o WhatsApp com mensagem pronta e UTMs da divulgação',asy
   const response=await visit('/ajuda/terminei-a-cartinha?remetente=Ana&utm_source=whatsapp&utm_medium=mensagem&utm_campaign=recuperacao_cartinhas');
   assert.equal(response.status,302);
   const target=new URL(response.headers.get('Location'));
-  assert.equal(target.origin,'https://wa.me');
-  assert.equal(target.pathname,'/5532999662604');
+  assert.equal(target.origin,'https://api.whatsapp.com');
+  assert.equal(target.pathname,'/send');
+  assert.equal(target.searchParams.get('phone'),'5532999662604');
   assert.match(target.searchParams.get('text'),/cartinha do XX EJC Simonésia/);
   assert.match(target.searchParams.get('text'),/confirmar o recebimento/);
   assert.equal(target.searchParams.get('utm_source'),'whatsapp');
@@ -108,8 +109,9 @@ test('link /ajuda/minha-cartinha abre WhatsApp personalizado com identificadores
   const response=await visit('/ajuda/minha-cartinha?'+params.toString());
   assert.equal(response.status,302);
   const redirect=new URL(response.headers.get('Location'));
-  assert.equal(redirect.origin,'https://wa.me');
-  assert.equal(redirect.pathname,'/5532999662604');
+  assert.equal(redirect.origin,'https://api.whatsapp.com');
+  assert.equal(redirect.pathname,'/send');
+  assert.equal(redirect.searchParams.get('phone'),'5532999662604');
   assert.equal(redirect.searchParams.get('utm_source'),'mural');
   assert.equal(redirect.searchParams.get('utm_campaign'),'suporte_encontrista');
   const msg=redirect.searchParams.get('text');

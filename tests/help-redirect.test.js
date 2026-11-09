@@ -4,6 +4,7 @@ import worker from '../src/worker.js';
 
 const base='https://ejc.migos.club';
 const env={
+  MEDIA:{head:async()=>null,get:async()=>null},
   ASSETS:{
     fetch:async()=>new Response('Página normal',{headers:{'Content-Type':'text/plain'}})
   }

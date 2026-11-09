@@ -7,7 +7,7 @@ import { readAdminListFilters, updateAdminListFilter, isReadyForSending } from '
 import { publishDraftOg } from '../lib/draftOg.js';
 import { createSecureSupportContext } from '../lib/secureSupport.js';
 import { whatsappShareUrl, normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp.js';
-import { navigateToWhatsApp, isWhatsAppConfirmationPending, setWhatsAppConfirmationPending } from '../lib/whatsappNavigation.js';
+import { navigateToWhatsApp, prepareWhatsAppPopup, closeWhatsAppPopup, isWhatsAppConfirmationPending, setWhatsAppConfirmationPending } from '../lib/whatsappNavigation.js';
 import { supportContactParams, supportContactAdminUrl } from '../lib/supportContactUrl.js';
 import { validContactName, createSupportMessage } from '../lib/supportMessages.js';
 import StickerLayer from '../components/letter/StickerLayer';
@@ -184,7 +184,8 @@ function ResumeDraftLink({ letter }) {
             <button type="button" className="btn" onClick={copyMessage} disabled={!shareText}>
               {copied ? '✓ Mensagem copiada' : 'Copiar mensagem e link'}
             </button>
-            {shareText && contactNumber && <a className="btn outline"
+            {shareText && contactNumber && <a className="btn outline" target="_blank"
+              rel="noopener noreferrer"
               href={whatsappShareUrl({phone:contactNumber,message:shareText})}
               onClick={()=>track('admin_draft_recovery_whatsapp_opened',{stage:'recovery'})}>
               📲 Enviar WhatsApp para {contactName.split(' ')[0]}
@@ -213,6 +214,7 @@ function RecoveredLetterNotice({letter,onUpdated}){
   const confirmationKey='recovered:'+letter.id;
   const [confirming,setConfirming]=useState(()=>isWhatsAppConfirmationPending(confirmationKey));
   async function prepare(){
+    const popup=prepareWhatsAppPopup('Preparando aviso ao encontrista…');
     setBusy(true);setError('');setWhatsApp('');
     try{
       const data=await api('/api/admin/cartinhas/'+encodeURIComponent(letter.id)+'/ready-whatsapp',
@@ -223,8 +225,9 @@ function RecoveredLetterNotice({letter,onUpdated}){
       setWhatsApp(url);
       setConfirming(true);
       setWhatsAppConfirmationPending(confirmationKey,true);
-      navigateToWhatsApp(url);
+      navigateToWhatsApp(url, popup);
     }catch(cause){
+      closeWhatsAppPopup(popup);
       setError(cause.message||'Não foi possível gerar o convite.');
     }finally{setBusy(false);}
   }
@@ -248,7 +251,7 @@ function RecoveredLetterNotice({letter,onUpdated}){
       <button type="button" className="btn" disabled={busy} onClick={prepare}>
         {busy?'Preparando…':letter.recipient_notified_at?'📲 Aviso enviado · reenviar':'📲 Avisar encontrista no WhatsApp'}
       </button>
-      {whatsApp&&<a href={whatsApp}
+      {whatsApp&&<a href={whatsApp} target="_blank" rel="noopener noreferrer"
         onClick={()=>{
           setConfirming(true);
           setWhatsAppConfirmationPending(confirmationKey,true);

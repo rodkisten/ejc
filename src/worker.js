@@ -731,6 +731,22 @@ async function supportContextMint(req,env){
   if(Array.isArray(input.ids)&&input.ids.length!==data.ids.length)
     bad('IDs de cartinhas inválidos ou repetidos.',400);
   const admin=await isAdmin(req,env);
+  // In the private mural, only a verified recipient grant may recover their
+  // registered WhatsApp number. It stays inside the encrypted support context.
+  if(!admin&&typeof input.muralSlug==='string'&&
+      /^[a-z0-9-]{1,65}$/.test(input.muralSlug)){
+    const auth=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
+    const person=await env.DB.prepare(
+      'SELECT id,name,slug,mural_code,whatsapp_phone FROM recipients WHERE slug=? AND active=1'
+    ).bind(input.muralSlug).first();
+    if(person&&await validMuralGrant(env,auth,person)){
+      if(data.recipientSlugs.some(slug=>slug!==person.slug))
+        bad('Este link de suporte não pertence ao seu mural.',403);
+      data.name=person.name;
+      data.phone=normaliseWhatsAppPhone(person.whatsapp_phone||data.phone);
+      data.recipientSlugs=[person.slug];
+    }
+  }
   let owned=[];
   if(data.ids.length&&!admin){
     const auth=req.headers.get('Authorization')||'';

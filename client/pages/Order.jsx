@@ -25,7 +25,7 @@ import { LetterCard } from '../components/LetterCard';
 import InstagramExportPanel from '../components/social/InstagramExportPanel';
 import { useLetterComposer } from '../hooks/useLetterComposer';
 import LetterComposerFields from '../components/LetterComposerFields';
-import { completedLetterWhatsAppHref } from '../lib/helpLink';
+import { openSecureSupport } from '../lib/secureSupport.js';
 function sameDraft(a, b) {
   return a === b;
 }
@@ -45,6 +45,30 @@ export default function Order() {
   const activeToken = useRef(token);
   activeToken.current = token;
   const startedTracking=useRef(false);
+  const [supportPhone,setSupportPhone] = useState('');
+  useEffect(()=>{
+    const c=new URLSearchParams(window.location.search).get('c')||
+      sessionStorage.getItem('ejc-support-context');
+    if(!c)return;
+    api('/api/support/context?c='+encodeURIComponent(c))
+      .then(data=>{if(data.phone)setSupportPhone(data.phone);})
+      .catch(()=>{});
+  },[token]);
+  const confirmSupport=async ({sender:author='',items=[],submitted=true}={})=>{
+    setError('');
+    try{
+      await openSecureSupport({
+        purpose:submitted?'finished':'support',
+        name:author||sender||order?.sender_name||'',phone:supportPhone,
+        ids:items.map(item=>item.id).slice(0,20),
+        recipientSlugs:order?.recipient_slug?[order.recipient_slug]:[],
+        stage:submitted?'cartinha_finalizada':'rascunho_salvo',
+        source:'editor',medium:'botao',campaign:'confirmacao_envio',
+        content:'suporte_remetente',token
+      });
+      track('help_link_clicked',{stage:submitted?'letter_submitted':'draft_saved'});
+    }catch(cause){setError(cause.message);}
+  };
   const [receiptEmail, setReceiptEmail] = useState('');
   const [receiptBusy,setReceiptBusy] = useState(false);
   const [completion,setCompletion] = useState(null);
@@ -356,7 +380,7 @@ export default function Order() {
       </div>
 
             )}
-        <CheckoutSupport step={paid ? 'Editor de cartinha paga' : order.status === 'claimed' ? 'Pix informado · em conferência' : 'Editor / Pix individual'} orderId={order.id} checkoutId={order.checkout_id} recipientNames={[order.recipient_name]} recipientSlugs={[order.recipient_slug]} senderName={sender || order.sender_name} orderToken={token} />
+        <CheckoutSupport step={paid ? 'Editor de cartinha paga' : order.status === 'claimed' ? 'Pix informado · em conferência' : 'Editor / Pix individual'} orderId={order.id} checkoutId={order.checkout_id} recipientNames={[order.recipient_name]} recipientSlugs={[order.recipient_slug]} senderName={sender || order.sender_name} senderPhone={supportPhone} orderToken={token} />
         <div className="compose-layout">
           <div className="compose-main">
             <div className="notice success">
@@ -431,12 +455,13 @@ export default function Order() {
                 <strong>{order.recipient_name}</strong> · referência <code>{order.id}</code>
               </p>
               <p>Se desejar, avise a equipe do Mini Mercado pelo WhatsApp. A mensagem já traz o nome e o ID do encontrista. <strong>É opcional.</strong></p>
-              <a className="btn ejc-letter-completion-whatsapp" href={completedLetterWhatsAppHref({
-                sender: completion.sender, items: completion.items, submitted: completion.type === 'submitted'
-              })} target="_blank" rel="noopener noreferrer"
-                onClick={() => track('help_link_clicked', { stage: 'letter_' + completion.type })}>
-                <Share2 size={18} /> Avisar a equipe pelo WhatsApp (opcional)
-              </a>
+              <button type="button" className="btn ejc-letter-completion-whatsapp"
+                onClick={()=>confirmSupport({
+                  sender:completion.sender,items:completion.items,
+                  submitted:completion.type==='submitted'
+                })}>
+                <Share2 size={18}/> Avisar a equipe pelo WhatsApp (opcional)
+              </button>
             </div>}
             <div className="inline-actions spaced cart-composer-actions">
               <button className="btn ghost" type="button" onClick={() => setPreview(value => !value)}>
@@ -458,13 +483,11 @@ export default function Order() {
             {order.submitted && !completion && <div className="notice success">
               <strong>💌 Sua cartinha já foi enviada!</strong>
               <p>Se desejar, avise a equipe usando apenas o ID e o nome do encontrista.</p>
-              <a className="btn outline" href={completedLetterWhatsAppHref({
-                sender: sender || order.sender_name,
-                items: [{ id: order.id, recipient_name: order.recipient_name }],
-                submitted: true
-              })} target="_blank" rel="noopener noreferrer">
-                <Share2 size={17} /> Avisar a equipe (opcional)
-              </a>
+              <button type="button" className="btn outline"
+                onClick={()=>confirmSupport({sender:sender||order.sender_name,
+                  items:[{id:order.id,recipient_name:order.recipient_name}],submitted:true})}>
+                <Share2 size={17}/> Avisar a equipe (opcional)
+              </button>
             </div>}
             {preview && <div className="preview-popup letter-reveal">
               <h2 className="spaced">Prévia da cartinha</h2>

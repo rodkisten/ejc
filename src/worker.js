@@ -679,12 +679,30 @@ async function publicRoute(req,env,path) {
       await markRead(env,order.id);
       return result({card});
     }
+    // Paid, unfinished letters appear as a kind note, never as the sender's
+    // unsent content. The released mural still requires its private grant.
     const rows=(await env.DB.prepare(
-      "SELECT o.id,o.submitted_at FROM orders o WHERE o.recipient_id=? AND o.submitted_at IS NOT NULL AND o.status IN ('paid','preparing','delivered') ORDER BY o.submitted_at DESC"
+      "SELECT o.id,o.submitted_at,o.sender_name,o.rich_html,o.composition_json,"+
+      "EXISTS(SELECT 1 FROM media m WHERE m.order_id=o.id AND m.status='ready') AS has_ready_media "+
+      "FROM orders o WHERE o.recipient_id=? AND o.status IN ('paid','preparing','delivered') "+
+      "ORDER BY COALESCE(o.submitted_at,o.created_at) DESC,o.id"
     ).bind(person.id).all()).results;
+    const cards=rows.map(o=>{
+      const unfinished=!o.submitted_at;
+      const empty=unfinished || (!excerpt(o.rich_html) && !o.has_ready_media);
+      if(!empty)return {id:o.id,submitted_at:o.submitted_at};
+      // Never disclose an anonymous sender even when a name was entered.
+      let anonymous=false;
+      try { anonymous=normalizeComposition(JSON.parse(o.composition_json||'{}')).anonymous; }
+      catch { anonymous=true; }
+      return {
+        id:o.id,submitted_at:o.submitted_at,
+        ...(unfinished?{draft_pending:true}:{empty_content:true}),
+        sender_name:anonymous?'':(o.sender_name||'').trim(),
+      };
+    });
     return result({recipient:{name:person.name,slug:person.slug,photo_url:person.active?recipientPhotoUrl(person):null},
-      cards:rows.map(o=>({id:o.id,submitted_at:o.submitted_at})),
-      release_at:config.release_at,locked:false});
+      cards,release_at:config.release_at,locked:false});
   }
   if(path==='/api/receipt/confirm'&&req.method==='POST'){
     const body=await jsonBody(req,400);

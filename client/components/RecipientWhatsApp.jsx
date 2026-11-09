@@ -86,9 +86,11 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
       const trackedUrl=new URL(details.url);
       // The mural grant stays in the URL fragment, but operational attribution
       // and the contact's phone/IDs are encapsulated in the encrypted context.
-      const opaque=new URL(context.link).searchParams.get('c');
-      trackedUrl.search='?c='+encodeURIComponent(opaque);
-      const inviteUrl=trackedUrl.toString();
+      trackedUrl.search='?c='+encodeURIComponent(context.context_token);
+      const shortInvite=await api('/api/admin/links/shorten',{
+        method:'POST',data:{url:trackedUrl.toString(),kind:'mural'}
+      });
+      const inviteUrl=shortInvite.url;
       let message;
       if(isCampaign){
         const campaign=await api('/api/admin/campaign/mini-mercado');

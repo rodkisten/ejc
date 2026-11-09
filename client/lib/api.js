@@ -73,10 +73,10 @@ export async function uploadMedia(file, kind, token, onProgress) {
 export function safeAnalyticsLocation(href) {
   const parsed=new URL(href);
   let path=parsed.pathname;
-  path=path.replace(/^\\/(pedido|checkout)\\/[^/]+/, '/$1/:privado')
-    .replace(/^\\/mural\\/[^/]+/, '/mural/:privado')
-    .replace(/^\\/enviar\\/[^/]+/, '/enviar/:encontrista')
-    .replace(/^\\/admin\\/pedidos\\/[^/]+/, '/admin/pedidos/:pedido');
+  path=path.replace(/^\/(pedido|checkout)\/[^/]+/, '/$1/:privado')
+    .replace(/^\/mural\/[^/]+/, '/mural/:privado')
+    .replace(/^\/enviar\/[^/]+/, '/enviar/:encontrista')
+    .replace(/^\/admin\/pedidos\/[^/]+/, '/admin/pedidos/:pedido');
   const safe=new URL(path,parsed.origin);
   for(const key of ['utm_source','utm_medium','utm_campaign','utm_content']){
     const value=parsed.searchParams.get(key);

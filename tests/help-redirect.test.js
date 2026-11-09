@@ -19,7 +19,7 @@ test('link curto abre o WhatsApp com mensagem pronta e UTMs da divulgação',asy
   assert.equal(response.status,302);
   const target=new URL(response.headers.get('Location'));
   assert.equal(target.origin,'https://wa.me');
-  assert.equal(target.pathname,'/5533999546031');
+  assert.equal(target.pathname,'/5532999662604');
   assert.match(target.searchParams.get('text'),/cartinha do XX EJC Simonésia/);
   assert.match(target.searchParams.get('text'),/confirmar o recebimento/);
   assert.equal(target.searchParams.get('utm_source'),'whatsapp');
@@ -109,7 +109,7 @@ test('link /ajuda/minha-cartinha abre WhatsApp personalizado com identificadores
   assert.equal(response.status,302);
   const redirect=new URL(response.headers.get('Location'));
   assert.equal(redirect.origin,'https://wa.me');
-  assert.equal(redirect.pathname,'/5533999546031');
+  assert.equal(redirect.pathname,'/5532999662604');
   assert.equal(redirect.searchParams.get('utm_source'),'mural');
   assert.equal(redirect.searchParams.get('utm_campaign'),'suporte_encontrista');
   const msg=redirect.searchParams.get('text');

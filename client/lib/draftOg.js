@@ -113,7 +113,7 @@ export async function createDraftOgImage(recipientNames=[]){
   centerText(ctx,'CARTINHAS VIRTUAIS · XX EJC',91,'900 23px "DM Sans",Arial,sans-serif','#16295d',505);
 
   round(ctx,339,129,522,151,23,'#ed1372');
-  centerText(ctx,'TERMINE SUA',195,'900 56px "DM Sans",Arial,sans-serif','#fff8e6',489);
+  centerText(ctx,'FINALIZE SUA',195,'900 56px "DM Sans",Arial,sans-serif','#fff8e6',489);
   centerText(ctx,'CARTINHA',257,'900 70px "DM Sans",Arial,sans-serif','#ffdd35',485);
 
   centerText(ctx,'CARTINHA EM RASCUNHO…',322,'900 28px "DM Sans",Arial,sans-serif','#13367a',496);

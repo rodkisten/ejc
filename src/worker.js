@@ -675,6 +675,12 @@ async function publicRoute(req,env,path) {
         "SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.id=? AND o.recipient_id=? AND o.submitted_at IS NOT NULL AND o.status IN ('paid','preparing','delivered')"
       ).bind(cardPath[2],person.id).first();
       if(!order)bad('Cartinha não encontrada.',404);
+      // Never count an accidental empty legacy letter as read.
+      const mediaCount=await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM media WHERE order_id=? AND status='ready'"
+      ).bind(order.id).first();
+      if(!excerpt(order.rich_html) && !mediaCount.n)
+        bad('Esta cartinha ainda não tem conteúdo. Volte mais tarde.',409);
       const card=await cardInfo(env,order);
       await markRead(env,order.id);
       return result({card});

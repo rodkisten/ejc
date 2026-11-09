@@ -430,6 +430,18 @@ test('mural mostra recado para cartinhas pagas não terminadas sem revelar o ras
   const opened=await call(env,path+'/cards/'+first.data.id,'GET',undefined,{token:grant});
   assert.equal(opened.status,200);
   assert.match(opened.data.card.rich_html,/Agora a cartinha está pronta/);
+
+  // Defensive handling of a legacy record manually finalized without content.
+  await env.DB.prepare(
+    "UPDATE orders SET rich_html='',submitted_at='2026-11-09 10:00:00' WHERE id=?"
+  ).bind(second.data.id).run();
+  const legacy=await call(env,path,'GET',undefined,{token:grant});
+  const empty=legacy.data.cards.find(item=>item.id===second.data.id);
+  assert.equal(empty.empty_content,true);
+  assert.equal(empty.sender_name,''); // Anonymity survives a legacy blank letter.
+  assert.equal((await call(env,path+'/cards/'+second.data.id,'GET',undefined,{token:grant})).status,409);
+  assert.equal((await env.DB.prepare('SELECT first_read_at FROM orders WHERE id=?')
+    .bind(second.data.id).first()).first_read_at,null);
 });
 
 test('aviso consentido fica criptografado e sai somente na primeira abertura',async()=>{

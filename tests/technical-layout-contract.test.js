@@ -29,7 +29,7 @@ test('prévia técnica só aparece com chave de ativação e solicita senha de s
   assert.match(admin, /get\('secret'\) === '000000'/);
   assert.match(admin, /type="password"/);
   assert.match(admin, /technicalMode && technicalPassword/);
-  assert.match(preview, /method: 'POST'/);
+  assert.match(preview, /method: adminSession \? 'GET' : 'POST'/);
   assert.match(preview, /password/);
   assert.match(preview, /URL\.revokeObjectURL/);
   assert.match(worker, /await requireAdmin\(req,env\)/);

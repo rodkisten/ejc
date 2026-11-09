@@ -3,7 +3,8 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, Clock3, Copy, LockKeyhole, Pencil, RefreshCw } from 'lucide-react';
 import { api, money, track, uploadMedia } from '../lib/api';
 import { draftGet } from '../lib/drafts';
-import { cartDraftKey } from '../lib/cart';
+import { cartDraftKey, localCheckouts, rememberCheckout } from '../lib/cart';
+import { rememberPrivateOrder } from '../lib/unfinishedLetters.js';
 import { useApp } from '../main';
 import QrCode from '../components/QrCode';
 import CheckoutSupport from '../components/CheckoutSupport';
@@ -24,6 +25,10 @@ export default function Checkout() {
       const data = await api('/api/checkout', { token });
       setOrder(data);
       localStorage.setItem('ejc-checkout-' + data.id, token);
+      if (!localCheckouts().some((entry) => entry.id === data.id)) {
+        rememberCheckout({ id: data.id, token, itemIds: [], created_at: data.created_at });
+      }
+      for (const item of data.items || []) rememberPrivateOrder(item, item.token);
       setError('');
     } catch (cause) { setError(cause.message); }
   }, [token]);

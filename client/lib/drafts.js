@@ -41,4 +41,14 @@ export async function draftRemove(key) {
     t.onerror = () => reject(t.error);
   });
 }
+export async function draftKeys() {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE, 'readonly');
+    const request = transaction.objectStore(STORE).getAllKeys();
+    request.onsuccess = () => resolve(request.result.filter((key) => typeof key === 'string'));
+    request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => db.close();
+  });
+}
 export const draftKey = (slug) => `ejc-draft-${slug}`;

@@ -17,6 +17,7 @@ import {
 import { api, btime, money, privateOrder, uploadMedia, track } from '../lib/api';
 import { draftGet, draftSet, draftKey } from '../lib/drafts';
 import { cartDraftKey } from '../lib/cart';
+import { rememberPrivateOrder } from '../lib/unfinishedLetters.js';
 import RichEditor from '../components/RichEditor';
 import Recorder from '../components/Recorder';
 import VoicePlayer from '../components/VoicePlayer';
@@ -52,6 +53,7 @@ export default function Order() {
       const o = await api('/api/order', { token });
       if (activeToken.current === token) {
         setOrder(o);
+        rememberPrivateOrder(o, token);
         setError('');
       }
       return o;
@@ -102,7 +104,8 @@ export default function Order() {
       .catch(() => {});
   }, [order?.status, token]);
   const paid = order && ['paid', 'preparing', 'delivered'].includes(order.status),
-    ended = order?.deadline && Date.now() >= new Date(`${order.deadline}:00-03:00`).getTime();
+    ended = !order?.resume_access && order?.deadline &&
+      Date.now() >= new Date(`${order.deadline}:00-03:00`).getTime();
   const add = (file, kind) => setAssets((a) => [...a, { file, kind, url: URL.createObjectURL(file) }]);
   const discard = (index) =>
     setAssets((a) => {
@@ -348,7 +351,9 @@ export default function Order() {
               <CheckCircle2 size={18} />
               {paid ? 'Pix confirmado. Você pode criar e atualizar sua homenagem' :
                 'Seu Pix já foi gerado. Edite, salve e confirme suas alterações agora, mesmo antes de pagar'}
-              {' '}{ended ? 'O prazo de edição terminou.' : `até ${btime(order.deadline)}.`}
+              {' '}{order.resume_access
+                ? 'Este link privado de continuação permite terminar o rascunho pago.'
+                : ended ? 'O prazo de edição terminou.' : `até ${btime(order.deadline)}.`}
               {!paid && <span> O envio ao mural será liberado após a conferência bancária.</span>}
             </div>
             {order.checkout_id && localStorage.getItem('ejc-checkout-' + order.checkout_id) && (

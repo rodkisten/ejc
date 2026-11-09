@@ -56,8 +56,16 @@ async function settings(env) {
   const rows = await env.DB.prepare('SELECT key,value FROM settings').all();
   return Object.fromEntries(rows.results.map(({key,value})=>[key,value]));
 }
-function editable(config) {
-  if (Date.now() >= brazilTimeEnd(config.deadline)) bad('O prazo para editar as homenagens terminou.',403);
+function editable(config, order=null) {
+  // A temporary, signed recovery link can finish an existing paid draft
+  // even when the general deadline for new messages has passed.
+  if (order?.recovery_access) {
+    if (!activeOrder(order) || order.submitted_at)
+      bad('Este link de continuação não pode mais editar a cartinha.',403);
+    return;
+  }
+  if (Date.now() >= brazilTimeEnd(config.deadline))
+    bad('O prazo para editar as homenagens terminou.',403);
 }
 function activeOrder(order) { return ['paid','preparing','delivered'].includes(order.status); }
 // Private checkout links grant edit access even after the Pix code is displayed.
@@ -144,9 +152,29 @@ function bearer(req) {
   return t;
 }
 async function buyer(req,env) {
-  const hash=await digest(bearer(req));
-  const row=await env.DB.prepare('SELECT o.*,r.name AS recipient_name,r.slug AS recipient_slug FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE token_hash=?').bind(hash).first();
-  if (!row) bad('Pedido não encontrado.',404);
+  const access=bearer(req);
+  const hash=await digest(access);
+  let row=await env.DB.prepare(
+    'SELECT o.*,r.name AS recipient_name,r.slug AS recipient_slug FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE token_hash=?'
+  ).bind(hash).first();
+  if (!row) {
+    // The original access token is stored as a hash and cannot be recovered.
+    // Admin-issued recovery links are short-lived, purpose-bound HMAC grants;
+    // they never replace or revoke the original private checkout link.
+    const match=access.match(/^r1_([A-F0-9]{12})_([0-9a-f]{8})_([A-Za-z0-9_-]{43})$/);
+    if (match && Number.parseInt(match[2],16)>Date.now()/1000) {
+      const verified=await crypto.subtle.verify(
+        'HMAC',await hmacKey(env),unb64url(match[3]),
+        encode.encode('ejc:draft-resume:v1:'+match[1]+':'+match[2])
+      );
+      if (verified) {
+        row=await orderWithRecipient(env,'EJC-'+match[1]);
+        if (!row || !activeOrder(row) || row.campaign_key) row=null;
+        else row.recovery_access=true;
+      }
+    }
+  }
+  if (!row) bad('Pedido não encontrado ou link de continuação expirado.',404);
   return row;
 }
 async function mediaUrl(env, mediaId, orderId) {
@@ -207,7 +235,7 @@ async function fetchMedia(req,env,media) {
 }
 async function mediaWrite(req,env,o,params,path) {
   if (!writableLetter(o)) bad('Este pedido não pode mais receber arquivos.',403);
-  editable(await settings(env));
+  editable(await settings(env),o);
   if (path==='/api/order/media/init' && req.method==='POST') {
     const data=await jsonBody(req);
     const kind=data.kind;
@@ -732,7 +760,7 @@ async function publicRoute(req,env,path) {
     }
     if(path==='/api/order/message'&&req.method==='PUT') {
       if(!writableLetter(o))bad('Cartinha indisponível para edição.',403);
-      editable(config);
+      editable(config,o);
       const data=await jsonBody(req,40000),html=safeRich(data.rich_html||'');
       const sender=data.sender_name===undefined?o.sender_name:assertText(data.sender_name,100,'Remetente',false);
       const composition=JSON.stringify(normalizeComposition(data.composition===undefined
@@ -745,7 +773,7 @@ async function publicRoute(req,env,path) {
     }
     if(path==='/api/order/submit'&&req.method==='POST') {
       if(!activeOrder(o))bad('Pagamento não confirmado.',403);
-      editable(config);
+      editable(config,o);
       const count=await env.DB.prepare("SELECT COUNT(*) AS count FROM media WHERE order_id=? AND status='ready'").bind(o.id).first();
       if(!excerpt(o.rich_html)&&!count.count)bad('Escreva uma mensagem ou adicione uma foto ou áudio antes de enviar.');
       await env.DB.prepare("UPDATE orders SET moderation='approved',public_message=0,moderation_note='',submitted_at=?,approved_at=?,release_override=0,updated_at=? WHERE id=?").bind(now(),now(),now(),o.id).run();
@@ -809,6 +837,36 @@ async function paidDraftRows(env,cursor='',limit=60) {
 }
 function paidDraftHasContent(row) {
   return Boolean(excerpt(row.rich_html) || row.has_ready_media);
+}
+
+// A paid draft is only approved after the server checks persisted content.
+async function finalizeReviewedPaidDraft(env,id,auditDetail) {
+  const order=await env.DB.prepare(
+    'SELECT id,status,submitted_at,rich_html FROM orders WHERE id=? AND campaign_key IS NULL'
+  ).bind(id).first();
+  if(!order)bad('Cartinha não encontrada.',404);
+  if(!activeOrder(order))bad('A cartinha ainda não tem pagamento confirmado.',409);
+  if(order.submitted_at)bad('A cartinha já foi enviada.',409);
+  const media=await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM media WHERE order_id=? AND status='ready'"
+  ).bind(order.id).first();
+  if(!excerpt(order.rich_html) && !media.n)
+    bad('O rascunho está vazio no servidor. Peça ao remetente para salvar a mensagem ou os anexos.',409);
+  const timestamp=now();
+  const changed=await env.DB.prepare(
+    "UPDATE orders SET moderation='approved',public_message=0,moderation_note='',"+
+    "submitted_at=?,approved_at=?,release_override=0,updated_at=? "+
+    "WHERE id=? AND submitted_at IS NULL AND status IN ('paid','preparing','delivered')"
+  ).bind(timestamp,timestamp,timestamp,order.id).run();
+  if(changed.meta.changes!==1)bad('Esta cartinha foi alterada. Atualize a página.',409);
+  let notification_warning=false;
+  try {
+    await event(env,order.id,'letter_sent',auditDetail);
+    await enqueue(env,order.id,'letter_sent');
+  } catch {
+    notification_warning=true;
+  }
+  return result({ok:true,submitted:true,status:order.status,notification_warning});
 }
 
 async function adminRoute(req,env,path) {
@@ -1033,38 +1091,12 @@ async function adminRoute(req,env,path) {
     });
   }
 
-  // Manual review of a paid draft requires the independent technical credential.
+  // Existing technical review stays available with its separate credential.
   const reviewFinalize=path.match(/^\/api\/admin\/technical-preview\/(EJC-[A-F0-9]{12})\/finalize$/);
   if(reviewFinalize && req.method==='POST') {
     const input=await jsonBody(req,600);
     await requireTechnicalPreview(req,env,input?.password);
-    const order=await env.DB.prepare(
-      'SELECT id,status,submitted_at,rich_html FROM orders WHERE id=? AND campaign_key IS NULL'
-    ).bind(reviewFinalize[1]).first();
-    if(!order)bad('Cartinha não encontrada.',404);
-    if(!activeOrder(order))bad('A cartinha ainda não tem pagamento confirmado.',409);
-    if(order.submitted_at)bad('A cartinha já foi enviada.',409);
-    const media=await env.DB.prepare(
-      "SELECT COUNT(*) AS n FROM media WHERE order_id=? AND status='ready'"
-    ).bind(order.id).first();
-    if(!excerpt(order.rich_html) && !media.n)
-      bad('O rascunho está vazio no servidor. Peça ao remetente para salvar a mensagem ou os anexos.',409);
-    const time=now();
-    const changed=await env.DB.prepare(
-      "UPDATE orders SET moderation='approved',public_message=0,moderation_note='',"+
-      "submitted_at=?,approved_at=?,release_override=0,updated_at=? "+
-      "WHERE id=? AND submitted_at IS NULL AND status IN ('paid','preparing','delivered')"
-    ).bind(time,time,time,order.id).run();
-    if(changed.meta.changes!==1)bad('Esta cartinha foi alterada. Atualize a página.',409);
-    let notification_warning=false;
-    try{
-      await event(env,order.id,'letter_sent','technical_review_approved');
-      await enqueue(env,order.id,'letter_sent');
-    }catch{
-      // Content is finalized even if an auxiliary event queue is unavailable.
-      notification_warning=true;
-    }
-    return result({ok:true,submitted:true,status:order.status,notification_warning});
+    return finalizeReviewedPaidDraft(env,reviewFinalize[1],'technical_review_approved');
   }
 
   // Isolated, opt-in diagnostic access. The ordinary coordinator route below
@@ -1100,6 +1132,69 @@ async function adminRoute(req,env,path) {
       composition:normalizeComposition(JSON.parse(order.composition_json||'{}')),
       media:attachments,
       status:order.status,submitted:!!order.submitted_at,
+    });
+  }
+
+  // Content review is available to the authenticated administrator only.
+  // The ordinary list remains metadata-only. Neither preview nor media is public.
+  const adminPreview=path.match(/^\/api\/admin\/cartinhas\/(EJC-[A-F0-9]{12})\/preview$/);
+  const adminPreviewMedia=path.match(
+    /^\/api\/admin\/cartinhas\/(EJC-[A-F0-9]{12})\/preview\/media\/([a-f0-9-]{36})$/
+  );
+  if ((adminPreview || adminPreviewMedia) && req.method==='GET') {
+    const id=(adminPreview||adminPreviewMedia)[1];
+    if(adminPreviewMedia) {
+      const media=await env.DB.prepare(
+        "SELECT * FROM media WHERE id=? AND order_id=? AND status='ready'"
+      ).bind(adminPreviewMedia[2],id).first();
+      if(!media)bad('Anexo não encontrado.',404);
+      const order=await env.DB.prepare('SELECT id FROM orders WHERE id=?').bind(id).first();
+      if(!order)bad('Cartinha não encontrada.',404);
+      return fetchMedia(req,env,media);
+    }
+    const order=await orderWithRecipient(env,id);
+    if(!order)bad('Cartinha não encontrada.',404);
+    const attachments=(await env.DB.prepare(
+      "SELECT id,kind,filename,content_type,bytes FROM media WHERE order_id=? AND status='ready' ORDER BY created_at"
+    ).bind(id).all()).results;
+    return result({
+      id:order.id,recipient_name:order.recipient_name,
+      sender_name:order.sender_name||'Uma pessoa especial',
+      rich_html:order.rich_html||'',
+      composition:normalizeComposition(JSON.parse(order.composition_json||'{}')),
+      media:attachments,status:order.status,submitted:!!order.submitted_at,
+    });
+  }
+
+  const adminFinalize=path.match(/^\/api\/admin\/cartinhas\/(EJC-[A-F0-9]{12})\/finalize$/);
+  if(adminFinalize && req.method==='POST') {
+    await jsonBody(req,256);
+    return finalizeReviewedPaidDraft(env,adminFinalize[1],'admin_review_approved');
+  }
+
+  // A shareable resume link is a short-lived bearer credential, not a public
+  // admin preview. It works for an existing paid draft without exposing the
+  // original hashed token or altering the order's payment or content.
+  const adminResume=path.match(/^\/api\/admin\/cartinhas\/(EJC-[A-F0-9]{12})\/resume-link$/);
+  if(adminResume && req.method==='POST') {
+    await jsonBody(req,256);
+    const order=await env.DB.prepare(
+      "SELECT id,sender_name,status,submitted_at,campaign_key FROM orders WHERE id=?"
+    ).bind(adminResume[1]).first();
+    if(!order)bad('Cartinha não encontrada.',404);
+    if(!activeOrder(order) || order.submitted_at || order.campaign_key)
+      bad('Somente rascunhos pagos podem receber um link de continuação.',409);
+    const expiry=Math.floor(Date.now()/1000)+14*24*60*60;
+    const code=order.id.slice(4),hexExpiry=expiry.toString(16).padStart(8,'0');
+    const signed=b64url(new Uint8Array(await crypto.subtle.sign(
+      'HMAC',await hmacKey(env),
+      encode.encode('ejc:draft-resume:v1:'+code+':'+hexExpiry)
+    )));
+    const access='r1_'+code+'_'+hexExpiry+'_'+signed;
+    return result({
+      sender_name:order.sender_name||'Remetente não informado',
+      resume_url:new URL('/pedido/'+access,req.url).toString(),
+      expires_at:new Date(expiry*1000).toISOString(),
     });
   }
 
@@ -1163,7 +1258,8 @@ async function adminRoute(req,env,path) {
 
   if(path==='/api/admin/cartinhas' && req.method==='GET') {
     const rows=(await env.DB.prepare(
-      `SELECT o.id,o.sender_name,o.status,o.submitted_at,o.created_at,o.composition_json,o.campaign_key,
+      `SELECT o.id,o.sender_name,o.status,o.submitted_at,o.created_at,o.composition_json,o.campaign_key,o.rich_html,
+        EXISTS(SELECT 1 FROM media m WHERE m.order_id=o.id AND m.status='ready') AS has_ready_media,
         r.id AS recipient_id,r.name AS recipient_name,r.slug AS recipient_slug
         FROM orders o JOIN recipients r ON r.id=o.recipient_id
         ORDER BY o.created_at DESC`
@@ -1178,6 +1274,7 @@ async function adminRoute(req,env,path) {
         recipient_id:row.recipient_id,recipient_name:row.recipient_name,
         recipient_slug:row.recipient_slug,status:row.status,gift:!!row.campaign_key,
         submitted:!!row.submitted_at,created_at:row.created_at,
+        has_content:!!excerpt(row.rich_html)||!!row.has_ready_media,
         theme:design.theme,stickers:design.stickers
       };
     });

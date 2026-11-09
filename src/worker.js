@@ -2050,7 +2050,7 @@ export default {
           new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}),45);
         const details=[
           '💌 *SUPORTE · CARTINHAS VIRTUAIS · XX EJC SIMONÉSIA*','',
-          'Olá, eu sou o(a) encontrista *'+name+'* e estou precisando de ajuda com minha cartinha. 🙏','',
+          'Olá, eu sou o encontrista *'+name+'* e estou precisando de ajuda com minha cartinha. 🙏','',
           '📋 *Dados para a equipe*',
           '*Encontrista:* '+name,
           '*Cartinha(s):* '+(ids.length?ids.join(', '):'Não informado'),

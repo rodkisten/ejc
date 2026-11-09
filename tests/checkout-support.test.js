@@ -23,5 +23,5 @@ test('support message keeps non-sensitive diagnostics and order code', () => {
   assert.match(message, /Maria, João/);
   assert.match(message, /Safari iPhone/);
   assert.doesNotMatch(message, /HIDDEN/);
-  assert.match(checkoutSupportHref(data), /^https:\/\/wa\.me\/5532999662604\?text=/);
+  assert.match(checkoutSupportHref(data), /^https:\/\/wa\.me\/5533999546031\?text=/);
 });

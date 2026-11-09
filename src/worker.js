@@ -693,8 +693,13 @@ async function encryptedSupportLink(req,env,url,finished=false){
       'encrypted:'+context.campaign).run();
   }catch(error){console.warn('Encrypted support aggregate unavailable',error?.message);}
   const origin=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
-  const admin=origin+'/admin/mensagens?c='+encodeURIComponent(url.searchParams.get('c'));
-  const overview=origin+'/admin/cartinhas?c='+encodeURIComponent(url.searchParams.get('c'));
+  const opaque=encodeURIComponent(url.searchParams.get('c'));
+  const [adminShort,overviewShort]=await Promise.all([
+    createShortLink(env,origin+'/admin/mensagens?c='+opaque,{origin,kind:'admin'}),
+    createShortLink(env,origin+'/admin/cartinhas?c='+opaque,{origin,kind:'letters'})
+  ]);
+  const admin=adminShort.url;
+  const overview=overviewShort.url;
   const intro=context.name
     ?'Olá! Eu sou '+context.name+' e estou precisando de ajuda com minhas cartinhas. 💌'
     :'Olá! Estou precisando de ajuda com minhas cartinhas. 💌';

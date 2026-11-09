@@ -1952,26 +1952,83 @@ export default {
   async fetch(request,env,ctx) {
     try {
       const url=new URL(request.url), path=url.pathname;
-      // Short help link to confirm a completed letter with the Mini Mercado team.
+      // Link-sharing crawlers need HTML for the WhatsApp OG preview.
       if (path==='/ajuda/terminei-a-cartinha'||path==='/ajuda/terminei-a-cartinha/') {
         if(request.method!=='GET'&&request.method!=='HEAD')
           return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
-        const whatsapp=new URL('https://wa.me/5533999546031');
-        whatsapp.searchParams.set('text',
-          'Olá! 💌 Estou entrando em contato sobre minha cartinha do XX EJC Simonésia. Já finalizei o envio e gostaria de confirmar o recebimento e saber qual é o próximo passo.');
-        const campaign={
-          utm_source:'whatsapp',
-          utm_medium:'mensagem',
-          utm_campaign:'recuperacao_cartinhas'
-        };
-        for(const [key,fallback] of Object.entries(campaign))
-          whatsapp.searchParams.set(key,(url.searchParams.get(key)||fallback).slice(0,100));
+        const bot=/whatsapp|facebookexternalhit|facebot|twitterbot|telegrambot|slackbot|discordbot|linkedinbot|pinterest/i
+          .test(request.headers.get('User-Agent')||'');
+        if(bot){
+          const base=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
+          const og=base+'/og-ajuda-cartinhas.png?v=20261109b';
+          const title='Cartinhas Virtuais | Enviei minha cartinha, e agora?';
+          const description='Mini Mercado · XX EJC Simonésia. Confirme o recebimento e saiba o próximo passo.';
+          const properties={
+            'og:type':'website','og:locale':'pt_BR','og:site_name':'Mini Mercado · XX EJC Simonésia',
+            'og:title':title,'og:description':description,
+            'og:url':base+'/ajuda/terminei-a-cartinha',
+            'og:image':og,'og:image:secure_url':og,
+            'og:image:type':'image/png','og:image:width':'1200','og:image:height':'630',
+            'og:image:alt':'Cartinhas Virtuais. Enviei minha cartinha, e agora? Mini Mercado XX EJC Simonésia.'
+          };
+          const tags=Object.entries(properties).map(([key,value])=>
+            '<meta property="'+escapeMeta(key)+'" content="'+escapeMeta(value)+'" />').join('');
+          const html='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'+
+            '<meta name="robots" content="noindex, nofollow">'+
+            '<title>'+escapeMeta(title)+'</title>'+
+            '<meta name="description" content="'+escapeMeta(description)+'">'+tags+
+            '<meta name="twitter:card" content="summary_large_image">'+
+            '<meta name="twitter:title" content="'+escapeMeta(title)+'">'+
+            '<meta name="twitter:image" content="'+escapeMeta(og)+'"></head>'+
+            '<body><p>Mini Mercado · XX EJC Simonésia</p></body></html>';
+          return new Response(request.method==='HEAD'?null:html,{headers:{
+            'Content-Type':'text/html; charset=utf-8',
+            'Cache-Control':'public, max-age=60',
+            'Referrer-Policy':'no-referrer',
+            'X-Robots-Tag':'noindex, nofollow'
+          }});
+        }
+        // Anonymous aggregate only. No address, browser identifier or letter content.
+        const campaign=String(url.searchParams.get('utm_campaign')||'recuperacao_cartinhas')
+          .replace(/[^a-z0-9_-]/gi,'').slice(0,60)||'recuperacao_cartinhas';
+        try{
+          await env.DB.prepare(
+            'INSERT INTO help_link_counts(day,campaign,clicks) VALUES(?,?,1) '+
+            'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'
+          ).bind(new Date().toISOString().slice(0,10),campaign).run();
+        }catch(error){console.warn('Help-link count unavailable',error?.message);}
+        const whats=new URL('https://wa.me/5533999546031');
+        const clean=(value,max=100)=>String(value||'').replace(/[\\r\\n<>]/g,' ').trim().slice(0,max);
+        const sender=clean(url.searchParams.get('remetente'));
+        const ids=url.searchParams.getAll('id').slice(0,15);
+        const to=url.searchParams.getAll('para').slice(0,15);
+        const letters=ids.map((id,i)=>/^EJC-[A-F0-9]{12}$/.test(id)
+          ?(to[i]?'Para '+clean(to[i])+': ':'')+id+
+            '\\nAdmin: '+url.origin+'/admin/pedidos/'+encodeURIComponent(id)
+          :'').filter(Boolean);
+        const message=[
+          sender?'Olá, eu sou '+sender+'! 💌':'Olá! 💌',
+          'Já finalizei minha cartinha do XX EJC Simonésia.',
+          'Gostaria de confirmar o recebimento e saber qual é o próximo passo.',
+          ...(letters.length?['','*Cartinhas para conferência:*',...letters]:[])
+        ].join('\\n');
+        whats.searchParams.set('text',message);
+        for(const [key,backup] of Object.entries({
+          utm_source:'whatsapp',utm_medium:'mensagem',utm_campaign:'recuperacao_cartinhas'
+        })) whats.searchParams.set(key,clean(url.searchParams.get(key)||backup,70).replace(/[^a-z0-9_-]/gi,''));
         return new Response(null,{status:302,headers:{
-          Location:whatsapp.toString(),
-          'Cache-Control':'no-store',
-          'Referrer-Policy':'no-referrer',
-          'X-Robots-Tag':'noindex, nofollow, noarchive'
+          Location:whats.toString(),'Cache-Control':'no-store',
+          'Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow, noarchive'
         }});
+      }
+      if(path==='/og-ajuda-cartinhas.png'&&(request.method==='GET'||request.method==='HEAD')){
+        const image=await env.MEDIA.get('og/help-finished-v1.png');
+        if(image)return new Response(request.method==='HEAD'?null:image.body,{headers:{
+          'Content-Type':'image/png','Content-Length':String(image.size),
+          'Cache-Control':'public, max-age=3600','X-Content-Type-Options':'nosniff'
+        }});
+        // Until the operator uploads the dedicated art, never break WhatsApp preview.
+        return env.ASSETS.fetch(new Request(new URL('/og-ejc-default.png',url.origin),request));
       }
       if (path.startsWith('/api/')) {
         allowOrigin(request);

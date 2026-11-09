@@ -73,7 +73,8 @@ export default function Cart() {
       // Only the active shopping index is reset, so new purchases remain possible.
       try { await cart.clear(); } catch { /* The server checkout remains recoverable. */ }
       track('checkout_created', { letters: checkout.items.length });
-      navigate('/checkout/' + checkout.token);
+      const c=sessionStorage.getItem('ejc-support-context');
+      navigate('/checkout/' + checkout.token + (c?'?c='+encodeURIComponent(c):''));
     } catch (cause) {
       setError(cause.message || 'Não foi possível gerar o Pix.');
     } finally { checkoutLock.current = false; setBusy(false); }
@@ -84,7 +85,11 @@ export default function Cart() {
       <div className="step-label">SEU CARRINHO / XX EJC SIMONÉSIA</div>
       <h1>Todo carinho <em>num só lugar.</em></h1>
       <p className="muted">Uma carta para cada encontrista, com remetente e decoração independentes. Duplique uma para presentear outras pessoas.</p>
-      <CheckoutSupport step="Carrinho · antes do Pix" recipientNames={cart.items.map(item => getPerson(item.recipient_slug)?.name || item.recipient_slug)} checkoutId={linked?.id} />
+      <CheckoutSupport step="Carrinho · antes do Pix"
+        senderName={cart.items[0]?.sender_name||payerName}
+        recipientSlugs={cart.items.map(item=>item.recipient_slug)}
+        recipientNames={cart.items.map(item => getPerson(item.recipient_slug)?.name || item.recipient_slug)}
+        checkoutId={linked?.id} />
       {!cart.ready ? <p className="notice">Carregando suas cartinhas...</p> :
         cart.items.length === 0 ? (
           <section className="cart-empty">

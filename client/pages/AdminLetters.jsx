@@ -259,7 +259,28 @@ function RecoveredLetterNotice({letter,onUpdated}){
 export default function AdminLetters() {
   const { slug } = useParams();
   const location = useLocation();
-  const technicalMode = new URLSearchParams(location.search).get('secret') === '000000';
+  const params = new URLSearchParams(location.search);
+  const technicalMode = params.get('secret') === '000000';
+  const encryptedContext=params.get('c')||'';
+  const [contextOrderIds,setContextOrderIds] = useState([]);
+  const [contextError,setContextError] = useState('');
+  useEffect(()=>{
+    if(!encryptedContext){setContextOrderIds([]);setContextError('');return;}
+    let alive=true;
+    api('/api/admin/support/context?c='+encodeURIComponent(encryptedContext))
+      .then(data=>{
+        if(!alive)return;
+        const ids=(data.orders||[]).map(row=>row.id);
+        setContextOrderIds(ids);
+        setExpanded(previous=>({...previous,
+          ...Object.fromEntries(ids.map(id=>[id,true]))
+        }));
+        setSearch('');setFilter('all');
+        setContextError('');
+      })
+      .catch(cause=>{if(alive)setContextError(cause.message);});
+    return()=>{alive=false;};
+  },[encryptedContext]);
   const [technicalInput, setTechnicalInput] = useState('');
   const [technicalPassword, setTechnicalPassword] = useState('');
   const [muralRecipient, setMuralRecipient] = useState('');
@@ -353,6 +374,7 @@ export default function AdminLetters() {
   const selected = slug ? letters.find((letter) => letter.recipient_slug === slug) : null;
   const rows = useMemo(() => letters.filter((letter) => {
     if (slug && letter.recipient_slug !== slug) return false;
+    if(contextOrderIds.length&&!contextOrderIds.includes(letter.id))return false;
     if (filter === 'pending' && paid(letter.status)) return false;
     if (filter === 'paid' && !paid(letter.status)) return false;
     if (filter === 'draft' && letter.submitted) return false;
@@ -364,7 +386,7 @@ export default function AdminLetters() {
     const query = search.trim().toLocaleLowerCase('pt-BR');
     return !query || [letter.recipient_name, letter.sender_name, letter.id]
       .some((text) => String(text).toLocaleLowerCase('pt-BR').includes(query));
-  }), [letters, slug, search, filter]);
+  }), [letters, slug, search, filter, contextOrderIds]);
   const heading = slug ? 'Cartinhas de ' + (selected?.recipient_name || 'encontrista') : 'Todas as cartinhas';
   const recipients = useMemo(() => Array.from(new Map(letters.map(letter => [letter.recipient_slug, letter.recipient_name])).entries()).sort((a,b) => a[1].localeCompare(b[1], 'pt-BR')), [letters]);
   function openRecipientMural(event) {
@@ -510,6 +532,15 @@ export default function AdminLetters() {
         </select>
         <strong aria-live="polite">{rows.length} cartinha(s)</strong>
       </div>
+      {contextError&&<div className="notice error" role="alert">{contextError}</div>}
+      {contextOrderIds.length>0&&<div className="notice success">
+        🔐 Atendimento recuperado: {contextOrderIds.length} cartinha(s) selecionada(s).
+        A visualização do conteúdo continua exigindo a autorização técnica habitual.
+        {!technicalMode&&<Link className="btn outline"
+          to={'/admin/cartinhas?c='+encodeURIComponent(encryptedContext)+'&secret=000000'}>
+          Conferir conteúdo com autorização técnica
+        </Link>}
+      </div>}
       {loading && <div className="loading">Carregando cartinhas...</div>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {!loading && !error && !rows.length && (

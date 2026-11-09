@@ -61,7 +61,7 @@ export function createSupportMessage(id,{
     (secureLinks.sendBySlug?.[recipient.slug]||
       new URL('/enviar/'+encodeURIComponent(recipient.slug),origin).toString())
   );
-  const howToSend=sendLinks.length?sendLinks.join('\\n'):home;
+  const howToSend=sendLinks.length?sendLinks.join('\n'):home;
   const recipientHelp=secureLinks.recipientHelp||new URL('/ajuda/minha-cartinha',origin).toString();
   const sign='\n\n*Com carinho,*\n🌹 *Equipe do Mini Mercado*\n*XX EJC Simonésia* 💛';
   const refs=humanOrders.length?'\n\n🔐 *Conferência dos pedidos pela equipe:*\n'+

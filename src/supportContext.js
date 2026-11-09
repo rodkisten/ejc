@@ -20,7 +20,7 @@ function fromBase64url(string){
 }
 export function cleanSupportContext(value={}){
   const v=value&&typeof value==='object'&&!Array.isArray(value)?value:{};
-  const clean=(x,n=100)=>String(x??'').replace(/[\r\n<>]/g,' ').trim().slice(0,n);
+  const clean=(x,n=100)=>String(x??'').replace(/[\r\n<>]/g,' ').replace(/\s+/g,' ').trim().slice(0,n);
   const tag=x=>clean(x,64).replace(/[^a-z0-9_-]/gi,'').toLowerCase();
   const arrays=(x,re,max=20)=>[...new Set((Array.isArray(x)?x:[]).filter(y=>
     typeof y==='string'&&re.test(y)))].slice(0,max);

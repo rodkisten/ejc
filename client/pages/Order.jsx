@@ -143,6 +143,7 @@ export default function Order() {
   async function save(withSubmit = false) {
     setBusy(true);
     setError('');
+    setCompletion(null);
     try {
       await api('/api/order/message', {
         method: 'PUT',
@@ -177,13 +178,13 @@ export default function Order() {
         track('letter_submitted',{stage:paid?'paid':'pending'});
       }
       await reload();
-      setProgress(withSubmit ? 'Cartinha enviada! Ela ficará no mural privado após o horário de liberação.' : 'Alterações confirmadas e salvas!');
-      if (!withSubmit && !paid && order.checkout_id) {
-        const checkoutToken = localStorage.getItem('ejc-checkout-' + order.checkout_id);
-        if (checkoutToken) navigate('/checkout/' + checkoutToken, {
-          state: { notice: 'Alterações de ' + order.recipient_name + ' confirmadas! O mesmo Pix continua válido.' }
-        });
-      }
+      setProgress('');
+      setCompletion({
+        type: withSubmit ? 'submitted' : 'saved',
+        sender: sender || order.sender_name || '',
+        items: [{ id: order.id, recipient_name: order.recipient_name }],
+      });
+      // Do not navigate automatically: the sender should see the explicit confirmation.
     } catch (e) {
       setError(e.message);
     } finally {
@@ -415,34 +416,56 @@ export default function Order() {
               Sua cartinha é privada: não aparece em uma galeria pública nem passa por leitura ou escuta da coordenação.
               O painel da equipe acompanha o pagamento e a situação do envio, além do nome do remetente e dos stickers escolhidos.
             </div>
-            {error && <div className="notice error">{error}</div>}
-            {progress && <div className="notice success">{progress}</div>}
-            <div className="inline-actions spaced">
-              <button className={paid ? 'btn outline' : 'btn'} disabled={busy || ended} onClick={() => save(false)}>
+            {error && <div className="notice error" role="alert">{error}</div>}
+            {progress && <div className="notice success" role="status">{progress}</div>}
+            {completion && <div className="ejc-letter-completion" role="status" aria-live="polite">
+              <div className="ejc-letter-completion-icon"><CheckCircle2 size={31} /></div>
+              <span className="eyebrow">TUDO CERTO! 💌</span>
+              <h2>{completion.type === 'submitted' ? 'Sua cartinha foi enviada com sucesso!' : 'Seu rascunho foi salvo com sucesso!'}</h2>
+              <p>{completion.type === 'submitted'
+                ? 'Prontinho! A cartinha de ' + order.recipient_name + ' foi recebida pelo sistema e está pronta para o mural privado.'
+                : 'As alterações da cartinha para ' + order.recipient_name + ' foram registradas. Você poderá finalizar o envio quando estiver liberado.'}</p>
+              <p className="ejc-letter-completion-reference">
+                <strong>{order.recipient_name}</strong> · referência <code>{order.id}</code>
+              </p>
+              <p>Se desejar, avise a equipe do Mini Mercado pelo WhatsApp. A mensagem já traz o nome e o ID do encontrista. <strong>É opcional.</strong></p>
+              <a className="btn ejc-letter-completion-whatsapp" href={completedLetterWhatsAppHref({
+                sender: completion.sender, items: completion.items, submitted: completion.type === 'submitted'
+              })} target="_blank" rel="noopener noreferrer"
+                onClick={() => track('help_link_clicked', { stage: 'letter_' + completion.type })}>
+                <Share2 size={18} /> Avisar a equipe pelo WhatsApp (opcional)
+              </a>
+            </div>}
+            <div className="inline-actions spaced cart-composer-actions">
+              <button className="btn ghost" type="button" onClick={() => setPreview(value => !value)}>
+                {preview ? 'Ocultar prévia' : 'Ver minha cartinha'}
+              </button>
+              <button className="btn outline" type="button" disabled={busy || ended} onClick={() => save(false)}>
                 <Save size={17} /> {busy ? 'Salvando...' : paid ? 'Salvar rascunho' : 'Confirmar alterações'}
               </button>
-              {paid && <button className="btn" disabled={busy || ended} onClick={() => save(true)}>
-                <Send size={17} /> {busy ? 'Enviando...' : 'Enviar ao mural privado'}
+              {paid && <button className="btn" type="button" disabled={busy || ended} onClick={() => save(true)}>
+                <Send size={17} /> {busy ? 'Enviando...' : order.submitted ? 'Atualizar envio' : 'Finalizar e enviar cartinha'}
               </button>}
             </div>
-            <div className="notice success">
+            {!completion && <div className="notice success">
               {order.submitted
                 ? 'Cartinha enviada. Somente quem tiver acesso privado ao mural poderá vê-la, após a liberação.'
                 : paid ? 'Sua cartinha ainda é um rascunho. Você pode revisar antes de enviar.' :
                   'As alterações salvas ficarão disponíveis para qualquer pessoa com este link privado, inclusive em outro aparelho.'}
-            </div>
-            {order.submitted && <div className="notice success">
-              <strong>💌 Terminou sua cartinha? Avise nossa equipe!</strong>
-              <p>Confirme o recebimento e descubra o próximo passo. O link leva só o nome e o ID para suporte, nunca o conteúdo ou o acesso privado.</p>
-              <a className="btn" href={completedLetterHelpLink({
-                origin:window.location.origin,sender:sender||order.sender_name,
-                items:[{id:order.id,recipient_name:order.recipient_name}]
-              })} target="_blank" rel="noopener noreferrer"
-                onClick={()=>track('help_link_clicked',{stage:'letter_submitted'})}>
-                📲 Avisar que terminei minha cartinha
+            </div>}
+            {order.submitted && !completion && <div className="notice success">
+              <strong>💌 Sua cartinha já foi enviada!</strong>
+              <p>Se desejar, avise a equipe usando apenas o ID e o nome do encontrista.</p>
+              <a className="btn outline" href={completedLetterWhatsAppHref({
+                sender: sender || order.sender_name,
+                items: [{ id: order.id, recipient_name: order.recipient_name }],
+                submitted: true
+              })} target="_blank" rel="noopener noreferrer">
+                <Share2 size={17} /> Avisar a equipe (opcional)
               </a>
             </div>}
-            <h2 className="spaced">Prévia da cartinha</h2>
+            {preview && <div className="preview-popup letter-reveal">
+              <h2 className="spaced">Prévia da cartinha</h2>
             <LetterCard
               actions={false}
               editable={!ended}
@@ -460,6 +483,7 @@ export default function Order() {
               letter={{ ...order, sender_name: sender, rich_html: html, composition, media: [...(order.media || []), ...assets] }}
               recipient={order.recipient_name}
             />
+            </div>}
           </div>
           <aside className="compose-side">
             <div className="form-card">

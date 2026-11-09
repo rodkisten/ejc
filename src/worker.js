@@ -436,7 +436,7 @@ function escapeMeta(value){
     .replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');
 }
 
-function supportIdentityForm(url, field, kind='sender'){
+function supportIdentityForm(url, field, kind='sender', method='GET'){
   const isRecipient=kind==='recipient';
   const picture=isRecipient?'/og-ajuda-minha-cartinha.png':'/og-ajuda-cartinhas.png';
   const selected=new Set([
@@ -475,7 +475,7 @@ function supportIdentityForm(url, field, kind='sender'){
     '<button type="submit">Continuar para o WhatsApp 💚</button></form>'+
     '<small>Não solicitamos senha, texto da cartinha ou código privado.</small>'+
     '</main></body></html>';
-  return new Response(html,{headers:{
+  return new Response(method==='HEAD'?null:html,{headers:{
     'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store',
     'Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow, noarchive',
     'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; form-action 'self'; base-uri 'none'"
@@ -2074,7 +2074,7 @@ export default {
         const clean=(value,max=100)=>String(value||'').replace(/[\\r\\n<>]/g,' ').trim().slice(0,max);
         const campaign=clean(url.searchParams.get('utm_campaign')||'suporte_encontrista',60)
           .replace(/[^a-z0-9_-]/gi,'')||'suporte_encontrista';
-        if(request.method==='GET')try{
+        if(request.method==='GET'&&url.searchParams.has('encontrista'))try{
           await env.DB.prepare(
             'INSERT INTO help_link_counts(day,campaign,clicks) VALUES(?,?,1) '+
             'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'
@@ -2082,7 +2082,7 @@ export default {
         }catch(error){console.warn('Support count unavailable',error?.message);}
         const name=clean(url.searchParams.get('encontrista'));
         if(!name||/^(?:encontrista|sem nome|an[oô]nimo)$/i.test(name))
-          return supportIdentityForm(url,'encontrista','recipient');
+          return supportIdentityForm(url,'encontrista','recipient',request.method);
         const ids=url.searchParams.getAll('id').filter(id=>/^EJC-[A-F0-9]{12}$/.test(id))
           .slice(0,20);
         const origin=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
@@ -2187,7 +2187,7 @@ export default {
         // Anonymous aggregate only. No address, browser identifier or letter content.
         const campaign=String(url.searchParams.get('utm_campaign')||'recuperacao_cartinhas')
           .replace(/[^a-z0-9_-]/gi,'').slice(0,60)||'recuperacao_cartinhas';
-        if(request.method==='GET')try{
+        if(request.method==='GET'&&url.searchParams.has('remetente'))try{
           await env.DB.prepare(
             'INSERT INTO help_link_counts(day,campaign,clicks) VALUES(?,?,1) '+
             'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'
@@ -2197,7 +2197,7 @@ export default {
         const clean=(value,max=100)=>String(value||'').replace(/[\r\n<>]/g,' ').trim().slice(0,max);
         const sender=clean(url.searchParams.get('remetente'));
         if(!sender||/^(?:remetente(?: não informado)?|sem nome|an[oô]nimo|uma pessoa especial)$/i.test(sender))
-          return supportIdentityForm(url,'remetente','sender');
+          return supportIdentityForm(url,'remetente','sender',request.method);
         const ids=url.searchParams.getAll('id').slice(0,15);
         const to=url.searchParams.getAll('para').slice(0,15);
         const letters=ids.map((id,i)=>/^EJC-[A-F0-9]{12}$/.test(id)

@@ -2071,7 +2071,7 @@ export default {
             'Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'
           }});
         }
-        const clean=(value,max=100)=>String(value||'').replace(/[\\r\\n<>]/g,' ').trim().slice(0,max);
+        const clean=(value,max=100)=>String(value||'').replace(/[\r\n<>]/g,' ').trim().slice(0,max);
         const campaign=clean(url.searchParams.get('utm_campaign')||'suporte_encontrista',60)
           .replace(/[^a-z0-9_-]/gi,'')||'suporte_encontrista';
         if(request.method==='GET'&&url.searchParams.has('encontrista'))try{
@@ -2121,7 +2121,7 @@ export default {
           '💛 *Mini Mercado · XX EJC Simonésia*'
         ];
         const whats=new URL('https://wa.me/5533999546031');
-        whats.searchParams.set('text',details.join('\\n'));
+        whats.searchParams.set('text',details.join('\n'));
         for(const [key,backup] of Object.entries({
           utm_source:source,utm_medium:medium,utm_campaign:campaign,
           utm_content:content

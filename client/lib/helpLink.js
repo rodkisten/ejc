@@ -58,7 +58,7 @@ export function readyLetterWhatsAppMessage({recipient_name,order_id,url,released
     '🌹 Que Deus abençoe sua caminhada e que você persevere sempre na fé! *Filipenses 1,6*',
     '',
     '_Com carinho, equipe do Mini Mercado · XX EJC Simonésia_',
-    '_Referência para suporte: '+order_id+'_',
+    '_A referência da sua cartinha está protegida no link de suporte._',
     '',
     '🆘 *Precisa de ajuda para abrir ou visualizar sua cartinha?*',
     support_url || new URL('/ajuda/minha-cartinha',url).toString(),

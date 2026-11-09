@@ -17,15 +17,15 @@ const ctx={
   ],
   origin:'https://ejc.migos.club',
   secureLinks:{
-    help:'https://ejc.migos.club/ajuda/terminei-a-cartinha?c=ec1_'+('A'.repeat(70)),
-    home:'https://ejc.migos.club/?c=ec1_'+('A'.repeat(70)),
-    open:'https://ejc.migos.club/abrir?c=ec1_'+('A'.repeat(70)),
+    help:'https://ejc.migos.club/s/AAAAAAAAAAAAAA',
+    home:'https://ejc.migos.club/s/BBBBBBBBBBBBBB',
+    open:'https://ejc.migos.club/s/CCCCCCCCCCCCCC',
     sendBySlug:{
-      'maria-eduarda':'https://ejc.migos.club/enviar/maria-eduarda?c=ec1_'+('A'.repeat(70)),
-      'joao-pedro':'https://ejc.migos.club/enviar/joao-pedro?c=ec1_'+('A'.repeat(70)),
+      'maria-eduarda':'https://ejc.migos.club/s/DDDDDDDDDDDDDD',
+      'joao-pedro':'https://ejc.migos.club/s/EEEEEEEEEEEEEE'
     },
-    admin:'https://ejc.migos.club/admin/mensagens?c=ec1_'+('A'.repeat(70)),
-    recipientHelp:'https://ejc.migos.club/ajuda/minha-cartinha?c=ec1_'+('A'.repeat(70))
+    admin:'https://ejc.migos.club/s/FFFFFFFFFFFFFF',
+    recipientHelp:'https://ejc.migos.club/s/GGGGGGGGGGGGGG'
   }
 };
 
@@ -46,19 +46,19 @@ test('apology includes the exact two-day explanation, all recipients and names',
   assert.match(msg,/Maria Eduarda, João Pedro/);
   assert.match(msg,/apenas \*dois dias, com muito amor/);
   assert.match(msg,/mil desculpas/);
-  assert.match(msg,/\/ajuda\/terminei-a-cartinha\?c=ec1_/);
+  assert.match(msg,/https:\/\/ejc\.migos\.club\/s\/AAAAAAAAAAAAAA/);
   assert.doesNotMatch(msg,/utm_source=|id=EJC-|telefone=/);
 });
 
 test('rascunho vazio inclui nomes, link privado, mas referencias somente no contexto cifrado',()=>{
   const msg=createSupportMessage('rascunho_vazio',{
-    ...ctx,resumeUrl:'https://ejc.migos.club/pedido/PRIVATE-RESUME-TOKEN'
+    ...ctx,resumeUrl:'https://ejc.migos.club/s/HHHHHHHHHHHHHH'
   });
   assert.match(msg,/Oi, Ana!/);
   assert.match(msg,/Maria Eduarda, João Pedro/);
   assert.match(msg,/link privado de continuação/);
-  assert.match(msg,/PRIVATE-RESUME-TOKEN/);
-  assert.match(msg,/admin\/mensagens\?c=ec1_/);
+  assert.match(msg,/\/s\/HHHHHHHHHHHHHH/);
+  assert.match(msg,/\/s\/FFFFFFFFFFFFFF/);
   assert.doesNotMatch(msg,/id=EJC-|utm_source=|telefone=/);
 });
 
@@ -84,12 +84,12 @@ test('sem nome, exige identificação antes de gerar mensagens personalizadas',(
 
 test('o passo a passo separa o link de leitura do link de edição',()=>{
   const steps=createSupportMessage('passo_a_passo',ctx);
-  assert.match(steps,/\/enviar\/maria-eduarda\?c=ec1_/);
-  assert.match(steps,/\/enviar\/joao-pedro\?c=ec1_/);
+  assert.match(steps,/\/s\/DDDDDDDDDDDDDD/);
+  assert.match(steps,/\/s\/EEEEEEEEEEEEEE/);
   assert.doesNotMatch(steps,/utm_content=/);
   assert.match(steps,/Finalizar envio/);
   const open=createSupportMessage('abrir_novamente',ctx);
-  assert.match(open,/\/abrir\?c=ec1_/);
+  assert.match(open,/\/s\/CCCCCCCCCCCCCC/);
   assert.match(open,/para o \*encontrista ler\*/);
   assert.match(open,/link privado de compra\/edição/);
 });

@@ -2,39 +2,61 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  navigateToWhatsApp,
-  isWhatsAppConfirmationPending,
-  setWhatsAppConfirmationPending,
+  prepareWhatsAppPopup, closeWhatsAppPopup, navigateToWhatsApp,
+  isWhatsAppConfirmationPending, setWhatsAppConfirmationPending
 } from '../client/lib/whatsappNavigation.js';
 
 function source(path) {
   return readFileSync(new URL('../' + path, import.meta.url), 'utf8');
 }
 
-test('WhatsApp navigates in the current tab instead of creating orphan Safari windows', () => {
-  const calls = [];
-  const location = { assign(url) { calls.push(url); } };
-  navigateToWhatsApp('https://wa.me/5532999662604?text=Ol%C3%A1', location);
-  navigateToWhatsApp('https://api.whatsapp.com/send?text=Ajuda', location);
-  assert.equal(calls.length, 2);
-  assert.equal(new URL(calls[0]).pathname, '/5532999662604');
-  assert.equal(new URL(calls[1]).hostname, 'api.whatsapp.com');
+test('Chrome iOS gets a popup synchronously before asynchronous WhatsApp preparation', () => {
+  const visited = [];
+  const popup = {
+    closed: false, opener: { sensitive: true },
+    document: { title: '', body: { textContent: '' } },
+    location: { replace(url) { visited.push(url); } },
+    close() { this.closed = true; }
+  };
+  const browser = { open(url, target) {
+    assert.equal(url, 'about:blank');
+    assert.equal(target, '_blank');
+    return popup;
+  } };
+  const prepared = prepareWhatsAppPopup('Preparando convite…', browser);
+  assert.equal(prepared, popup);
+  assert.equal(popup.opener, null);
+  assert.equal(popup.document.body.textContent, 'Preparando convite…');
+  navigateToWhatsApp('https://api.whatsapp.com/send?phone=5532999662604&text=%F0%9F%92%8C',
+    popup, { assign() { throw new Error('should keep source page open'); } });
+  assert.equal(visited.length, 1);
+  assert.equal(new URL(visited[0]).searchParams.get('text'), '💌');
+  closeWhatsAppPopup(popup);
+  assert.equal(popup.closed, true);
 });
 
-test('WhatsApp navigation rejects unrelated or unsafe addresses', () => {
-  const location = { assign() { throw Error('unexpected navigation'); } };
+test('when popup is blocked, WhatsApp falls back to same-tab navigation', () => {
+  const called = [];
+  assert.equal(prepareWhatsAppPopup('Preparando…', {open:()=>null}), null);
+  navigateToWhatsApp('https://api.whatsapp.com/send?text=Ajuda', null,
+    {assign(url){ called.push(url); }});
+  assert.equal(new URL(called[0]).hostname,'api.whatsapp.com');
+});
+
+test('WhatsApp navigation refuses unrelated or unsafe addresses', () => {
+  const location = { assign() { throw new Error('unexpected navigation'); } };
   for (const link of [
     'https://example.com/', 'https://wa.me.evil.example/chat',
     'http://wa.me/5532999662604', 'javascript:alert(1)'
-  ]) assert.throws(() => navigateToWhatsApp(link, location), /WhatsApp inválido|Link do WhatsApp inválido/);
+  ]) assert.throws(() => navigateToWhatsApp(link, null, location), /Link do WhatsApp inválido/);
 });
 
-test('manual delivery confirmation survives same-tab navigation and can be cleared', () => {
+test('manual delivery confirmation survives popup navigation and can be cleared', () => {
   const items = new Map();
   const storage = {
     getItem: key => items.get(key) ?? null,
     setItem: (key, value) => items.set(key, value),
-    removeItem: key => items.delete(key),
+    removeItem: key => items.delete(key)
   };
   const key = 'recipient:mural:5';
   assert.equal(isWhatsAppConfirmationPending(key, storage), false);
@@ -44,32 +66,33 @@ test('manual delivery confirmation survives same-tab navigation and can be clear
   assert.equal(isWhatsAppConfirmationPending(key, storage), false);
 });
 
-test('WhatsApp entrypoints no longer open a new browser tab', () => {
+test('support, mural invites, recovered letters and admin replies use popup', () => {
   for (const path of [
     'client/lib/secureSupport.js',
     'client/components/RecipientWhatsApp.jsx',
     'client/pages/AdminLetters.jsx',
-    'client/pages/AdminSupportMessages.jsx',
+    'client/pages/AdminSupportMessages.jsx'
   ]) {
     const code = source(path);
-    assert.doesNotMatch(code, /window\.open\(/, path + ' must not spawn a WhatsApp popup');
-    assert.doesNotMatch(code, /popup\.location|popup\?\.close/, path + ' must not rely on popup closing');
+    assert.match(code, /prepareWhatsAppPopup\(/, path);
   }
-  const secure = source('client/lib/secureSupport.js');
-  assert.match(secure, /window\.location\.assign\(result\.link\)/);
-  for (const path of ['client/components/RecipientWhatsApp.jsx', 'client/pages/AdminLetters.jsx']) {
+  for (const path of [
+    'client/components/RecipientWhatsApp.jsx',
+    'client/pages/AdminLetters.jsx'
+  ]) {
     const code = source(path);
     assert.match(code, /setWhatsAppConfirmationPending/);
     assert.match(code, /navigateToWhatsApp/);
+    assert.match(code, /closeWhatsAppPopup/);
   }
+  assert.match(source('client/lib/secureSupport.js'), /popup\.location\.replace\(link\.toString\(\)\)/);
 });
 
-test('direct WhatsApp and support redirect links stay in the current tab', () => {
-  const recipient = source('client/components/RecipientWhatsApp.jsx');
-  const letters = source('client/pages/AdminLetters.jsx');
-  const unfinished = source('client/components/UnfinishedLetterNotice.jsx');
-  assert.doesNotMatch(recipient, /href=\{fallbackLink\}[^>]*target="_blank"/);
-  assert.doesNotMatch(letters, /href=\{whatsApp\}[^>]*target="_blank"/);
-  assert.doesNotMatch(letters, /className="btn outline" target="_blank"\s+rel="noopener noreferrer"\s+href=\{whatsappShareUrl/);
-  assert.doesNotMatch(unfinished, /href="\/ajuda\/minha-cartinha"[^>]*target="_blank"/);
+test('retry and direct-help links open new tab instead of replacing EJC tab', () => {
+  assert.match(source('client/components/RecipientWhatsApp.jsx'),
+    /href=\{fallbackLink\} target="_blank"/);
+  assert.match(source('client/pages/AdminLetters.jsx'),
+    /href=\{whatsApp\} target="_blank"/);
+  assert.match(source('client/components/UnfinishedLetterNotice.jsx'),
+    /href="\/ajuda\/minha-cartinha" target="_blank"/);
 });

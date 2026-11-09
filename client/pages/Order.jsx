@@ -356,7 +356,7 @@ export default function Order() {
       </div>
 
             )}
-        <CheckoutSupport step={paid ? 'Editor de cartinha paga' : order.status === 'claimed' ? 'Pix informado · em conferência' : 'Editor / Pix individual'} orderId={order.id} checkoutId={order.checkout_id} recipientNames={[order.recipient_name]} />
+        <CheckoutSupport step={paid ? 'Editor de cartinha paga' : order.status === 'claimed' ? 'Pix informado · em conferência' : 'Editor / Pix individual'} orderId={order.id} checkoutId={order.checkout_id} recipientNames={[order.recipient_name]} recipientSlugs={[order.recipient_slug]} senderName={sender || order.sender_name} orderToken={token} />
         <div className="compose-layout">
           <div className="compose-main">
             <div className="notice success">

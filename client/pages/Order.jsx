@@ -17,6 +17,7 @@ import {
 import { api, btime, money, privateOrder, uploadMedia, track } from '../lib/api';
 import { draftGet, draftSet, draftKey } from '../lib/drafts';
 import { cartDraftKey } from '../lib/cart';
+import { rememberPrivateOrder } from '../lib/unfinishedLetters.js';
 import RichEditor from '../components/RichEditor';
 import Recorder from '../components/Recorder';
 import VoicePlayer from '../components/VoicePlayer';
@@ -52,6 +53,7 @@ export default function Order() {
       const o = await api('/api/order', { token });
       if (activeToken.current === token) {
         setOrder(o);
+        rememberPrivateOrder(o, token);
         setError('');
       }
       return o;

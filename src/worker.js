@@ -435,6 +435,53 @@ function escapeMeta(value){
   return String(value||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')
     .replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');
 }
+
+function supportIdentityForm(url, field, kind='sender'){
+  const isRecipient=kind==='recipient';
+  const picture=isRecipient?'/og-ajuda-minha-cartinha.png':'/og-ajuda-cartinhas.png';
+  const selected=new Set([
+    'id','para','utm_source','utm_medium','utm_campaign','utm_content',
+    'etapa','navegador','tela','idioma','conexao','horario'
+  ]);
+  const hidden=[...url.searchParams.entries()].filter(([key,value])=>
+    selected.has(key)&&value.length<=300 &&
+    (key!=='id'||/^EJC-[A-F0-9]{12}$/.test(value))).slice(0,40)
+    .map(([key,value])=>'<input type="hidden" name="'+escapeMeta(key)+
+      '" value="'+escapeMeta(value)+'">').join('');
+  const title=isRecipient?'Como podemos te chamar?':'Como podemos te chamar?';
+  const copy=isRecipient
+    ? 'Vamos incluir seu nome na mensagem para a equipe encontrar seu atendimento e te ajudar com sua cartinha.'
+    : 'Vamos incluir seu nome na mensagem e localizar as cartinhas enviadas ao encontrista. Seu texto e o acesso privado continuam protegidos.';
+  const html='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'+
+    '<meta name="viewport" content="width=device-width,initial-scale=1">'+
+    '<meta name="robots" content="noindex,nofollow">'+
+    '<title>'+title+' | Mini Mercado XX EJC</title>'+
+    '<style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;'+
+    'padding:20px;font:16px/1.5 system-ui,-apple-system,sans-serif;background:#064ba1;color:#12193d}'+
+    'main{width:min(100%,460px);padding:20px;border:4px solid #ffe35c;border-radius:23px;'+
+    'background:#fff9ea;box-shadow:12px 12px 0 #e60073}img{width:100%;height:auto;border-radius:15px}'+
+    'h1{font-size:28px;line-height:1.1;margin:16px 0 8px}p{margin:10px 0}'+
+    'label{display:block;margin:20px 0 5px;font-weight:800}input:not([type=hidden]){width:100%;'+
+    'padding:14px;font-size:16px;border:2px solid #1e3982;border-radius:12px;background:white}'+
+    'button{width:100%;padding:14px;font-size:17px;font-weight:800;border:0;border-radius:12px;'+
+    'color:#111a3b;background:#ffd51a;margin-top:15px;cursor:pointer}small{display:block;margin-top:12px}'+
+    '</style></head><body><main>'+
+    '<img alt="Cartinhas Virtuais · Mini Mercado" src="'+picture+'">'+
+    '<h1>💌 '+title+'</h1><p>'+copy+'</p>'+
+    '<form method="get" action="'+escapeMeta(url.pathname)+'">'+hidden+
+    '<label for="support-name">Seu nome</label>'+
+    '<input id="support-name" name="'+field+'" autocomplete="name" required minlength="2" maxlength="100"'+
+    ' placeholder="Ex.: Maria, mãe de João" autofocus>'+
+    '<button type="submit">Continuar para o WhatsApp 💚</button></form>'+
+    '<small>Não solicitamos senha, texto da cartinha ou código privado.</small>'+
+    '</main></body></html>';
+  return new Response(html,{headers:{
+    'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store',
+    'Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow, noarchive',
+    'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; form-action 'self'; base-uri 'none'"
+  }});
+}
+
 // Social crawlers do not execute React. Always publish complete OG metadata
 // in Worker-rendered HTML, even when the admin has not generated a portrait PNG.
 const DEFAULT_OG_PATH = '/og-ejc-default.png';
@@ -2033,7 +2080,9 @@ export default {
             'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'
           ).bind(new Date().toISOString().slice(0,10),'suporte:'+campaign).run();
         }catch(error){console.warn('Support count unavailable',error?.message);}
-        const name=clean(url.searchParams.get('encontrista'))||'encontrista';
+        const name=clean(url.searchParams.get('encontrista'));
+        if(!name||/^(?:encontrista|sem nome|an[oô]nimo)$/i.test(name))
+          return supportIdentityForm(url,'encontrista','recipient');
         const ids=url.searchParams.getAll('id').filter(id=>/^EJC-[A-F0-9]{12}$/.test(id))
           .slice(0,20);
         const origin=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
@@ -2147,6 +2196,8 @@ export default {
         const whats=new URL('https://wa.me/5533999546031');
         const clean=(value,max=100)=>String(value||'').replace(/[\r\n<>]/g,' ').trim().slice(0,max);
         const sender=clean(url.searchParams.get('remetente'));
+        if(!sender||/^(?:remetente(?: não informado)?|sem nome|an[oô]nimo|uma pessoa especial)$/i.test(sender))
+          return supportIdentityForm(url,'remetente','sender');
         const ids=url.searchParams.getAll('id').slice(0,15);
         const to=url.searchParams.getAll('para').slice(0,15);
         const letters=ids.map((id,i)=>/^EJC-[A-F0-9]{12}$/.test(id)

@@ -48,3 +48,17 @@
   .admin-secret-paper { padding: 18px; }
   .admin-secret-hidden { min-height: 205px; }
 }
+
+/* Paid-but-empty drafts: explicitly shareable only by an authenticated admin. */
+.admin-letter-content-status { font-size: .8rem; font-weight: 750; color: #5e4869; }
+.admin-draft-recovery { margin-top: 14px; padding: 14px; border: 1px dashed #be9ed3; border-radius: 14px; background: #faf6ff; display: grid; gap: 10px; min-width: 0; }
+.admin-draft-recovery p { margin: 0; line-height: 1.5; font-size: .89rem; }
+.admin-draft-recovery > .btn { justify-self: start; white-space: normal; text-align: left; }
+.admin-draft-recovery-link { display: grid; gap: 10px; min-width: 0; }
+.admin-draft-recovery-link a { overflow-wrap: anywhere; word-break: break-word; font-size: .84rem; color: #68359d; }
+.admin-draft-recovery-link .inline-actions { flex-wrap: wrap; }
+.admin-draft-recovery-link .btn { white-space: normal; }
+@media (max-width: 600px) {
+  .admin-draft-recovery { padding: 12px; }
+  .admin-draft-recovery > .btn, .admin-draft-recovery-link .btn { width: 100%; justify-content: center; }
+}

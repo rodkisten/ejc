@@ -203,9 +203,8 @@ export default function AdminSupportMessages({ info }) {
       <h2>Aguarde...</h2>
       <p>Preparando sua mensagem para o WhatsApp…</p>
     </body>
-    </html>
+    </html>`);
       
-      <p></p>`);
       const generated=await ensurePersonalizedDraftOg();
       const url=number
         ? 'https://wa.me/' + number + '?text=' + encodeURIComponent(text)

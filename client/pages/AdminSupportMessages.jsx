@@ -102,7 +102,7 @@ export default function AdminSupportMessages({ info }) {
         setContactWhatsApp(context.phone||'');
         setSelectedRecipients(context.recipientSlugs||[]);
         setSelectedOrderIds((orders||[]).map(order=>order.id));
-        setTemplate(context.purpose==='finished'?'recebida':'aguardando');
+        setTemplate(initial.template || (context.purpose==='finished'?'recebida':'aguardando'));
         setNotice('🔐 Atendimento recuperado. Os dados foram decifrados somente na sessão administrativa.');
       }).catch(cause=>{if(!cancelled)setError(cause.message);});
     return ()=>{cancelled=true;};
@@ -278,7 +278,7 @@ export default function AdminSupportMessages({ info }) {
         const response=await api('/api/admin/cartinhas/'+encodeURIComponent(letter.id)+
           '/resume-link',{method:'POST',data:{}});
         const context=await createSecureSupportContext({
-          purpose:'draft',name:contactName,phone:contactWhatsApp,
+          purpose:'send',name:contactName,phone:contactWhatsApp,
           ids:[letter.id],recipientSlugs:[letter.recipient_slug],
           source:'whatsapp',medium:'mensagem',
           campaign:'recuperacao_cartinha',content:'rascunho_pago',stage:'retomar_edicao'

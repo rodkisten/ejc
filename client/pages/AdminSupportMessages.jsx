@@ -198,11 +198,14 @@ export default function AdminSupportMessages({ info }) {
       for(const letter of drafts){
         const response=await api('/api/admin/cartinhas/'+encodeURIComponent(letter.id)+
           '/resume-link',{method:'POST',data:{}});
+        const context=await createSecureSupportContext({
+          purpose:'draft',name:contactName,phone:contactWhatsApp,
+          ids:[letter.id],recipientSlugs:[letter.recipient_slug],
+          source:'whatsapp',medium:'mensagem',
+          campaign:'recuperacao_cartinha',content:'rascunho_pago',stage:'retomar_edicao'
+        });
         const link=new URL(response.resume_url);
-        link.searchParams.set('utm_source','whatsapp');
-        link.searchParams.set('utm_medium','mensagem');
-        link.searchParams.set('utm_campaign','recuperacao_cartinha');
-        link.searchParams.set('utm_content','rascunho_pago');
+        link.search='?c='+encodeURIComponent(new URL(context.link).searchParams.get('c'));
         created.push({name:letter.recipient_name,url:link.toString()});
       }
       setResumeUrl(created.length===1?created[0].url:
@@ -226,7 +229,7 @@ export default function AdminSupportMessages({ info }) {
   }
 
   async function copyMessage() {
-    if (blocked || !text.trim()) return;
+    if (blocked || !secureLinks || !text.trim()) return;
     try {
       // Clipboard needs the user gesture, particularly on iPhone Safari.
       // Publish the image only after successfully capturing the copied text.
@@ -246,7 +249,7 @@ export default function AdminSupportMessages({ info }) {
     }
   }
   async function openWhatsApp() {
-    if (blocked || !text.trim()) return;
+    if (blocked || !secureLinks || !text.trim()) return;
     const phone = contactWhatsApp.trim();
     const number = phone ? normalizeBrazilianWhatsApp(phone) : '';
     if (phone && !number) {
@@ -337,19 +340,22 @@ export default function AdminSupportMessages({ info }) {
             <input id="support-contact-phone" type="tel" inputMode="tel" autoComplete="off"
               placeholder="(33) 99999-9999" value={contactWhatsApp}
               onChange={event => setContactWhatsApp(event.target.value.slice(0,25))}/>
-            <small>O nome e o WhatsApp entram na URL desta aba para preencher os próximos links de atendimento. Não são gravados no banco nem enviados ao Analytics. Use apenas links internos da equipe.</small>
-            <button type="button" className="btn ghost" onClick={async () => {
-              const url=window.location.origin+supportContactAdminUrl({
-                name:contactName,phone:contactWhatsApp,
-                recipients:selectedRecipients,orders:selectedOrderIds,template
-              });
-              try {
-                await navigator.clipboard.writeText(url);
-                setNotice('✅ Link do atendimento com nome e telefone copiado!');
-              } catch {
-                window.prompt('Copie o link do atendimento:',url);
-              }
-            }}>🔗 Copiar link preenchido do atendimento</button>
+            <small>Nome, telefone, IDs e UTMs são armazenados somente no contexto criptografado do link, que expira em 14 dias.</small>
+            <button type="button" className="btn ghost" disabled={!secureLinks}
+              onClick={async()=>{
+                try{
+                  await navigator.clipboard.writeText(secureLinks.admin);
+                  setNotice('✅ Link criptografado do atendimento copiado!');
+                }catch{
+                  if(secureLinks)window.prompt('Copie o link seguro do atendimento:',secureLinks.admin);
+                }
+              }}>🔗 Copiar link seguro do atendimento</button>
+            {secureLinks && <a className="btn outline" href={secureLinks.letters}
+              target="_blank" rel="noopener noreferrer">
+              👁 Conferir cartinhas relacionadas no admin
+            </a>}
+            {secureBusy&&<small>🔐 Preparando links protegidos…</small>}
+            {secureError&&<div className="notice error" role="alert">{secureError}</div>}
           </section>
 
           <section className="form-card support-messages-card">
@@ -455,10 +461,10 @@ export default function AdminSupportMessages({ info }) {
                 Restaurar modelo com os nomes e links atuais
               </button>}
               <div className="support-message-actions">
-                <button type="button" className="btn" disabled={!text.trim()} onClick={copyMessage}>
+                <button type="button" className="btn" disabled={!text.trim()||secureBusy||!secureLinks} onClick={copyMessage}>
                   <ClipboardCopy size={17}/> Copiar formatada
                 </button>
-                <button type="button" className="btn outline" disabled={!text.trim()}
+                <button type="button" className="btn outline" disabled={!text.trim()||secureBusy||!secureLinks}
                   onClick={openWhatsApp}>
                   <MessageCircle size={17}/> Abrir WhatsApp
                 </button>

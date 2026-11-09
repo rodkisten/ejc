@@ -1,4 +1,5 @@
 import { generatePix } from './pix.js';
+import {cleanSupportContext,encryptSupportContext,decryptSupportContext} from './supportContext.js';
 import { adminStatistics } from './statistics.js';
 import { normalizePaymentLookup, likeTerm, maskedStatus } from './paymentSearch.js';
 import { isSquareRecipientJpeg } from './photo.js';
@@ -671,7 +672,93 @@ async function createCheckout(req,env,config) {
   },201);
 }
 
+async function supportContextMint(req,env){
+  const input=await jsonBody(req,5000);
+  if(!input||typeof input!=='object'||Array.isArray(input))bad('Contexto inválido.');
+  const data=cleanSupportContext(input);
+  if(Array.isArray(input.ids)&&input.ids.length!==data.ids.length)
+    bad('IDs de cartinhas inválidos ou repetidos.',400);
+  const admin=await isAdmin(req,env);
+  let owned=[];
+  if(data.ids.length&&!admin){
+    const auth=req.headers.get('Authorization')||'';
+    if(auth.startsWith('Bearer ')){
+      try {
+        const order=await buyer(req,env);
+        owned=[order.id];
+      }catch{
+        try {
+          const {checkout}=await checkoutBuyer(req,env);
+          owned=(await env.DB.prepare('SELECT id FROM orders WHERE checkout_id=?')
+            .bind(checkout.id).all()).results.map(row=>row.id);
+        }catch{
+          const muralSlug=String(input.muralSlug||'').slice(0,65);
+          if(/^[a-z0-9-]+$/.test(muralSlug)){
+            const recipient=await env.DB.prepare(
+              'SELECT id,mural_code FROM recipients WHERE slug=? AND active=1'
+            ).bind(muralSlug).first();
+            if(recipient&&await validMuralGrant(env,auth.slice(7),recipient))
+              owned=(await env.DB.prepare(
+                "SELECT id FROM orders WHERE recipient_id=? AND status IN ('paid','preparing','delivered')"
+              ).bind(recipient.id).all()).results.map(row=>row.id);
+          }
+        }
+      }
+    }
+    if(!data.ids.every(id=>owned.includes(id)))
+      bad('Autorização da cartinha necessária para incluir seus IDs no suporte.',403);
+  }
+  if(data.ids.length){
+    const found=(await env.DB.prepare(
+      'SELECT o.id,r.slug FROM orders o JOIN recipients r ON r.id=o.recipient_id '+
+      'WHERE o.id IN ('+data.ids.map(()=>'?').join(',')+')'
+    ).bind(...data.ids).all()).results;
+    if(found.length!==data.ids.length)bad('Cartinha não encontrada.',404);
+    data.recipientSlugs=[...new Set([...data.recipientSlugs,...found.map(row=>row.slug)])];
+  }
+  if(data.recipientSlugs.length){
+    const count=await env.DB.prepare('SELECT COUNT(*) AS n FROM recipients WHERE slug IN ('+
+      data.recipientSlugs.map(()=>'?').join(',')+')'
+    ).bind(...data.recipientSlugs).first();
+    if(Number(count?.n||0)!==data.recipientSlugs.length)
+      bad('Encontrista não encontrado.',404);
+  }
+  const opaque=await encryptSupportContext(env.SESSION_SECRET,data);
+  const origin=new URL(env.PUBLIC_ORIGIN||req.url).origin;
+  const help=new URL(data.purpose==='finished'
+    ?'/ajuda/terminei-a-cartinha':'/ajuda/minha-cartinha',origin);
+  help.searchParams.set('c',opaque);
+  return result({
+    link:help.toString(),
+    admin_url:origin+'/admin/mensagens?c='+encodeURIComponent(opaque),
+    admin_letters_url:origin+'/admin/cartinhas?c='+encodeURIComponent(opaque),
+    send_urls:data.recipientSlugs.map(slug=>
+      origin+'/enviar/'+encodeURIComponent(slug)+'?c='+encodeURIComponent(opaque)),
+    expires_in_days:14
+  },201);
+}
+async function supportContextView(req,env,admin=false){
+  const raw=new URL(req.url).searchParams.get('c')||'';
+  let data;
+  try{data=await decryptSupportContext(env.SESSION_SECRET,raw);}
+  catch{bad('Este link de atendimento é inválido ou expirou.',410);}
+  if(!admin){
+    if(data.purpose!=='send')bad('Este contexto só está disponível à equipe.',403);
+    return result({name:data.name,phone:data.phone,recipientSlugs:data.recipientSlugs});
+  }
+  const orders=data.ids.length?(await env.DB.prepare(
+    'SELECT o.id,o.status,o.submitted_at,r.name AS recipient_name,r.slug AS recipient_slug '+
+    'FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.id IN ('+
+    data.ids.map(()=>'?').join(',')+')'
+  ).bind(...data.ids).all()).results:[];
+  return result({context:data,orders});
+}
+
 async function publicRoute(req,env,path) {
+  if(path==='/api/support/context'&&req.method==='POST')
+    return supportContextMint(req,env);
+  if(path==='/api/support/context'&&req.method==='GET')
+    return supportContextView(req,env,false);
   const muralOg=path.match(/^\/api\/og\/mural\/([a-z0-9-]+)\.png$/);
   if(muralOg&&(req.method==='GET'||req.method==='HEAD')){
     const r=await env.DB.prepare(
@@ -1012,6 +1099,8 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
   await requireAdmin(req,env);
   if(path==='/api/admin/me')return result({authenticated:true});
+  if(path==='/api/admin/support/context'&&req.method==='GET')
+    return supportContextView(req,env,true);
   if(path==='/api/admin/statistics' && req.method==='GET'){
     const query=new URL(req.url).searchParams;
     const from=query.get('from')||'',to=query.get('to')||'';

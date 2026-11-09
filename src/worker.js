@@ -1318,7 +1318,7 @@ async function adminRoute(req,env,path) {
   }
 
   // Only authenticated admins may create a ready-to-open, private mural invitation.
-  const readyMessage=path.match(/^\\/api\\/admin\\/cartinhas\\/(EJC-[A-F0-9]{12})\\/ready-whatsapp(?:\\/confirm)?$/);
+  const readyMessage=path.match(/^\/api\/admin\/cartinhas\/(EJC-[A-F0-9]{12})\/ready-whatsapp(?:\/confirm)?$/);
   if(readyMessage&&req.method==='POST'){
     const confirm=path.endsWith('/confirm');
     const row=await env.DB.prepare(
@@ -1998,20 +1998,20 @@ export default {
           ).bind(new Date().toISOString().slice(0,10),campaign).run();
         }catch(error){console.warn('Help-link count unavailable',error?.message);}
         const whats=new URL('https://wa.me/5533999546031');
-        const clean=(value,max=100)=>String(value||'').replace(/[\\r\\n<>]/g,' ').trim().slice(0,max);
+        const clean=(value,max=100)=>String(value||'').replace(/[\r\n<>]/g,' ').trim().slice(0,max);
         const sender=clean(url.searchParams.get('remetente'));
         const ids=url.searchParams.getAll('id').slice(0,15);
         const to=url.searchParams.getAll('para').slice(0,15);
         const letters=ids.map((id,i)=>/^EJC-[A-F0-9]{12}$/.test(id)
           ?(to[i]?'Para '+clean(to[i])+': ':'')+id+
-            '\\nAdmin: '+url.origin+'/admin/pedidos/'+encodeURIComponent(id)
+            '\nAdmin: '+url.origin+'/admin/pedidos/'+encodeURIComponent(id)
           :'').filter(Boolean);
         const message=[
           sender?'Olá, eu sou '+sender+'! 💌':'Olá! 💌',
           'Já finalizei minha cartinha do XX EJC Simonésia.',
           'Gostaria de confirmar o recebimento e saber qual é o próximo passo.',
           ...(letters.length?['','*Cartinhas para conferência:*',...letters]:[])
-        ].join('\\n');
+        ].join('\n');
         whats.searchParams.set('text',message);
         for(const [key,backup] of Object.entries({
           utm_source:'whatsapp',utm_medium:'mensagem',utm_campaign:'recuperacao_cartinhas'

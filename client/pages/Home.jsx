@@ -40,6 +40,7 @@ export default function Home() {
   const [notice, setNotice] = useState('');
   const [adminError, setAdminError] = useState('');
   const [unfinished, setUnfinished] = useState([]);
+  const [showAllUnfinished, setShowAllUnfinished] = useState(false);
 
   useEffect(() => {
     if (!cart.ready) return;
@@ -193,7 +194,7 @@ export default function Home() {
             </div>
           </div>
           <div className="unfinished-home-list">
-            {unfinished.slice(0, 8).map((entry) => {
+            {(showAllUnfinished ? unfinished : unfinished.slice(0, 8)).map((entry) => {
               const person = recipients.find((candidate) => candidate.slug === entry.recipient_slug);
               const recipientName = person?.name || entry.recipient_name;
               const paidDraft = entry.kind === 'paid';
@@ -222,9 +223,12 @@ export default function Home() {
             })}
           </div>
           {unfinished.length > 8 && (
-            <p className="unfinished-home-overflow">
-              Há mais {unfinished.length - 8} cartinha(s) recuperadas. Termine estas e volte para conferir as demais.
-            </p>
+            <button type="button" className="unfinished-home-toggle"
+              aria-expanded={showAllUnfinished}
+              onClick={() => setShowAllUnfinished((current) => !current)}>
+              {showAllUnfinished ? 'Mostrar menos' :
+                'Ver todas as ' + unfinished.length + ' cartinhas recuperadas'}
+            </button>
           )}
         </section>
       )}

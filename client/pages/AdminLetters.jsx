@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { CheckCheck, Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, Sparkles } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, track } from '../lib/api';
+import { readyLetterWhatsAppMessage } from '../lib/helpLink.js';
+import { whatsappShareUrl } from '../lib/recipientWhatsApp.js';
 import StickerLayer from '../components/letter/StickerLayer';
 import TechnicalLetterPreview from '../components/TechnicalLetterPreview';
 import TechnicalMuralPreview, { extractMuralGrant, extractMuralCode } from '../components/TechnicalMuralPreview';
@@ -134,6 +136,66 @@ function ResumeDraftLink({ letter }) {
   );
 }
 
+function RecoveredLetterNotice({letter,onUpdated}){
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const [whatsApp,setWhatsApp]=useState('');
+  const [confirming,setConfirming]=useState(false);
+  async function prepare(){
+    // Keep a tab open through the async API call on mobile Safari.
+    const popup=window.open('about:blank','_blank');
+    if(popup){try{popup.opener=null;popup.document.body.textContent='Preparando WhatsApp…';}catch{}}
+    setBusy(true);setError('');setWhatsApp('');
+    try{
+      const data=await api('/api/admin/cartinhas/'+encodeURIComponent(letter.id)+'/ready-whatsapp',
+        {method:'POST',data:{}});
+      const message=readyLetterWhatsAppMessage(data);
+      const url=whatsappShareUrl({phone:data.phone,message});
+      track('admin_recovered_notice_opened',{stage:'whatsapp'});
+      setWhatsApp(url);
+      setConfirming(true);
+      if(popup&&!popup.closed)popup.location.replace(url);
+    }catch(cause){
+      try{popup?.close();}catch{}
+      setError(cause.message||'Não foi possível gerar o convite.');
+    }finally{setBusy(false);}
+  }
+  async function confirmSent(){
+    setBusy(true);setError('');
+    try{
+      await api('/api/admin/cartinhas/'+encodeURIComponent(letter.id)+'/ready-whatsapp/confirm',
+        {method:'POST',data:{}});
+      track('admin_recovered_notice_confirmed',{stage:'whatsapp'});
+      setConfirming(false);
+      await onUpdated();
+    }catch(cause){setError(cause.message||'Não foi possível salvar a confirmação.');}
+    finally{setBusy(false);}
+  }
+  return <section className="notice success" aria-label="Cartinha recuperada">
+    <p><strong>✅ Rascunho vazio recuperado!</strong>{letter.submitted
+      ?' Esta cartinha já foi enviada e está pronta para o encontrista.'
+      :' Já tem conteúdo no servidor. Falta finalizar o envio antes de avisar.'}</p>
+    {letter.submitted&&<div className="inline-actions">
+      <button type="button" className="btn" disabled={busy} onClick={prepare}>
+        {busy?'Preparando…':letter.recipient_notified_at?'📲 Aviso enviado · reenviar':'📲 Avisar encontrista no WhatsApp'}
+      </button>
+      {whatsApp&&<a href={whatsApp} target="_blank" rel="noopener noreferrer"
+        onClick={()=>track('admin_recovered_notice_link_clicked',{stage:'whatsapp'})}
+        className="btn outline">Abrir link do WhatsApp</a>}
+    </div>}
+    {confirming&&<div className="notice">
+      <strong>Você realmente enviou o aviso no WhatsApp?</strong>
+      <p>Abrir a conversa não significa que a mensagem foi enviada.</p>
+      <div className="inline-actions">
+        <button type="button" className="btn" disabled={busy} onClick={confirmSent}>Sim, enviei</button>
+        <button type="button" className="btn ghost" onClick={()=>setConfirming(false)}>Ainda não</button>
+      </div>
+    </div>}
+    {letter.recipient_notified_at&&<small>✅ Envio confirmado manualmente em {createdAt(letter.recipient_notified_at)}</small>}
+    {error&&<p className="notice error" role="alert">{error}</p>}
+  </section>;
+}
+
 export default function AdminLetters() {
   const { slug } = useParams();
   const location = useLocation();
@@ -237,6 +299,8 @@ export default function AdminLetters() {
     if (filter === 'paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift)) return false;
     if (filter === 'empty-paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift || letter.has_content)) return false;
     if (filter === 'sent' && !letter.submitted) return false;
+    if (filter === 'recovered' && !letter.recovered_at) return false;
+    if (filter === 'ready-notify' && (!letter.recovered_at||!letter.submitted||letter.recipient_notified_at))return false;
     const query = search.trim().toLocaleLowerCase('pt-BR');
     return !query || [letter.recipient_name, letter.sender_name, letter.id]
       .some((text) => String(text).toLocaleLowerCase('pt-BR').includes(query));
@@ -378,6 +442,8 @@ export default function AdminLetters() {
           <option value="pending">Pix pendente</option>
           <option value="paid">Pagas</option>
           <option value="sent">Enviadas</option>
+          <option value="recovered">✅ Cartinhas vazias recuperadas</option>
+          <option value="ready-notify">📲 Recuperadas prontas para avisar</option>
           <option value="draft">Rascunhos</option>
           <option value="paid-draft">Pagos que ainda são rascunhos</option>
           <option value="empty-paid-draft">Pagos sem conteúdo salvo</option>
@@ -399,6 +465,9 @@ export default function AdminLetters() {
                 {slug && <strong className="admin-letter-recipient">{letter.recipient_name}</strong>}
                 <p>De: <strong>{letter.sender_name}</strong></p>
                 <small>{letter.id} · {createdAt(letter.created_at)}</small>
+                {letter.recovered_at&&<p className="admin-letter-content-status">
+                  💚 Recuperada em {createdAt(letter.recovered_at)}
+                </p>}
                 {paid(letter.status) && !letter.submitted && !letter.gift && (
                   <p className="admin-letter-content-status">
                     {letter.has_content ? '✅ Mensagem ou anexo salvo · pronta para revisão'
@@ -428,6 +497,8 @@ export default function AdminLetters() {
                 onFinalized={() => Promise.all([refresh(), updateFinalizeSummary()])}
               />
             )}
+            {letter.recovered_at&&!letter.gift&&
+              <RecoveredLetterNotice letter={letter} onUpdated={refresh}/>}
             {paid(letter.status) && !letter.submitted && !letter.gift && !letter.has_content && (
               <ResumeDraftLink letter={letter} />
             )}

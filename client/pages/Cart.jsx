@@ -74,6 +74,7 @@ export default function Cart() {
       try { await cart.clear(); } catch { /* The server checkout remains recoverable. */ }
       track('checkout_created', { letters: checkout.items.length });
       const c=sessionStorage.getItem('ejc-support-context');
+      if(c)sessionStorage.removeItem('ejc-support-context');
       navigate('/checkout/' + checkout.token + (c?'?c='+encodeURIComponent(c):''));
     } catch (cause) {
       setError(cause.message || 'Não foi possível gerar o Pix.');

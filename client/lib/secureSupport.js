@@ -22,8 +22,9 @@ export async function openSecureSupport(options={}) {
     const result = await createSecureSupportContext(options);
     const link = new URL(result.link, window.location.origin);
     if (link.origin !== window.location.origin ||
-        !/^\/ajuda\/(?:terminei-a-cartinha|minha-cartinha)\/?$/.test(link.pathname) ||
-        !link.searchParams.has('c'))
+        !(/^\/s\/[A-Za-z0-9_-]{14}$/.test(link.pathname) ||
+          (/^\/ajuda\/(?:terminei-a-cartinha|minha-cartinha)\/?$/.test(link.pathname) &&
+           link.searchParams.has('c'))))
       throw new Error('Link seguro de suporte inválido.');
     if (popup && !popup.closed) popup.location.replace(link.toString());
     else window.location.assign(link.toString());

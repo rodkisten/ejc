@@ -6,7 +6,8 @@ import {
   Eye, ImagePlus, Pencil, Trash2, Check, X,
 } from 'lucide-react';
 import { useApp } from '../main';
-import { useCart } from '../lib/cart';
+import { useCart, localCheckouts } from '../lib/cart';
+import { findUnfinishedLetters } from '../lib/unfinishedLetters.js';
 import { api, money, track } from '../lib/api';
 import SquarePhotoEditor from '../components/SquarePhotoEditor';
 import RecipientPolaroidWall from '../components/RecipientPolaroidWall';
@@ -38,6 +39,26 @@ export default function Home() {
   const [photoSelection, setPhotoSelection] = useState(null);
   const [notice, setNotice] = useState('');
   const [adminError, setAdminError] = useState('');
+  const [unfinished, setUnfinished] = useState([]);
+
+  useEffect(() => {
+    if (!cart.ready) return;
+    let alive = true;
+    const refresh = () => {
+      findUnfinishedLetters({ cartItems: cart.items, checkouts: localCheckouts() })
+        .then((entries) => { if (alive) setUnfinished(entries); })
+        .catch(() => { if (alive) setUnfinished([]); });
+    };
+    refresh();
+    // Safari on iPhone may restore the tab without remounting the route.
+    window.addEventListener('focus', refresh);
+    window.addEventListener('pageshow', refresh);
+    return () => {
+      alive = false;
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('pageshow', refresh);
+    };
+  }, [cart.ready, cart.items]);
 
   useEffect(() => {
     let alive = true;
@@ -153,6 +174,54 @@ export default function Home() {
 
   return (
     <div className="classic-ejc-home">
+      {unfinished.length > 0 && (
+        <section className="unfinished-home-banner" aria-labelledby="unfinished-home-title">
+          <div className="unfinished-home-header">
+            <div className="unfinished-home-mark" aria-hidden="true">💌</div>
+            <div>
+              <span className="eyebrow">SUAS CARTINHAS ESTÃO AQUI</span>
+              <h2 id="unfinished-home-title">Você tem {unfinished.length === 1
+                ? 'uma cartinha para terminar!' : unfinished.length + ' cartinhas para terminar!'}</h2>
+              <p>Encontramos seus rascunhos e links privados salvos neste aparelho.
+                Continue de onde parou, sem começar tudo de novo.</p>
+            </div>
+          </div>
+          <div className="unfinished-home-list">
+            {unfinished.slice(0, 8).map((entry) => {
+              const person = recipients.find((candidate) => candidate.slug === entry.recipient_slug);
+              const recipientName = person?.name || entry.recipient_name;
+              const paidDraft = entry.kind === 'paid';
+              const waitingPix = entry.kind === 'pending';
+              return (
+                <div className={'unfinished-home-item' + (paidDraft ? ' is-paid' : '')} key={entry.id}>
+                  <div className="unfinished-home-copy">
+                    <span className="unfinished-home-status">
+                      {paidDraft ? '✅ Pix confirmado · cartinha em rascunho'
+                        : waitingPix ? '⏳ Pix ainda não confirmado'
+                          : '📝 Rascunho salvo neste aparelho'}
+                    </span>
+                    <strong>Para {recipientName}</strong>
+                    <p>{paidDraft
+                      ? 'Você já pagou! Só falta continuar a edição e finalizar o envio da cartinha.'
+                      : waitingPix
+                        ? 'Seu Pix já foi criado. Continue editando pelo mesmo pedido, sem gerar outro.'
+                        : 'Sua cartinha ficou salva neste navegador. Você pode continuar escrevendo.'}</p>
+                  </div>
+                  <Link className={'btn ' + (paidDraft ? 'unfinished-home-primary' : 'outline')}
+                    to={entry.url}>
+                    {paidDraft ? 'Finalizar e enviar' : 'Continuar edição'} <ArrowUpRight size={16} />
+                  </Link>
+                </div>
+              );
+            })}
+          </div>
+          {unfinished.length > 8 && (
+            <p className="unfinished-home-overflow">
+              Há mais {unfinished.length - 8} cartinha(s) recuperadas. Termine estas e volte para conferir as demais.
+            </p>
+          )}
+        </section>
+      )}
       <section className="hero" aria-labelledby="home-title">
         <div className="hero-grid">
           <div className="hero-copy">

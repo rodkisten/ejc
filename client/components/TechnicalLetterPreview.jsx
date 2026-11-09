@@ -41,6 +41,16 @@ export default function TechnicalLetterPreview({ orderId, password, adminSession
           return response;
         }
         const details = await (await fetchPrivate(base)).json();
+        if (adminSession) {
+          // Render authenticated GET media URLs directly. Photos can load lazily
+          // and audio supports Range requests without buffering every blob in
+          // the administrator's iPhone memory.
+          const media = (details.media || []).map((file) => ({
+            ...file, url: base + '/media/' + encodeURIComponent(file.id),
+          }));
+          if (!cancelled) setLetter({ ...details, media });
+          return;
+        }
         const media = [];
         for (const file of details.media || []) {
           const response = await fetchPrivate(base + '/media/' + encodeURIComponent(file.id));

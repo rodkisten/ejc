@@ -107,8 +107,8 @@ export function createSupportMessage(id,{
         hello,'',
         'Estamos conferindo sua homenagem '+forPeople+' e notamos que *a mensagem ainda aparece vazia ou como rascunho no sistema.* 🥹',
         'Queremos muito que esse carinho chegue direitinho ao seu destino!','',
+        resumeUrl?'🔐 *Acesse sua cartinha pelo link privado de continuação:*\n'+resumeUrl+'\n':'',
         '📝 *Pode nos ajudar?*','1️⃣ Entre novamente no *link privado de edição* usado durante a compra.','2️⃣ Confira se seu texto, fotos ou áudio ainda estão lá.','3️⃣ Se não aparecerem, escreva sua cartinha novamente com carinho.','4️⃣ Salve as alterações e toque em *Finalizar envio*.','5️⃣ Avise nossa equipe assim que terminar:',help,
-        resumeUrl?'\n🔐 *Link privado de continuação enviado somente para você:*\n'+resumeUrl:'',
         noNewPix,refs,'',
         'Se não souber onde está o link de edição, responda aqui. Vamos te orientar pessoalmente. 💛',
         sign

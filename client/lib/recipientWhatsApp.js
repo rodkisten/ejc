@@ -1,3 +1,5 @@
+import { recipientSupportLink } from './helpLink.js';
+
 // WhatsApp formatting uses *bold*, _italics_ and a plain URL.
 export function normalizeBrazilianWhatsApp(value) {
   const digits=String(value||'').replace(/\D/g,'');
@@ -27,6 +29,13 @@ export function muralInvitationMessage({ name, url, count=1 }) {
     '',
     '_Este link é só seu, válido por 14 dias. Guarde com carinho e não compartilhe._',
     '_Se ainda aparecer fechado, ele abrirá no horário de liberação do Encontro._',
+    '',
+    '🆘 *Precisa de ajuda com suas cartinhas?*',
+    recipientSupportLink({
+      name,origin:new URL(url).origin,source:'whatsapp',medium:'mensagem',
+      campaign:'convite_mural',content:'suporte_encontrista',stage:'convite_mural'
+    }),
+    '_O link abre o WhatsApp da equipe com uma mensagem pronta._',
     '',
     '💗 *Este cantinho digital foi criado com muito amor pela equipe do Mini Mercado do XX EJC Simonésia:*',
     'Rodolfo Costa, Evelyne Pimentel, Tia Mariana e Tio Saulinho, Tia Daisy e Tio Davidson.',

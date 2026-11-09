@@ -147,11 +147,22 @@ export default function Send() {
       });
       const url=context.send_urls[0];
       if(!url)throw new Error('Não foi possível gerar o link de envio.');
-      if (navigator.share) await navigator.share({
-        title:'Uma cartinha para '+found.name+' · XX EJC Simonésia',
-        text:'Envie uma homenagem especial para '+found.name+'.',url
-      });
-      else {await navigator.clipboard.writeText(url);setError('Link protegido de envio copiado!');}
+      if(navigator.share){
+        try{
+          await navigator.share({
+            title:'Uma cartinha para '+found.name+' · XX EJC Simonésia',
+            text:'Envie uma homenagem especial para '+found.name+'.',url
+          });
+        }catch(error){
+          if(error?.name==='AbortError')return;
+          // Safari can drop user activation after the encryption request.
+          // A selectable prompt is a reliable touch fallback.
+          window.prompt('Copie e envie o link protegido:',url);
+        }
+      }else{
+        try{await navigator.clipboard.writeText(url);setError('Link protegido de envio copiado!');}
+        catch{window.prompt('Copie o link protegido:',url);}
+      }
     }catch(cause){
       if(cause?.name!=='AbortError')setError(cause.message||'Não foi possível compartilhar o link.');
     }

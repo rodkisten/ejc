@@ -51,7 +51,7 @@ test('strict validation omits invalid IDs, URL injection and invalid phones',()=
     recipientSlugs:['maria','../cartinhas'],
     campaign:'campanha & segredo'
   });
-  assert.equal(cleaned.name,'Ana  script');
+  assert.equal(cleaned.name,'Ana script');
   assert.equal(cleaned.phone,'');
   assert.deepEqual(cleaned.ids,['EJC-123456789ABC']);
   assert.deepEqual(cleaned.recipientSlugs,['maria']);

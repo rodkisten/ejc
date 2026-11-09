@@ -5,7 +5,7 @@ import { api, track } from '../lib/api';
 import { readAdminListFilters, updateAdminListFilter, isReadyForSending,
   matchesSupportOrder } from '../lib/adminListFilters.js';
 import { normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp';
-import { navigateToWhatsApp } from '../lib/whatsappNavigation.js';
+import { navigateToWhatsApp, prepareWhatsAppPopup } from '../lib/whatsappNavigation.js';
 import { normalizeWhatsAppText, whatsappMessageUrl } from '../../shared/whatsappText.js';
 import { supportContactParams } from '../lib/supportContactUrl.js';
 import { createSecureSupportContext } from '../lib/secureSupport.js';
@@ -365,8 +365,9 @@ export default function AdminSupportMessages({ info }) {
       return;
     }
     const url = whatsappMessageUrl({ phone: number, message: text });
-    // Same-tab navigation avoids leaving an orphan tab after the native app opens.
-    navigateToWhatsApp(url);
+    // Chrome iOS: open from the tap rather than replacing the admin page.
+    const popup = prepareWhatsAppPopup('Abrindo conversa no WhatsApp…');
+    navigateToWhatsApp(url, popup);
     setError('');
     setNotice('WhatsApp aberto. Confira a conversa e envie manualmente.');
     track('admin_support_template_whatsapp_opened',{stage:template});

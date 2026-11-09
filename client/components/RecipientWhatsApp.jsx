@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Check, Copy, ExternalLink, ImagePlus, MessageCircle, Phone, RefreshCw } from 'lucide-react';
 import { api, track } from '../lib/api';
+import { readAdminListFilters, updateAdminListFilter } from '../lib/adminListFilters.js';
 import { publishMuralOgImage } from '../lib/og';
 import { muralInvitationMessage, whatsappShareUrl } from '../lib/recipientWhatsApp';
 import { createSecureSupportContext } from '../lib/secureSupport.js';
@@ -169,9 +171,15 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
   );
 }
 
+const WHATSAPP_FILTERS = ['all', 'ready', 'sent', 'unsent', 'missing-phone'];
+
 export default function WhatsAppAdmin({ info, reload }) {
-  const [query, setQuery] = useState('');
-  const [view, setView] = useState('all');
+  const [listParams, setListParams] = useSearchParams();
+  const { search: query, filter: view } = readAdminListFilters(listParams, WHATSAPP_FILTERS);
+  const setQuery = value => setListParams(current => updateAdminListFilter(current, 'busca', value),
+    { replace: true, preventScrollReset: true });
+  const setView = value => setListParams(current => updateAdminListFilter(current, 'situacao', value),
+    { preventScrollReset: true });
   const [imageBusy, setImageBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');

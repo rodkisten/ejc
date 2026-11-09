@@ -40,7 +40,7 @@ export function confirmedOrders(orders) {
 
 export function createSupportMessage(id,{
   contactName='',recipientNames=[],recipients=[],orders=[],
-  origin='https://ejc.migos.club',resumeUrl='',secureLinks={}
+  origin='https://ejc.migos.club',resumeUrl='',secureLinks={},preview=false
 }={}) {
   const name=validContactName(contactName)?String(contactName).trim():'';
   const first=name.split(/\s+/)[0]||'';
@@ -78,9 +78,9 @@ export function createSupportMessage(id,{
   const noNewPix='\n\n💛 *Se você já pagou, não precisa fazer outro Pix.*';
   const template=SUPPORT_MESSAGE_TEMPLATES.find(item=>item.id===id);
   if(!template)throw new Error('Modelo de mensagem desconhecido.');
-  if(!name&&!template.allowsMissingName)
+  if(!name&&!template.allowsMissingName&&!preview)
     throw new Error('Informe o nome de quem entrou em contato antes de preparar a mensagem.');
-  if(id==='recebida'&&!confirmedOrders(humanOrders))
+  if(id==='recebida'&&!preview&&!confirmedOrders(humanOrders))
     throw new Error('Selecione pelo menos uma cartinha paga e efetivamente enviada para confirmar o recebimento.');
 
   switch(id){

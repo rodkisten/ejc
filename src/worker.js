@@ -1144,6 +1144,39 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
   await requireAdmin(req,env);
   if(path==='/api/admin/me')return result({authenticated:true});
+  if(path==='/api/admin/support-templates' && req.method==='GET'){
+    const record=await env.DB.prepare("SELECT value FROM settings WHERE key='support_templates_json'").first();
+    let templates={};
+    try {
+      const saved=JSON.parse(record?.value||'{}');
+      if(saved && typeof saved==='object' && !Array.isArray(saved))templates=saved;
+    } catch { /* An invalid legacy value does not break the administration. */ }
+    return result({templates});
+  }
+  if(path==='/api/admin/support-templates' && req.method==='PUT'){
+    const data=await jsonBody(req,140000);
+    if(!data||typeof data!=='object'||Array.isArray(data)||!data.templates||
+      typeof data.templates!=='object'||Array.isArray(data.templates))
+      bad('Informe os modelos de suporte para salvar.');
+    const allowed=new Set([
+      'desculpas','rascunho_vazio','abrir_novamente','recebida','aguardando',
+      'passo_a_passo','pedir_nome','link_privado','fotos_audio',
+      'mais_informacoes','problema_resolvido'
+    ]);
+    const templates={};
+    for(const [id,source] of Object.entries(data.templates)){
+      if(!allowed.has(id)||typeof source!=='string'||!source.trim()||
+        source.length>12000)bad('Modelo inválido: '+id);
+      if(/\/(?:pedido|checkout)\/|#token|r1_[A-F0-9]{12}_|EJC-[A-F0-9]{12}/i.test(source))
+        bad('Não inclua links privados ou IDs reais. Use as variáveis do modelo.');
+      templates[id]=source.trim();
+    }
+    await env.DB.prepare(
+      "INSERT INTO settings(key,value) VALUES('support_templates_json',?) "+
+      "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+    ).bind(JSON.stringify(templates)).run();
+    return result({ok:true,templates});
+  }
   if(path==='/api/admin/support/context'&&req.method==='GET')
     return supportContextView(req,env,true);
   if(path==='/api/admin/statistics' && req.method==='GET'){

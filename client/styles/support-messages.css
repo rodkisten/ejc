@@ -269,3 +269,98 @@
     min-height: 380px;
   }
 }
+
+/* Reusable admin-only message templates and always-visible mobile actions. */
+.support-template-custom-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+}
+.support-template-custom-actions .btn {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+}
+.support-template-customizer {
+  display: grid;
+  gap: 12px;
+  padding: clamp(12px, 2vw, 20px);
+  background: #f9f5fc;
+  border: 1px solid #dfd0e9;
+  border-radius: 16px;
+  min-width: 0;
+}
+.support-template-customizer > label {
+  font-weight: 800;
+}
+.support-template-variables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.support-template-variables button {
+  border: 1px solid #d6c2e7;
+  border-radius: 9px;
+  background: #fff;
+  color: #5c287b;
+  padding: 7px 9px;
+  font: 700 12px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+}
+.support-template-variables button:hover,
+.support-template-variables button:focus-visible {
+  background: #f1e5fb;
+}
+.support-template-source {
+  font-family: inherit;
+  min-height: 240px;
+  border: 1px solid #d6c2e7;
+  background: #fff;
+  border-radius: 12px;
+  padding: 13px;
+  resize: vertical;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  line-height: 1.6;
+  width: 100%;
+  min-width: 0;
+}
+.support-message-editor-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+.support-message-editor-tools .text-button {
+  flex: 0 0 auto;
+}
+.support-message-preview {
+  min-height: 80px;
+}
+@media (max-width: 520px) {
+  .support-template-custom-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .support-template-custom-actions .btn {
+    width: 100%;
+    white-space: normal;
+  }
+  .support-message-actions {
+    position: relative;
+    z-index: 1;
+    gap: 10px;
+  }
+  .support-message-actions .btn {
+    min-height: 46px;
+    white-space: normal;
+  }
+  .support-template-source {
+    min-height: 230px;
+  }
+}

@@ -4,6 +4,7 @@ import RichEditor from './RichEditor';
 import Recorder from './Recorder';
 import VoicePlayer from './VoicePlayer';
 import LetterControls from './letter/LetterControls';
+import '../styles/letter-composer-shared.css';
 
 /**
  * The same composer is used for a new cartinha and for a previously paid draft.

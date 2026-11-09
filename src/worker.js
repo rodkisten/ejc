@@ -704,10 +704,10 @@ async function encryptedSupportLink(req,env,url,finished=false){
     // Phone and order IDs stay inside the encrypted admin context.
     '*Etapa:* '+(context.stage||'suporte'),
     '',
-    '🔐 *Atendimento protegido para a equipe:*',
-    admin,
-    '👁 *Conferir pedidos e cartinhas (admin):*',
+    '👁 *Conferir o pedido e a cartinha (admin):*',
     overview,
+    '💬 *Responder pelo painel do Mini Mercado:*',
+    admin,
     '',
     'IDs, UTMs, telefone e identificação estão criptografados nos links acima.',
     '',

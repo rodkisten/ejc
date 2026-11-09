@@ -1035,7 +1035,7 @@ async function adminRoute(req,env,path) {
     for(const [id,source] of Object.entries(data.templates)){
       if(!allowed.has(id)||typeof source!=='string'||!source.trim()||
         source.length>12000)bad('Modelo inválido: '+id);
-      if(/\\/(?:pedido|checkout)\\/|#token|r1_[A-F0-9]{12}_|EJC-[A-F0-9]{12}/i.test(source))
+      if(/\/(?:pedido|checkout)\/|#token|r1_[A-F0-9]{12}_|EJC-[A-F0-9]{12}/i.test(source))
         bad('Não inclua links privados ou IDs reais. Use as variáveis do modelo.');
       templates[id]=source.trim();
     }

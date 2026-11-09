@@ -1416,6 +1416,22 @@ async function adminRoute(req,env,path) {
     await env.MEDIA.put('og/help-finished-v1.png',image.bytes,{httpMetadata:{contentType:'image/png'}});
     return result({ok:true,url:'/og-ajuda-cartinhas.png?v='+Date.now()});
   }
+  if(path==='/api/admin/og/help-recipient'&&req.method==='GET'){
+    const image=await env.MEDIA.head('og/help-recipient-v1.png');
+    return result({ready:!!image,
+      url:'/og-ajuda-minha-cartinha.png?v='+encodeURIComponent(image?.uploaded?.getTime()||'fallback'),
+      bytes:image?.size||0});
+  }
+  if(path==='/api/admin/og/help-recipient'&&req.method==='POST'){
+    const image=await receiveSafeImage(req,2*1024*1024);
+    if(image.type!=='image/png')bad('A arte OG deve ser PNG.',415);
+    const view=new DataView(image.bytes.buffer,image.bytes.byteOffset,image.bytes.byteLength);
+    if(image.bytes.byteLength<24||view.getUint32(16)!==1200||view.getUint32(20)!==630)
+      bad('A arte OG deve medir 1200 × 630 pixels.',400);
+    await env.MEDIA.put('og/help-recipient-v1.png',image.bytes,
+      {httpMetadata:{contentType:'image/png'}});
+    return result({ok:true,url:'/og-ajuda-minha-cartinha.png?v='+Date.now()});
+  }
   if(path==='/api/admin/branding/logo' && req.method==='POST') {
     const image=await receiveSafeImage(req,2*1024*1024);
     await env.MEDIA.put('branding/ejc-market-logo',image.bytes,{httpMetadata:{contentType:image.type}});

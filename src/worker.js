@@ -1,5 +1,6 @@
 import { generatePix } from './pix.js';
 import {cleanSupportContext,encryptSupportContext,decryptSupportContext} from './supportContext.js';
+import { defaultHelpOgPng } from './defaultHelpOg.js';
 import { adminStatistics } from './statistics.js';
 import { normalizePaymentLookup, likeTerm, maskedStatus } from './paymentSearch.js';
 import { isSquareRecipientJpeg } from './photo.js';
@@ -2392,7 +2393,13 @@ export default {
           'Content-Type':'image/png','Content-Length':String(image.size),
           'Cache-Control':'public, max-age=3600','X-Content-Type-Options':'nosniff'
         }});
-        return env.ASSETS.fetch(new Request(new URL('/og-ejc-default.png',url.origin),request));
+        const bytes=await defaultHelpOgPng();
+        return new Response(request.method==='HEAD'?null:bytes,{headers:{
+          'Content-Type':'image/png','Content-Length':String(bytes.byteLength),
+          'Cache-Control':'public, max-age=86400',
+          'X-Content-Type-Options':'nosniff',
+          'X-Robots-Tag':'noindex, nofollow'
+        }});
       }
       // Link-sharing crawlers need HTML for the WhatsApp OG preview.
       if (path==='/ajuda/terminei-a-cartinha'||path==='/ajuda/terminei-a-cartinha/') {

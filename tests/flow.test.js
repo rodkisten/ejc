@@ -1950,3 +1950,33 @@ test('nome e telefone podem ser retomados por um link criptografado de envio',as
   assert.equal('ids' in restored.data,false);
   assert.equal('campaign' in restored.data,false);
 });
+
+test('o código de mural válido recupera WhatsApp do encontrista só dentro do token cifrado',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const person=list[0];
+  const patched=await call(env,'/api/admin/recipients/'+person.id,'PATCH',{
+    whatsapp_phone:'33999546031'
+  },admin);
+  assert.equal(patched.status,200);
+  const codeResp=await call(env,'/api/admin/mural-codes/generate','POST',{
+    regenerate:false
+  },admin);
+  assert.equal(codeResp.status,200);
+  const details=await call(env,'/api/admin/bootstrap','GET',undefined,admin);
+  const code=details.data.recipients.find(r=>r.id===person.id).mural_code;
+  const redeemed=await call(env,'/api/mural/redeem','POST',{code});
+  assert.equal(redeemed.status,200);
+  const minted=await call(env,'/api/support/context','POST',{
+    purpose:'support',name:'Nome inventado',phone:'',
+    muralSlug:person.slug,recipientSlugs:[person.slug],
+    campaign:'suporte_encontrista'
+  },{token:redeemed.data.grant});
+  assert.equal(minted.status,201);
+  assert.ok(!minted.data.link.includes('33999546031'));
+  const encrypted=new URL(minted.data.link).searchParams.get('c');
+  const inspected=await call(env,'/api/admin/support/context?c='+encrypted,
+    'GET',undefined,admin);
+  assert.equal(inspected.status,200);
+  assert.equal(inspected.data.context.name,person.name);
+  assert.equal(inspected.data.context.phone,'5533999546031');
+});

@@ -63,6 +63,16 @@ export default function AdminSupportMessages({ info }) {
     loadCustomSupportTemplates(typeof window === 'undefined' ? null : window.localStorage));
   const [customizing, setCustomizing] = useState(false);
   const [templateDraft, setTemplateDraft] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  useEffect(() => {
+    let active = true;
+    api('/api/admin/support-templates').then(response => {
+      if (active) setCustomTemplates(response.templates || {});
+    }).catch(() => {
+      // The local cache still allows previously saved messages to be edited.
+    });
+    return () => { active = false; };
+  }, []);
 
   async function reload() {
     setLoading(true);
@@ -150,32 +160,40 @@ export default function AdminSupportMessages({ info }) {
       setError(cause.message);
     }
   }
-  function saveTemplate() {
+  async function saveTemplate() {
+    setSavingTemplate(true);
     try {
       const cleaned = validateCustomSupportTemplate(templateDraft);
       const next = { ...customTemplates, [template]: cleaned };
-      saveCustomSupportTemplates(window.localStorage, next);
+      await api('/api/admin/support-templates', { method: 'PUT', data: { templates: next } });
+      try { saveCustomSupportTemplates(window.localStorage, next); } catch { /* Cache is optional. */ }
       setCustomTemplates(next);
       setEdited(false);
       setCustomizing(false);
-      setNotice('✅ Modelo personalizado salvo neste navegador. Os campos são preenchidos automaticamente na mensagem.');
+      setNotice('✅ Modelo personalizado salvo no sistema. Você poderá reutilizá-lo em outros atendimentos e dispositivos.');
       setError('');
     } catch (cause) {
-      setError(cause.message);
+      setError(cause.message || 'Não foi possível salvar o modelo.');
+    } finally {
+      setSavingTemplate(false);
     }
   }
-  function restoreTemplate() {
+  async function restoreTemplate() {
+    setSavingTemplate(true);
     try {
       const next = { ...customTemplates };
       delete next[template];
-      saveCustomSupportTemplates(window.localStorage, next);
+      await api('/api/admin/support-templates', { method: 'PUT', data: { templates: next } });
+      try { saveCustomSupportTemplates(window.localStorage, next); } catch { /* Cache is optional. */ }
       setCustomTemplates(next);
       setEdited(false);
       setCustomizing(false);
-      setNotice('Modelo original restaurado.');
+      setNotice('Modelo original restaurado no sistema.');
       setError('');
     } catch (cause) {
-      setError(cause.message);
+      setError(cause.message || 'Não foi possível restaurar o modelo.');
+    } finally {
+      setSavingTemplate(false);
     }
   }
 
@@ -400,14 +418,14 @@ export default function AdminSupportMessages({ info }) {
               <button type="button" className="btn outline" onClick={beginCustomization}>
                 {customSource ? '✏️ Editar modelo personalizado' : '✏️ Personalizar este modelo'}
               </button>
-              {customSource && <button type="button" className="btn ghost" onClick={restoreTemplate}>
+              {customSource && <button type="button" className="btn ghost" onClick={restoreTemplate} disabled={savingTemplate}>
                 Restaurar modelo original
               </button>}
             </div>
             {customizing && <div className="support-template-customizer">
               <label htmlFor="support-template-source">Seu modelo, reutilizável para outros atendimentos</label>
               <p className="muted small">
-                Use as variáveis abaixo para preencher automaticamente nomes, IDs e links. O modelo fica salvo somente neste navegador.
+                Use as variáveis abaixo para preencher automaticamente nomes, IDs e links. O modelo fica salvo no sistema para acesso da equipe em outros dispositivos.
                 Não escreva tokens nem links privados diretamente no modelo.
               </p>
               <div className="support-template-variables">
@@ -420,8 +438,8 @@ export default function AdminSupportMessages({ info }) {
                 value={templateDraft} rows={12} spellCheck
                 onChange={event => setTemplateDraft(event.target.value)} />
               <div className="support-template-custom-actions">
-                <button type="button" className="btn" onClick={saveTemplate}>
-                  Salvar meu modelo
+                <button type="button" className="btn" onClick={saveTemplate} disabled={savingTemplate}>
+                  {savingTemplate ? 'Salvando modelo…' : 'Salvar meu modelo'}
                 </button>
                 <button type="button" className="btn ghost" onClick={() => setCustomizing(false)}>
                   Cancelar

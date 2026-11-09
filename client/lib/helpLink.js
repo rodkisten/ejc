@@ -30,3 +30,51 @@ export function readyLetterWhatsAppMessage({recipient_name,order_id,url,released
     '🔒 _Esse link é pessoal. Não o compartilhe._',
   ].join('\n');
 }
+
+// The short support URL carries operational context, never the mural grant.
+// Navigation diagnostics are added only to links opened from the recipient's own screen.
+export function recipientSupportLink({
+  name='',ids=[],origin='https://ejc.migos.club',source='whatsapp',
+  medium='mensagem',campaign='suporte_encontrista',content='convite',
+  stage='',browser=null,viewport=null,language=null,online=null,openedAt=null
+}={}){
+  const link=new URL('/ajuda/minha-cartinha',origin);
+  const normalizedName=String(name||'').replace(/[\r\n<>]/g,' ').trim().slice(0,100);
+  if(normalizedName)link.searchParams.set('encontrista',normalizedName);
+  for(const id of ids.slice(0,20)){
+    if(/^EJC-[A-F0-9]{12}$/.test(String(id)))link.searchParams.append('id',id);
+  }
+  for(const [key,value] of Object.entries({
+    utm_source:source,utm_medium:medium,utm_campaign:campaign,utm_content:content
+  })){
+    const safe=String(value||'').replace(/[^a-z0-9_-]/gi,'').slice(0,70);
+    if(safe)link.searchParams.set(key,safe);
+  }
+  const safeStage=String(stage||'').replace(/[^a-z0-9_-]/gi,'').slice(0,50);
+  if(safeStage)link.searchParams.set('etapa',safeStage);
+  const diagnostics=[
+    ['navegador',browser,260],['tela',viewport,30],
+    ['idioma',language,40],['conexao',online,20],['horario',openedAt,45]
+  ];
+  for(const [key,value,max] of diagnostics){
+    if(value!=null&&String(value).trim())link.searchParams.set(
+      key,String(value).replace(/[\r\n<>]/g,' ').trim().slice(0,max)
+    );
+  }
+  return link.toString();
+}
+
+// Build only on explicit user interaction; do not persist browser diagnostics.
+export function recipientSupportFromBrowser({name='',ids=[],stage='mural'}={}){
+  return recipientSupportLink({
+    name,ids,origin:window.location.origin,
+    source:'mural',medium:'link',campaign:'suporte_encontrista',
+    content:stage==='cartinha_aberta'?'cartinha_aberta':'mural',
+    stage,
+    browser:navigator.userAgent,
+    viewport:window.innerWidth+'x'+window.innerHeight,
+    language:navigator.language,
+    online:navigator.onLine?'online':'offline',
+    openedAt:new Date().toISOString(),
+  });
+}

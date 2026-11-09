@@ -102,7 +102,8 @@ export default function Order() {
       .catch(() => {});
   }, [order?.status, token]);
   const paid = order && ['paid', 'preparing', 'delivered'].includes(order.status),
-    ended = order?.deadline && Date.now() >= new Date(`${order.deadline}:00-03:00`).getTime();
+    ended = !order?.resume_access && order?.deadline &&
+      Date.now() >= new Date(`${order.deadline}:00-03:00`).getTime();
   const add = (file, kind) => setAssets((a) => [...a, { file, kind, url: URL.createObjectURL(file) }]);
   const discard = (index) =>
     setAssets((a) => {
@@ -348,7 +349,9 @@ export default function Order() {
               <CheckCircle2 size={18} />
               {paid ? 'Pix confirmado. Você pode criar e atualizar sua homenagem' :
                 'Seu Pix já foi gerado. Edite, salve e confirme suas alterações agora, mesmo antes de pagar'}
-              {' '}{ended ? 'O prazo de edição terminou.' : `até ${btime(order.deadline)}.`}
+              {' '}{order.resume_access
+                ? 'Este link privado de continuação permite terminar o rascunho pago.'
+                : ended ? 'O prazo de edição terminou.' : `até ${btime(order.deadline)}.`}
               {!paid && <span> O envio ao mural será liberado após a conferência bancária.</span>}
             </div>
             {order.checkout_id && localStorage.getItem('ejc-checkout-' + order.checkout_id) && (

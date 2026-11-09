@@ -50,3 +50,34 @@ test('link curto só permite GET/HEAD e não intercepta outras rotas',async()=>{
   assert.equal(other.status,200);
   assert.equal(await other.text(),'Página normal');
 });
+
+test('crawler do WhatsApp recebe metadados OG sem redirecionamento',async()=>{
+  const response=await worker.fetch(new Request(base+'/ajuda/terminei-a-cartinha',{
+    headers:{'User-Agent':'facebookexternalhit/1.1'}
+  }),env);
+  assert.equal(response.status,200);
+  assert.match(response.headers.get('Content-Type'),/text\/html/);
+  const html=await response.text();
+  assert.match(html,/og:image/);
+  assert.match(html,/og-ajuda-cartinhas.png/);
+  assert.match(html,/Enviei minha cartinha, e agora/);
+  assert.match(html,/og:image:width/);
+  assert.doesNotMatch(html,/wa.me/);
+});
+
+test('link de ajuda inclui remetente, nomes, IDs e links internos para o admin, sem tokens',async()=>{
+  const params=new URLSearchParams({
+    remetente:'Ana',utm_campaign:'recuperacao_cartinhas',
+  });
+  params.append('id','EJC-123456789ABC');
+  params.append('para','Maria Eduarda');
+  const res=await visit('/ajuda/terminei-a-cartinha?'+params.toString());
+  assert.equal(res.status,302);
+  const target=new URL(res.headers.get('Location'));
+  const message=target.searchParams.get('text');
+  assert.match(message,/Olá, eu sou Ana/);
+  assert.match(message,/Para Maria Eduarda: EJC-123456789ABC/);
+  assert.match(message,/https:\/\/ejc.test\/admin\/pedidos\/EJC-123456789ABC/);
+  assert.doesNotMatch(message,/\/pedido\//);
+  assert.doesNotMatch(message,/token=/);
+});

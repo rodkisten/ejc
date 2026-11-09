@@ -1,5 +1,6 @@
 import { generatePix } from './pix.js';
 import {cleanSupportContext,encryptSupportContext,decryptSupportContext} from './supportContext.js';
+import {createShortLink,resolveShortLink} from './shortLinks.js';
 import { defaultHelpOgPng } from './defaultHelpOg.js';
 import { adminStatistics } from './statistics.js';
 import { normalizePaymentLookup, likeTerm, maskedStatus } from './paymentSearch.js';
@@ -727,6 +728,125 @@ async function encryptedSupportLink(req,env,url,finished=false){
     'Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow, noarchive'
   }});
 }
+function isShortPreviewBot(request){
+  const agent=request.headers.get('User-Agent')||'';
+  const navigation=request.headers.get('Sec-Fetch-Mode')==='navigate'||
+    request.headers.get('Sec-Fetch-Dest')==='document';
+  return !navigation&&
+    /whatsapp|facebookexternalhit|facebot|twitterbot|telegrambot|slackbot|discordbot|linkedinbot|pinterest/i.test(agent);
+}
+async function shortLinkPreview(env,request,destination,kind,shortUrl){
+  const site=new URL(env.PUBLIC_ORIGIN||request.url).origin;
+  const target=new URL(destination);
+  let title='Cartinhas Virtuais · Mini Mercado XX EJC Simonésia';
+  let description='Mensagens feitas com carinho para o XX EJC Simonésia.';
+  let image=site+'/og-ejc-default.png';
+  let alt='Cartinhas Virtuais · Mini Mercado';
+  let readyMeta=null;
+  if(kind==='support'||kind==='admin'||kind==='letters'){
+    title='Preciso de ajuda com minha cartinha · Mini Mercado';
+    description='Nossa equipe está aqui para ajudar você com sua cartinha virtual.';
+    image=site+'/og-ajuda-minha-cartinha.png';
+    alt='Preciso de ajuda. Mini Mercado XX EJC Simonésia';
+  }else if(kind==='finished'){
+    title='Cartinhas Virtuais · Enviei minha cartinha, e agora?';
+    description='Confira o recebimento e descubra o próximo passo.';
+    image=site+'/og-ajuda-cartinhas.png';
+    alt='Enviei minha cartinha, e agora? Mini Mercado XX EJC Simonésia';
+  }else if(kind==='draft'||kind==='checkout'||kind==='order'){
+    const privatePath=target.pathname.match(/^\/(pedido|checkout)\/([A-Za-z0-9_-]{40,100})$/);
+    if(privatePath){
+      try{
+        const headers=new Headers(request.headers);
+        headers.set('Authorization','Bearer '+privatePath[2]);
+        const internal=new Request(target.toString(),{headers});
+        let rows=[];
+        if(privatePath[1]==='pedido')rows=[await buyer(internal,env)];
+        else{
+          const {checkout}=await checkoutBuyer(internal,env);
+          rows=(await env.DB.prepare(
+            'SELECT o.id,o.status,o.submitted_at,o.campaign_key,r.name AS recipient_name '+
+            'FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.checkout_id=?'
+          ).bind(checkout.id).all()).results;
+        }
+        readyMeta=await draftOgDetails(env,rows,site);
+      }catch{/* Never expose private order identifiers without valid access. */}
+    }
+    if(!readyMeta){
+      title='Finalize sua cartinha · Mini Mercado';
+      description='Acesse sua cartinha e conclua sua homenagem com carinho.';
+      image=site+'/og-ejc-default.png';
+      alt='Finalize sua cartinha. Mini Mercado XX EJC Simonésia';
+    }
+  }else if(kind==='send'||kind==='invite'||kind==='mural'){
+    const social=target.pathname.match(/^\/(enviar|mural)\/([a-z0-9-]+)$/);
+    if(social){
+      const person=await env.DB.prepare(
+        'SELECT name,slug,og_key,mural_og_key,photo_key,photo_consent '+
+        'FROM recipients WHERE slug=? AND active=1'
+      ).bind(social[2]).first();
+      const original=buildSocialMeta(site,person,social[1]);
+      readyMeta=original;
+    }
+  }
+  const tag=(property,value)=>'<meta property="'+escapeMeta(property)+
+    '" content="'+escapeMeta(value)+'">';
+  const tags=readyMeta?.tags||[
+    tag('og:type','website'),tag('og:locale','pt_BR'),
+    tag('og:site_name','Cartinhas Virtuais · Mini Mercado'),
+    tag('og:title',title),tag('og:description',description),
+    tag('og:image',image),tag('og:image:secure_url',image),
+    tag('og:image:type','image/png'),tag('og:image:width','1200'),
+    tag('og:image:height','630'),tag('og:image:alt',alt)
+  ].join('');
+  title=readyMeta?.title||title;
+  description=readyMeta?.description||description;
+  const html='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'+
+    '<meta name="robots" content="noindex,nofollow,noarchive">'+
+    '<title>'+escapeMeta(title)+'</title>'+
+    '<meta name="description" content="'+escapeMeta(description)+'">'+
+    tags+tag('og:url',shortUrl)+
+    '<meta name="twitter:card" content="summary_large_image">'+
+    '</head><body><p>Mini Mercado · XX EJC Simonésia</p></body></html>';
+  return new Response(request.method==='HEAD'?null:html,{status:200,headers:{
+    'Content-Type':'text/html; charset=utf-8',
+    'Cache-Control':'public, max-age=120',
+    'Referrer-Policy':'no-referrer',
+    'X-Robots-Tag':'noindex, nofollow, noarchive',
+    'X-Content-Type-Options':'nosniff'
+  }});
+}
+async function shortenAdminLink(req,env){
+  const data=await jsonBody(req,15000);
+  if(!data||typeof data!=='object'||Array.isArray(data))
+    bad('Informe um endereço válido.',400);
+  const origin=new URL(env.PUBLIC_ORIGIN||req.url).origin;
+  try{
+    const result=await createShortLink(env,data.url,{
+      origin,kind:typeof data.kind==='string'?data.kind:'order',
+      ttlSeconds:60*60*24*14
+    });
+    return result && resultResponse(result);
+  }catch(error){bad(error.message,400);}
+}
+function resultResponse(data){return result(data,201);}
+async function shortenPrivateLink(req,env){
+  const data=await jsonBody(req,15000);
+  if(!data||typeof data.url!=='string')bad('Informe um endereço válido.',400);
+  const origin=new URL(env.PUBLIC_ORIGIN||req.url).origin;
+  const target=new URL(data.url,origin);
+  if(target.origin!==origin)bad('Somente links do EJC podem ser encurtados.',400);
+  const match=target.pathname.match(/^\/(pedido|checkout)\/([A-Za-z0-9_-]{40,100})$/);
+  if(!match)bad('Somente o seu próprio pedido ou checkout pode ser encurtado.',403);
+  const bearer=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
+  if(bearer!==match[2])bad('Acesso pessoal inválido.',403);
+  if(match[1]==='pedido')await buyer(req,env);
+  else await checkoutBuyer(req,env);
+  const short=await createShortLink(env,target.toString(),{
+    origin,kind:match[1]==='pedido'?'order':'checkout'
+  });
+  return result(short,201);
+}
 async function supportContextMint(req,env){
   const input=await jsonBody(req,5000);
   if(!input||typeof input!=='object'||Array.isArray(input))bad('Contexto inválido.');
@@ -826,6 +946,8 @@ async function supportContextView(req,env,admin=false){
 }
 
 async function publicRoute(req,env,path) {
+  if(path==='/api/links/shorten'&&req.method==='POST')
+    return shortenPrivateLink(req,env);
   if(path==='/api/support/context'&&req.method==='POST')
     return supportContextMint(req,env);
   if(path==='/api/support/context'&&req.method==='GET')
@@ -1170,6 +1292,8 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
   await requireAdmin(req,env);
   if(path==='/api/admin/me')return result({authenticated:true});
+  if(path==='/api/admin/links/shorten'&&req.method==='POST')
+    return shortenAdminLink(req,env);
   if(path==='/api/admin/support-templates' && req.method==='GET'){
     const record=await env.DB.prepare("SELECT value FROM settings WHERE key='support_templates_json'").first();
     let templates={};

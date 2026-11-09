@@ -1761,3 +1761,30 @@ test('rascunho pago vazio é acompanhado até recuperação e aviso WhatsApp man
   const events=(await call(env,'/api/admin/orders/'+id,'GET',undefined,admin)).data.history;
   assert.ok(events.some(event=>event.type==='empty_draft_recovered'));
 });
+
+test('admin publica a arte OG de suporte do encontrista em PNG 1200x630 na R2',async()=>{
+  const env=fixture(),{admin}=await setup(env);
+  const initial=await call(env,'/api/admin/og/help-recipient','GET',undefined,admin);
+  assert.equal(initial.status,200);
+  assert.equal(initial.data.ready,false);
+  const bytes=new Uint8Array(30);
+  bytes.set([137,80,78,71,13,10,26,10],0);
+  const view=new DataView(bytes.buffer);
+  view.setUint32(16,1200);view.setUint32(20,630);
+  const upload=await worker.fetch(new Request(
+    'https://ejc.test/api/admin/og/help-recipient',{
+      method:'POST',headers:{
+        Origin:'https://ejc.test',Cookie:admin.cookie,'Content-Type':'image/png'
+      },body:bytes
+    }),env);
+  assert.equal(upload.status,200);
+  assert.equal((await upload.json()).ok,true);
+  const status=await call(env,'/api/admin/og/help-recipient','GET',undefined,admin);
+  assert.equal(status.status,200);
+  assert.equal(status.data.ready,true);
+  assert.match(status.data.url,/og-ajuda-minha-cartinha.png/);
+  const image=await worker.fetch(new Request('https://ejc.test/og-ajuda-minha-cartinha.png'),env);
+  assert.equal(image.status,200);
+  assert.equal(image.headers.get('Content-Type'),'image/png');
+  assert.deepEqual(new Uint8Array(await image.arrayBuffer()),bytes);
+});

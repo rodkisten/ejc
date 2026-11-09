@@ -5,6 +5,7 @@ import { api, money, track, uploadMedia } from '../lib/api';
 import { draftGet } from '../lib/drafts';
 import { cartDraftKey, localCheckouts, rememberCheckout } from '../lib/cart';
 import { rememberPrivateOrder } from '../lib/unfinishedLetters.js';
+import { completedLetterHelpLink } from '../lib/helpLink.js';
 import { useApp } from '../main';
 import QrCode from '../components/QrCode';
 import CheckoutSupport from '../components/CheckoutSupport';
@@ -24,6 +25,7 @@ export default function Checkout() {
     try {
       const data = await api('/api/checkout', { token });
       setOrder(data);
+      track('checkout_view',{stage:data.status,letters:data.items?.length||0});
       localStorage.setItem('ejc-checkout-' + data.id, token);
       if (!localCheckouts().some((entry) => entry.id === data.id)) {
         rememberCheckout({ id: data.id, token, itemIds: [], created_at: data.created_at });
@@ -87,7 +89,7 @@ export default function Checkout() {
     try {
       await navigator.clipboard.writeText(order.pix_code);
       setMessage('Pix Copia e Cola copiado!');
-      track('cart_pix_copied');
+      track('cart_pix_copied',{stage:'checkout'});
     } catch {
       setError('Não foi possível copiar. Use o código abaixo.');
     }
@@ -100,7 +102,7 @@ export default function Checkout() {
       await api('/api/checkout/claim', { method: 'POST', token, data: {} });
       await reload();
       setMessage('Aviso recebido! O Pix ainda não foi confirmado: a coordenação verificará a entrada no extrato bancário.');
-      track('cart_pix_claimed');
+      track('cart_pix_claimed',{stage:'checkout'});
     } catch (cause) { setError(cause.message); }
     finally { setBusy(false); }
   }
@@ -132,7 +134,8 @@ export default function Checkout() {
                 <div className="checkout-recipient" key={item.id}>
                   <span className="checkout-recipient-index">{index + 1}</span>
                   <strong>{item.recipient_name}</strong>
-                  <Link className="btn ghost" to={'/pedido/' + item.token}>
+                  <Link className="btn ghost" to={'/pedido/' + item.token}
+                    onClick={()=>track('checkout_edit_letter_clicked',{stage:paid?'paid':'pending'})}>
                     {paid ? 'Escrever e enviar' : 'Editar cartinha'} {paid ? <ArrowRight size={16} /> : <Pencil size={16} />}
                   </Link>
                 </div>
@@ -158,6 +161,19 @@ export default function Checkout() {
               <span>Não compartilhe esta página: ela dá acesso às cartinhas. A coordenação vê remetente e stickers, mas não pode ler mensagens nem abrir fotos ou áudios.</span>
             </div>
             {paid && <p className="notice"><CheckCircle2 size={19} /> Pix confirmado. Você pode abrir cada cartinha acima.</p>}
+            {paid && order.items.length>0 && order.items.every(item=>item.submitted) &&
+              <div className="notice success">
+                <strong>💌 Todas as cartinhas foram enviadas!</strong>
+                <p>Avise nossa equipe para confirmar que chegou tudo certinho.</p>
+                <a className="btn" target="_blank" rel="noopener noreferrer"
+                  href={completedLetterHelpLink({
+                    origin:window.location.origin,sender:order.items[0].sender_name||'',
+                    items:order.items
+                  })}
+                  onClick={()=>track('help_link_clicked',{stage:'checkout_completed',letters:order.items.length})}>
+                  📲 Avisar a equipe no WhatsApp
+                </a>
+              </div>}
           </div>
 
           {!paid && <section className="form-card pix-checkout checkout-pix">

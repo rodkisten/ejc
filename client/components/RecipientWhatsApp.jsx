@@ -77,14 +77,17 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
       const details=await api('/api/admin/recipients/'+recipient.id+'/whatsapp-link',{
         method:'POST',data:{},
       });
+      const trackedUrl=new URL(details.url);
+      trackedUrl.searchParams.set('utm_campaign',isCampaign?'pos_encontro':'convite_mural');
+      const inviteUrl=trackedUrl.toString();
       let message;
       if(isCampaign){
         const campaign=await api('/api/admin/campaign/mini-mercado');
         message=renderCampaignWhatsApp(campaign.campaign.whatsapp,{
-          name:details.name,url:details.url,count:Math.max(0,details.count-1),
+          name:details.name,url:inviteUrl,count:Math.max(0,details.count-1),
         });
       }else{
-        message=muralInvitationMessage({name:details.name,url:details.url,count:details.count});
+        message=muralInvitationMessage({name:details.name,url:inviteUrl,count:details.count});
       }
       const href=whatsappShareUrl({phone:details.phone,message});
       track('admin_whatsapp_invite_opened',{stage:isCampaign?'campaign':'mural'});

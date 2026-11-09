@@ -1,7 +1,7 @@
 import { generatePix } from './pix.js';
 import { normalizePaymentLookup, likeTerm, maskedStatus } from './paymentSearch.js';
 import { isSquareRecipientJpeg } from './photo.js';
-import { normalizeComposition, STICKERS_BY_ID } from '../shared/letter.js';
+import { normalizeComposition, STICKERS_BY_ID, plainLetter } from '../shared/letter.js';
 import { CAMPAIGN_KEY, CAMPAIGN_SENDER, DEFAULT_CAMPAIGN, letterMarkdownToHtml } from '../shared/ejcCampaign.js';
 import { enqueue, enableReceipt, disableReceipt, confirmReceipt, markRead, queueRelease, dispatch, validateEmail, emailsReady } from './notify.js';
 
@@ -92,6 +92,9 @@ async function checkPassword(actual, expected) {
 
 const slugify = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,65) || 'encontrista';
 const excerpt = (s) => String(s||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
+// Treat editor placeholders such as <p>&nbsp;</p> as truly empty.
+const visibleDraftText = (html) => !!plainLetter(html)
+  .replace(/&(?:nbsp|#0*160|#x0*a0);|[\u200b\ufeff]/gi,'').trim();
 function safeRich(input) {
   const html=assertText(input||'',30000,'Cartinha',false);
   // Restrict the stored document itself; no script, attributes, inline SVG or embeds.
@@ -679,7 +682,7 @@ async function publicRoute(req,env,path) {
       const mediaCount=await env.DB.prepare(
         "SELECT COUNT(*) AS n FROM media WHERE order_id=? AND status='ready'"
       ).bind(order.id).first();
-      if(!excerpt(order.rich_html) && !mediaCount.n)
+      if(!visibleDraftText(order.rich_html) && !mediaCount.n)
         bad('Esta cartinha ainda não tem conteúdo. Volte mais tarde.',409);
       const card=await cardInfo(env,order);
       await markRead(env,order.id);
@@ -695,7 +698,7 @@ async function publicRoute(req,env,path) {
     ).bind(person.id).all()).results;
     const cards=rows.map(o=>{
       const unfinished=!o.submitted_at;
-      const empty=unfinished || (!excerpt(o.rich_html) && !o.has_ready_media);
+      const empty=unfinished || (!visibleDraftText(o.rich_html) && !o.has_ready_media);
       if(!empty)return {id:o.id,submitted_at:o.submitted_at};
       // Use only the publicly chosen signature, never override an alias with
       // the real sender name. Anonymous letters expose no sender identity.

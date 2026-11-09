@@ -1516,6 +1516,9 @@ async function adminRoute(req,env,path) {
     const image=socialImage(person,null,'mural');
     const address=new URL('/mural/'+encodeURIComponent(person.slug),origin);
     address.searchParams.set('og',image.version);
+    address.searchParams.set('utm_source','whatsapp');
+    address.searchParams.set('utm_medium','mensagem');
+    address.searchParams.set('utm_campaign','convite_mural');
     // Fragment keeps the access token out of HTTP logs and OG preview crawlers.
     address.hash='token='+encodeURIComponent(grant);
     return result({
@@ -2056,6 +2059,20 @@ export default {
         if((WRITE_METHODS.has(request.method)||(/^\/api\/mural\/.+\/cards\//.test(path)&&request.method==='GET'))
           &&ctx?.waitUntil)ctx.waitUntil(dispatch(env));
         return response;
+      }
+      // Count recipient invitation landings, without recording a slug, IP or mural access grant.
+      if(request.method==='GET'&&/^\/mural\/[a-z0-9-]+$/.test(path)){
+        const campaign=url.searchParams.get('utm_campaign');
+        const agent=request.headers.get('User-Agent')||'';
+        if(['convite_mural','cartinha_recuperada','pos_encontro'].includes(campaign) &&
+            !/facebookexternalhit|facebot|whatsapp|twitterbot|telegrambot|slackbot|discordbot|linkedinbot/i.test(agent)){
+          try{
+            await env.DB.prepare(
+              'INSERT INTO help_link_counts(day,campaign,clicks) VALUES(?,?,1) '+
+              'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'
+            ).bind(new Date().toISOString().slice(0,10),campaign).run();
+          }catch(error){console.warn('Mural landing count unavailable',error?.message);}
+        }
       }
       // Fetch the SPA shell from / explicitly: crawlers often request deep links
       // without the Accept/Sec-Fetch headers that Cloudflare SPA fallback expects.

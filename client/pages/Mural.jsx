@@ -51,7 +51,9 @@ export default function Mural() {
     try {
       // Downloading the full archive explicitly opens each included letter.
       // Reading an individual letter remains idempotent on the server.
-      const cards = await Promise.all(data.cards.map(async (envelope) => {
+      const cards = await Promise.all(data.cards
+        .filter((envelope) => !envelope.draft_pending && !envelope.empty_content)
+        .map(async (envelope) => {
         if (opened[envelope.id]) return opened[envelope.id];
         const response = await api(
           `/api/mural/${encodeURIComponent(slug)}/cards/${encodeURIComponent(envelope.id)}`,
@@ -72,6 +74,6 @@ export default function Mural() {
 
   return (
     <MuralGallery data={data} opened={opened} openBusy={openBusy} error={error} busy={busy}
-      onOpenLetter={openLetter} onDownloadAll={downloadAll} />
+      onOpenLetter={openLetter} onDownloadAll={downloadAll} onRefresh={load} />
   );
 }

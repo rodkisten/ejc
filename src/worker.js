@@ -1,7 +1,7 @@
 import { generatePix } from './pix.js';
 import { normalizePaymentLookup, likeTerm, maskedStatus } from './paymentSearch.js';
 import { isSquareRecipientJpeg } from './photo.js';
-import { normalizeComposition, STICKERS_BY_ID } from '../shared/letter.js';
+import { normalizeComposition, STICKERS_BY_ID, plainLetter } from '../shared/letter.js';
 import { CAMPAIGN_KEY, CAMPAIGN_SENDER, DEFAULT_CAMPAIGN, letterMarkdownToHtml } from '../shared/ejcCampaign.js';
 import { enqueue, enableReceipt, disableReceipt, confirmReceipt, markRead, queueRelease, dispatch, validateEmail, emailsReady } from './notify.js';
 
@@ -92,6 +92,9 @@ async function checkPassword(actual, expected) {
 
 const slugify = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,65) || 'encontrista';
 const excerpt = (s) => String(s||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
+// Treat editor placeholders such as <p>&nbsp;</p> as truly empty.
+const visibleDraftText = (html) => !!plainLetter(html)
+  .replace(/&(?:nbsp|#0*160|#x0*a0);|[\u200b\ufeff]/gi,'').trim();
 function safeRich(input) {
   const html=assertText(input||'',30000,'Cartinha',false);
   // Restrict the stored document itself; no script, attributes, inline SVG or embeds.
@@ -675,16 +678,43 @@ async function publicRoute(req,env,path) {
         "SELECT o.*,r.name AS recipient_name FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.id=? AND o.recipient_id=? AND o.submitted_at IS NOT NULL AND o.status IN ('paid','preparing','delivered')"
       ).bind(cardPath[2],person.id).first();
       if(!order)bad('Cartinha não encontrada.',404);
+      // Never count an accidental empty legacy letter as read.
+      const mediaCount=await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM media WHERE order_id=? AND status='ready'"
+      ).bind(order.id).first();
+      if(!visibleDraftText(order.rich_html) && !mediaCount.n)
+        bad('Esta cartinha ainda não tem conteúdo. Volte mais tarde.',409);
       const card=await cardInfo(env,order);
       await markRead(env,order.id);
       return result({card});
     }
+    // Paid, unfinished letters appear as a kind note, never as the sender's
+    // unsent content. The released mural still requires its private grant.
     const rows=(await env.DB.prepare(
-      "SELECT o.id,o.submitted_at FROM orders o WHERE o.recipient_id=? AND o.submitted_at IS NOT NULL AND o.status IN ('paid','preparing','delivered') ORDER BY o.submitted_at DESC"
+      "SELECT o.id,o.submitted_at,o.sender_name,o.rich_html,o.composition_json,"+
+      "EXISTS(SELECT 1 FROM media m WHERE m.order_id=o.id AND m.status='ready') AS has_ready_media "+
+      "FROM orders o WHERE o.recipient_id=? AND o.status IN ('paid','preparing','delivered') "+
+      "ORDER BY COALESCE(o.submitted_at,o.created_at) DESC,o.id"
     ).bind(person.id).all()).results;
+    const cards=rows.map(o=>{
+      const unfinished=!o.submitted_at;
+      const empty=unfinished || (!visibleDraftText(o.rich_html) && !o.has_ready_media);
+      if(!empty)return {id:o.id,submitted_at:o.submitted_at};
+      // Use only the publicly chosen signature, never override an alias with
+      // the real sender name. Anonymous letters expose no sender identity.
+      let signature='';
+      try {
+        const design=normalizeComposition(JSON.parse(o.composition_json||'{}'));
+        if(!design.anonymous)signature=(design.authorName||o.sender_name||'').trim();
+      } catch { /* Invalid legacy composition: keep the sender anonymous. */ }
+      return {
+        id:o.id,submitted_at:o.submitted_at,
+        ...(unfinished?{draft_pending:true}:{empty_content:true}),
+        sender_name:signature,
+      };
+    });
     return result({recipient:{name:person.name,slug:person.slug,photo_url:person.active?recipientPhotoUrl(person):null},
-      cards:rows.map(o=>({id:o.id,submitted_at:o.submitted_at})),
-      release_at:config.release_at,locked:false});
+      cards,release_at:config.release_at,locked:false});
   }
   if(path==='/api/receipt/confirm'&&req.method==='POST'){
     const body=await jsonBody(req,400);
@@ -1082,7 +1112,9 @@ async function adminRoute(req,env,path) {
       cards:rows.map(row=>({
         id:row.id,status:row.status,submitted:!!row.submitted_at,
         created_at:row.created_at,submitted_at:row.submitted_at,
-        visible_to_recipient:recipientVisible && !!row.submitted_at && activeOrder(row),
+        visible_to_recipient:recipientVisible && activeOrder(row),
+        draft_pending:activeOrder(row) && !row.submitted_at,
+        empty_content:!!row.submitted_at && !excerpt(row.rich_html) && !(byOrder.get(row.id)||[]).length,
         sender_name:row.sender_name || 'Uma pessoa especial',
         recipient_name:recipient.name,
         rich_html:row.rich_html || '',

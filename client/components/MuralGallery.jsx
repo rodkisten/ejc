@@ -2,12 +2,16 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Download, LockKeyhole, Sparkles, MailOpen, LoaderCircle } from 'lucide-react';
 import { LetterCard } from './LetterCard';
+import UnfinishedLetterNotice from './UnfinishedLetterNotice';
 
 // Shared recipient layout: the user portal and the technical preview render the same UI.
 export default function MuralGallery({ data, opened = {}, openBusy = '', error = '', busy = false,
-  onOpenLetter, onDownloadAll, technical = false, technicalAll = true }) {
+  onOpenLetter, onDownloadAll, onRefresh, technical = false, technicalAll = true }) {
   const openLetter = onOpenLetter;
   const downloadAll = onDownloadAll;
+  const availableToDownload = (data?.cards || []).some(
+    (card) => !card.draft_pending && !card.empty_content,
+  );
   return (
     <div className="mural-page">
       <div className="mural-intro">
@@ -43,7 +47,12 @@ export default function MuralGallery({ data, opened = {}, openBusy = '', error =
                 {data.cards.map((envelope, index) => (
                   <div key={envelope.id} className="mural-envelope">
                     {technical && !envelope.visible_to_recipient && <p className="notice warning small">Somente prévia técnica: {envelope.status === "pending" || envelope.status === "claimed" ? "Pix não confirmado" : envelope.status === "cancelled" ? "Cancelada" : !envelope.submitted ? "Ainda em rascunho" : "Mural ainda não liberado"}</p>}
-                    {opened[envelope.id] ? (
+                    {(!technical || !technicalAll) && (envelope.draft_pending || envelope.empty_content) ? (
+                      <UnfinishedLetterNotice
+                        senderName={envelope.composition?.anonymous ? '' :
+                          envelope.composition?.authorName || envelope.sender_name}
+                        onRefresh={onRefresh} />
+                    ) : opened[envelope.id] ? (
                       <LetterCard letter={opened[envelope.id]} recipient={data.recipient.name} actions={!technical} />
                     ) : (
                       <button type="button" className="mural-envelope-button"
@@ -56,7 +65,7 @@ export default function MuralGallery({ data, opened = {}, openBusy = '', error =
                   </div>
                 ))}
               </div>
-              {!technical && <button className="btn outline wide" disabled={busy || !!openBusy} onClick={downloadAll}>
+              {!technical && availableToDownload && <button className="btn outline wide" disabled={busy || !!openBusy} onClick={downloadAll}>
                 <Download size={18} /> {busy ? 'Montando arquivos...' : 'Baixar todas as cartinhas em ZIP'}
               </button>}
             </>

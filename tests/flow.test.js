@@ -359,6 +359,103 @@ test('composição visual é privada, normalizada e entregue somente ao destinat
   assert.equal(openedCard.data.card.composition.theme,'marian');
 });
 
+test('mural mostra recado para cartinhas pagas não terminadas sem revelar o rascunho nem o remetente anônimo',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const recipient=list[0];
+  const first=await call(env,'/api/orders','POST',{
+    recipient_slug:recipient.slug,sender_name:'Tia Maria',
+  });
+  const second=await call(env,'/api/orders','POST',{
+    recipient_slug:recipient.slug,sender_name:'Uma pessoa que pediu anonimato',
+  });
+  const alias=await call(env,'/api/orders','POST',{
+    recipient_slug:recipient.slug,sender_name:'Nome civil não público',
+  });
+  const unpaid=await call(env,'/api/orders','POST',{
+    recipient_slug:recipient.slug,sender_name:'Pix ainda pendente',
+  });
+  assert.equal(first.status,201);
+  assert.equal(second.status,201);
+  assert.equal(alias.status,201);
+  assert.equal(unpaid.status,201);
+
+  for(const entry of [first,second,alias]) {
+    const confirmed=await call(env,'/api/admin/orders/'+entry.data.id+'/status','PATCH',{
+      status:'paid',bank_reference:'E2ETEST'+entry.data.id,
+      bank_checked:true,amount_checked:true,
+    },admin);
+    assert.equal(confirmed.status,200);
+  }
+  const draft=await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>SEGREDO QUE AINDA NÃO FOI ENVIADO.</p>',
+    composition:{anonymous:true},
+  },{token:second.data.token});
+  assert.equal(draft.status,200);
+  const aliasDraft=await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Outro rascunho que ainda não foi finalizado.</p>',
+    composition:{authorName:'Sua dinda do coração',anonymous:false},
+  },{token:alias.data.token});
+  assert.equal(aliasDraft.status,200);
+
+  await call(env,'/api/admin/mural-codes/generate','POST',{regenerate:false},admin);
+  const code=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data
+    .recipients.find(p=>p.slug===recipient.slug).mural_code;
+  const grant=(await call(env,'/api/mural/redeem','POST',{code})).data.grant;
+  const path='/api/mural/'+recipient.slug;
+
+  const before=await call(env,path,'GET',undefined,{token:grant});
+  assert.equal(before.status,200);
+  assert.equal(before.data.locked,true);
+  assert.equal(before.data.cards.length,0);
+
+  await call(env,'/api/admin/settings','PUT',{release_at:'2020-11-08T16:00'},admin);
+  assert.equal((await call(env,path,'GET')).status,403);
+  const after=await call(env,path,'GET',undefined,{token:grant});
+  assert.equal(after.status,200);
+  assert.equal(after.data.cards.length,3);
+  assert.ok(!JSON.stringify(after.data).includes('SEGREDO QUE AINDA'));
+  assert.ok(!JSON.stringify(after.data).includes('Pix ainda pendente'));
+  assert.ok(!JSON.stringify(after.data).includes('Nome civil não público'));
+  const named=after.data.cards.find(item=>item.id===first.data.id);
+  const anonymous=after.data.cards.find(item=>item.id===second.data.id);
+  const aliasLetter=after.data.cards.find(item=>item.id===alias.data.id);
+  assert.equal(named.draft_pending,true);
+  assert.equal(named.sender_name,'Tia Maria');
+  assert.equal(anonymous.draft_pending,true);
+  assert.equal(anonymous.sender_name,'');
+  assert.equal(aliasLetter.sender_name,'Sua dinda do coração');
+  assert.equal('rich_html' in named,false);
+  assert.equal('media' in named,false);
+  assert.equal((await call(env,path+'/cards/'+first.data.id,'GET',undefined,{token:grant})).status,404);
+  assert.equal((await env.DB.prepare('SELECT first_read_at FROM orders WHERE id=?')
+    .bind(first.data.id).first()).first_read_at,null);
+
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Agora a cartinha está pronta.</p>',
+  },{token:first.data.token})).status,200);
+  assert.equal((await call(env,'/api/order/submit','POST',{}, {token:first.data.token})).status,200);
+  const refreshed=await call(env,path,'GET',undefined,{token:grant});
+  const submitted=refreshed.data.cards.find(item=>item.id===first.data.id);
+  assert.equal(submitted.draft_pending,undefined);
+  assert.equal(submitted.sender_name,undefined);
+  assert.equal(refreshed.data.cards.find(item=>item.id===second.data.id).draft_pending,true);
+  const opened=await call(env,path+'/cards/'+first.data.id,'GET',undefined,{token:grant});
+  assert.equal(opened.status,200);
+  assert.match(opened.data.card.rich_html,/Agora a cartinha está pronta/);
+
+  // Defensive handling of a legacy record manually finalized without content.
+  await env.DB.prepare(
+    "UPDATE orders SET rich_html='<p>&nbsp;</p>',submitted_at='2026-11-09 10:00:00' WHERE id=?"
+  ).bind(second.data.id).run();
+  const legacy=await call(env,path,'GET',undefined,{token:grant});
+  const empty=legacy.data.cards.find(item=>item.id===second.data.id);
+  assert.equal(empty.empty_content,true);
+  assert.equal(empty.sender_name,''); // Anonymity survives a legacy blank letter.
+  assert.equal((await call(env,path+'/cards/'+second.data.id,'GET',undefined,{token:grant})).status,409);
+  assert.equal((await env.DB.prepare('SELECT first_read_at FROM orders WHERE id=?')
+    .bind(second.data.id).first()).first_read_at,null);
+});
+
 test('aviso consentido fica criptografado e sai somente na primeira abertura',async()=>{
   const env=fixture();
   env.RESEND_API_KEY='resend-test';

@@ -125,7 +125,7 @@ export default function Send() {
         recipientSlugs:[slug],stage:'envio_cartinha',source:'editor',
         medium:'navegacao',campaign:'envio_cartinhas',content:'remetente'
       });
-      const opaque=new URL(secured.link).searchParams.get('c');
+      const opaque=secured.context_token;
       sessionStorage.setItem('ejc-support-context',opaque);
       track('letter_added_to_cart',{stage:editId?'updated':'new',letters:cart.items.length+1});
       navigate('/carrinho?c='+encodeURIComponent(sessionStorage.getItem('ejc-support-context')));

@@ -128,8 +128,11 @@ function ResumeDraftLink({ letter }) {
         createSecureSupportContext({...common,purpose:'send'})
       ]);
       const tracked=new URL(response.resume_url);
-      tracked.search='?c='+encodeURIComponent(new URL(send.link).searchParams.get('c'));
-      setRecovery({...response,resume_url:tracked.toString(),help_url:help.link});
+      tracked.search='?c='+encodeURIComponent(send.context_token);
+      const short=await api('/api/admin/links/shorten',{
+        method:'POST',data:{url:tracked.toString(),kind:'draft'}
+      });
+      setRecovery({...response,resume_url:short.url,help_url:help.link});
       if(ogWarning)setError(ogWarning);
     } catch (cause) {
       setError(cause.message || 'Não foi possível criar o link.');

@@ -685,7 +685,6 @@ async function encryptedSupportLink(req,env,url,finished=false){
   const origin=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
   const admin=origin+'/admin/mensagens?c='+encodeURIComponent(url.searchParams.get('c'));
   const overview=origin+'/admin/cartinhas?c='+encodeURIComponent(url.searchParams.get('c'));
-  const role=context.purpose==='invite'?'encontrista':context.purpose==='support'?'pessoa':'remetente';
   const intro=context.name
     ?'Olá! Eu sou '+context.name+' e estou precisando de ajuda com minhas cartinhas. 💌'
     :'Olá! Estou precisando de ajuda com minhas cartinhas. 💌';
@@ -695,7 +694,7 @@ async function encryptedSupportLink(req,env,url,finished=false){
       ?'✅ Finalizei minha cartinha e gostaria de confirmar o recebimento.'
       :intro,
     ...(context.name?['*Nome:* '+context.name]:[]),
-    ...(context.phone?['*Meu WhatsApp:* '+context.phone]:[]),
+    // Phone and order IDs stay inside the encrypted admin context.
     '*Etapa:* '+(context.stage||'suporte'),
     '',
     '🔐 *Atendimento protegido para a equipe:*',

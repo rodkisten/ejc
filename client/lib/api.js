@@ -69,8 +69,38 @@ export async function uploadMedia(file, kind, token, onProgress) {
   await api(`/api/order/media/${init.id}/complete`, { method: 'POST', token, data: {} });
   return init.id;
 }
+// Never emit access tokens, private routes, names, message bodies or media URLs.
+export function safeAnalyticsLocation(href) {
+  const parsed=new URL(href);
+  let path=parsed.pathname;
+  path=path.replace(/^\\/(pedido|checkout)\\/[^/]+/, '/$1/:privado')
+    .replace(/^\\/mural\\/[^/]+/, '/mural/:privado')
+    .replace(/^\\/enviar\\/[^/]+/, '/enviar/:encontrista')
+    .replace(/^\\/admin\\/pedidos\\/[^/]+/, '/admin/pedidos/:pedido');
+  const safe=new URL(path,parsed.origin);
+  for(const key of ['utm_source','utm_medium','utm_campaign','utm_content']){
+    const value=parsed.searchParams.get(key);
+    if(value&&/^[a-z0-9_-]{1,70}$/i.test(value))safe.searchParams.set(key,value);
+  }
+  return safe.toString();
+}
 export const track = (name, params = {}) => {
-  if (window.gtag && localStorage.getItem('ejc-consent') === 'yes') window.gtag('event', name, params);
+  if (!window.gtag || localStorage.getItem('ejc-consent') !== 'yes' ||
+      !/^[a-z][a-z0-9_]{1,39}$/.test(name))return;
+  const allowed=new Set(['page_path','letters','kind','stage','method','source','status',
+    'is_recovered','count','success','format','locked','has_content']);
+  const safe={};
+  for(const [key,value] of Object.entries(params)){
+    if(!allowed.has(key))continue;
+    if(key==='page_path'){safe.page_path=new URL(safeAnalyticsLocation(location.href)).pathname;continue;}
+    if(typeof value==='number'&&Number.isFinite(value))safe[key]=value;
+    else if(typeof value==='boolean')safe[key]=value;
+    else if(typeof value==='string'&&/^[a-z0-9_:-]{1,40}$/i.test(value))safe[key]=value;
+  }
+  window.gtag('event',name,{
+    ...safe,page_location:safeAnalyticsLocation(location.href),
+    page_referrer:location.origin+'/'
+  });
 };
 export function enableAnalytics(id) {
   if (
@@ -85,7 +115,8 @@ export function enableAnalytics(id) {
     window.dataLayer.push(arguments);
   };
   window.gtag('js', new Date());
-  window.gtag('config', id, { send_page_view: false, anonymize_ip: true });
+  window.gtag('config', id, { send_page_view: false, anonymize_ip: true,
+    page_location: safeAnalyticsLocation(location.href), page_referrer:location.origin+'/' });
   const script = document.createElement('script');
   script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(id)}`;
   script.async = true;

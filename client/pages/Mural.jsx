@@ -19,7 +19,7 @@ export default function Mural() {
       const response = await api(`/api/mural/${encodeURIComponent(slug)}`, { token: token || undefined });
       setData(response);
       setError('');
-      track('mural_view');
+      track('mural_view',{locked:!!response.locked,letters:response.cards?.length||0});
     } catch (cause) {
       setError(cause.message);
     }
@@ -38,7 +38,7 @@ export default function Mural() {
         { token: muralToken() || undefined },
       );
       setOpened((previous) => ({ ...previous, [id]: response.card }));
-      track('private_letter_opened');
+      track('private_letter_opened',{stage:'individual'});
     } catch (cause) {
       setError(cause.message);
     } finally {
@@ -65,6 +65,7 @@ export default function Mural() {
         ...previous, ...Object.fromEntries(cards.map((card) => [card.id, card])),
       }));
       await saveAllCards(cards, data.recipient.name);
+      track('mural_archive_downloaded',{letters:cards.length});
     } catch (cause) {
       setError(cause.message);
     } finally {

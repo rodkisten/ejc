@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import MuralGallery from '../components/MuralGallery';
 import { api, track } from '../lib/api';
 import { saveAllCards } from '../components/LetterCard';
-import { recipientSupportFromBrowser } from '../lib/helpLink.js';
+import { openSecureSupport } from '../lib/secureSupport.js';
 
 export default function Mural() {
   const { slug } = useParams();
@@ -74,17 +74,22 @@ export default function Mural() {
     }
   }
 
-  const supportLinkFor=(id)=>recipientSupportFromBrowser({
-    name:data?.recipient?.name||'',
-    ids:id?[id]:(data?.cards||[]).map(card=>card.id),
-    stage:id?'cartinha_aberta':'mural'
-  });
+  const openHelp=async(id)=>{
+    try{
+      const grant=muralToken();
+      await openSecureSupport({
+        purpose:'support',name:data?.recipient?.name||'',
+        ids:grant?(id?[id]:(data?.cards||[]).slice(0,20).map(card=>card.id)):[],
+        recipientSlugs:[slug],muralSlug:slug,token:grant||undefined,
+        stage:id?'cartinha_aberta':'mural',source:'mural',medium:'botao',
+        campaign:'suporte_encontrista',content:id?'leitura':'mural'
+      });
+      track('recipient_support_whatsapp_clicked',{stage:id?'cartinha_aberta':'mural'});
+    }catch(cause){setError(cause.message||'Não foi possível abrir o suporte.');}
+  };
   return (
     <MuralGallery data={data} opened={opened} openBusy={openBusy} error={error} busy={busy}
       onOpenLetter={openLetter} onDownloadAll={downloadAll} onRefresh={load}
-      supportLinkFor={supportLinkFor}
-      onSupportClick={(id)=>track('recipient_support_whatsapp_clicked',{
-        stage:id?'cartinha_aberta':'mural'
-      })} />
+      onSupportClick={openHelp} />
   );
 }

@@ -1,5 +1,3 @@
-import { recipientSupportLink } from './helpLink.js';
-
 // WhatsApp formatting uses *bold*, _italics_ and a plain URL.
 export function normalizeBrazilianWhatsApp(value) {
   const digits=String(value||'').replace(/\D/g,'');
@@ -8,7 +6,7 @@ export function normalizeBrazilianWhatsApp(value) {
   return /^55[1-9][0-9][0-9]{8,9}$/.test(canonical)?canonical:'';
 }
 
-export function muralInvitationMessage({ name, url, count=1, ids=[] }) {
+export function muralInvitationMessage({ name, url, count=1, ids=[], supportUrl='' }) {
   const first=String(name||'').trim().split(/\s+/)[0]||'encontrista';
   const amount=Number(count)||1;
   return [
@@ -31,10 +29,7 @@ export function muralInvitationMessage({ name, url, count=1, ids=[] }) {
     '_Se ainda aparecer fechado, ele abrirá no horário de liberação do Encontro._',
     '',
     '🆘 *Precisa de ajuda com suas cartinhas?*',
-    recipientSupportLink({
-      name,ids,origin:new URL(url).origin,source:'whatsapp',medium:'mensagem',
-      campaign:'convite_mural',content:'suporte_encontrista',stage:'convite_mural'
-    }),
+    supportUrl || new URL('/ajuda/minha-cartinha',new URL(url).origin).toString(),
     '_O link abre o WhatsApp da equipe com uma mensagem pronta._',
     '',
     '💗 *Este cantinho digital foi criado com muito amor pela equipe do Mini Mercado do XX EJC Simonésia:*',

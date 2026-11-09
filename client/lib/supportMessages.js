@@ -40,7 +40,7 @@ export function confirmedOrders(orders) {
 
 export function createSupportMessage(id,{
   contactName='',recipientNames=[],recipients=[],orders=[],
-  origin='https://ejc.migos.club',resumeUrl='',preview=false
+  origin='https://ejc.migos.club',resumeUrl='',secureLinks={},preview=false
 }={}) {
   const name=validContactName(contactName)?String(contactName).trim():'';
   const first=name.split(/\s+/)[0]||'';
@@ -51,28 +51,21 @@ export function createSupportMessage(id,{
   const forPeople=names.length?'para *'+people+'*':'para o(a) encontrista';
   const humanOrders=(orders||[]).filter(order=>/^EJC-[A-F0-9]{12}$/.test(order.id||''));
   const orderIds=humanOrders.map(order=>order.id);
-  const orderLines=humanOrders.map(order=>
-    '• '+order.id+' · '+(order.recipient_name||people)).join('\n');
-  const help=completedLetterHelpLink({
-    sender:name,origin,campaign:'suporte_cartinhas',
-    items:humanOrders.map(order=>({
-      id:order.id,recipient_name:order.recipient_name||names[0]||''
-    }))
-  });
-  const home=trackedUrl(origin,'/','inicio');
-  const open=trackedUrl(origin,'/abrir','abrir_mural');
+  // Without an encrypted server-minted link, use safe generic destinations.
+  // Never serialize names, telephone numbers, IDs or UTMs as URL parameters.
+  const help=secureLinks.help||new URL('/ajuda/terminei-a-cartinha',origin).toString();
+  const home=secureLinks.home||new URL('/',origin).toString();
+  const open=secureLinks.open||new URL('/abrir',origin).toString();
   const sendLinks=(recipients||[]).filter(recipient=>recipient.slug).map(recipient=>
-    '• *'+recipient.name+':* '+trackedUrl(origin,
-      '/enviar/'+encodeURIComponent(recipient.slug),'enviar_cartinha')
+    '• *'+recipient.name+':* '+
+    (secureLinks.sendBySlug?.[recipient.slug]||
+      new URL('/enviar/'+encodeURIComponent(recipient.slug),origin).toString())
   );
-  const howToSend=(sendLinks.length?sendLinks.join('\n'):home);
-  const recipientHelp=recipientSupportLink({
-    name:names[0]||'',ids:orderIds,origin,
-    source:'whatsapp',medium:'mensagem',campaign:'suporte_cartinhas',
-    content:'ajuda_encontrista',stage:'orientacoes'
-  });
+  const howToSend=sendLinks.length?sendLinks.join('\n'):home;
+  const recipientHelp=secureLinks.recipientHelp||new URL('/ajuda/minha-cartinha',origin).toString();
   const sign='\n\n*Com carinho,*\n🌹 *Equipe do Mini Mercado*\n*XX EJC Simonésia* 💛';
-  const refs=orderLines?'\n\n📋 *Referência das cartinhas:*\n'+orderLines:'';
+  const refs=humanOrders.length?'\n\n🔐 *Conferência dos pedidos pela equipe:*\n'+
+    (secureLinks.admin||'Referências disponíveis no painel da coordenação.') :'';
   const noNewPix='\n\n💛 *Se você já pagou, não precisa fazer outro Pix.*';
   const template=SUPPORT_MESSAGE_TEMPLATES.find(item=>item.id===id);
   if(!template)throw new Error('Modelo de mensagem desconhecido.');

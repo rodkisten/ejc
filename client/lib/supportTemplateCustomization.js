@@ -1,4 +1,3 @@
-import { completedLetterHelpLink } from './helpLink.js';
 import { createSupportMessage, SUPPORT_MESSAGE_TEMPLATES, supportRecipientNames, validContactName } from './supportMessages.js';
 
 export const SUPPORT_TEMPLATES_STORAGE_KEY = 'ejc-admin-support-custom-templates-v1';
@@ -60,30 +59,23 @@ export function customSupportTemplateSeed(id) {
 }
 
 export function renderCustomSupportTemplate(source, {
-  contactName = '', recipientNames = [], orders = [], origin = DEFAULT_ORIGIN, resumeUrl = ''
+  contactName = '', recipientNames = [], orders = [], origin = DEFAULT_ORIGIN,
+  resumeUrl = '', secureLinks = {}
 } = {}) {
   const names = supportRecipientNames(recipientNames);
   const name = validContactName(contactName) ? String(contactName).trim() : '';
   const references = orders.filter(order => /^EJC-[A-F0-9]{12}$/.test(order.id || '')).slice(0, 20);
-  const site = new URL('/', origin);
-  site.searchParams.set('utm_source', 'whatsapp');
-  site.searchParams.set('utm_medium', 'mensagem');
-  site.searchParams.set('utm_campaign', 'suporte_cartinhas');
-  const mural = new URL('/abrir', origin);
-  mural.searchParams.set('utm_source', 'whatsapp');
-  mural.searchParams.set('utm_medium', 'mensagem');
-  mural.searchParams.set('utm_campaign', 'suporte_cartinhas');
+  // Never generate identity-bearing public query strings as fallback. The admin
+  // supplies encrypted links from /api/support/context after authentication.
+  const securePending = '🔐 Link protegido em preparação';
   const fields = {
     nome: name || 'pessoa querida',
     primeiro_nome: name ? name.split(/\s+/)[0] : 'pessoa querida',
     encontristas: names.join(', ') || 'encontristas',
     ids: references.map(order => '• ' + order.id + ' · ' + String(order.recipient_name || '').trim()).join('\n') || 'Não informados',
-    site: site.toString(),
-    mural: mural.toString(),
-    link_suporte: completedLetterHelpLink({
-      sender: name, origin, campaign: 'suporte_cartinhas',
-      items: references.map(order => ({ id: order.id, recipient_name: order.recipient_name || '' }))
-    }),
+    site: secureLinks.home || securePending,
+    mural: secureLinks.open || securePending,
+    link_suporte: secureLinks.help || securePending,
     link_continuacao: String(resumeUrl || '').trim() || '(solicite seu link privado à equipe)',
     assinatura: '*Com carinho,*\n🌹 *Equipe do Mini Mercado*\n*XX EJC Simonésia* 💛'
   };

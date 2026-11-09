@@ -36,12 +36,17 @@ test('modelo personalizado permite variáveis e preenchimento sem repetir identi
   const output=renderCustomSupportTemplate(source,{
     contactName:'Ana Maria',recipientNames:['João','Maria'],
     orders:[{id:'EJC-123456789ABC',recipient_name:'João'}],
-    origin:'https://ejc.migos.club'
+    origin:'https://ejc.migos.club',
+    secureLinks:{
+      home:'https://ejc.migos.club/?c=CRYPT',
+      open:'https://ejc.migos.club/abrir?c=CRYPT',
+      help:'https://ejc.migos.club/ajuda/terminei-a-cartinha?c=CRYPT'
+    }
   });
   assert.match(output,/Oi, Ana!/);
   assert.match(output,/João, Maria/);
   assert.match(output,/EJC-123456789ABC/);
-  assert.match(output,/\/ajuda\/terminei-a-cartinha/);
+  assert.match(output,/\/ajuda\/terminei-a-cartinha\?c=CRYPT/);
   assert.doesNotMatch(output,/\{nome\}|\{ids\}|\{assinatura\}/);
   const next=renderCustomSupportTemplate(source,{contactName:'Beatriz',recipientNames:['Pedro']});
   assert.match(next,/Oi, Beatriz!/);

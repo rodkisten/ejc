@@ -1853,3 +1853,130 @@ test('OG do rascunho usa nome do D1, PNG 1200x630 e não expõe token de ediçã
   const invalidHtml=await invalid.text();
   assert.ok(!invalidHtml.includes(list[0].name));
 });
+
+test('suporte criptografado recupera nome telefone IDs e UTMs só no admin',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const person=list[0];
+  const order=await call(env,'/api/orders','POST',{
+    recipient_slug:person.slug,sender_name:'Maria da Costa'
+  });
+  assert.equal(order.status,201);
+  const id=order.data.id;
+  const input={
+    purpose:'support',name:'Maria da Costa',phone:'33999546031',
+    ids:[id],recipientSlugs:[person.slug],
+    source:'mural',medium:'botao',campaign:'suporte_encontrista',
+    stage:'cartinha_aberta'
+  };
+  const forbidden=await call(env,'/api/support/context','POST',input);
+  assert.equal(forbidden.status,403,'request without valid order access cannot claim IDs');
+
+  const encrypted=await call(env,'/api/support/context','POST',input,admin);
+  assert.equal(encrypted.status,201);
+  assert.ok(encrypted.data.link.startsWith('https://ejc.test/ajuda/minha-cartinha?c=ec1_'));
+  for(const value of ['33999546031','Maria','suporte_encontrista',id]){
+    assert.equal(encrypted.data.link.includes(value),false);
+    assert.equal(encrypted.data.admin_url.includes(value),false);
+  }
+  const parsed=new URL(encrypted.data.link);
+  assert.equal(parsed.searchParams.size,1,'only encrypted c is visible');
+  const c=parsed.searchParams.get('c');
+
+  const publicRead=await call(env,'/api/support/context?c='+encodeURIComponent(c));
+  assert.equal(publicRead.status,403,'support context cannot be publicly decrypted');
+
+  const loaded=await call(env,'/api/admin/support/context?c='+encodeURIComponent(c),'GET',
+    undefined,admin);
+  assert.equal(loaded.status,200);
+  assert.equal(loaded.data.context.name,'Maria da Costa');
+  assert.equal(loaded.data.context.phone,'5533999546031');
+  assert.equal(loaded.data.context.campaign,'suporte_encontrista');
+  assert.deepEqual(loaded.data.context.ids,[id]);
+  assert.equal(loaded.data.orders[0].recipient_name,person.name);
+
+  const redirected=await worker.fetch(new Request(encrypted.data.link,{
+    headers:{'User-Agent':'Mozilla/5.0'}
+  }),env);
+  assert.equal(redirected.status,302);
+  const wa=new URL(redirected.headers.get('Location'));
+  assert.equal(wa.origin,'https://wa.me');
+  assert.equal(wa.pathname,'/5533999546031');
+  const msg=wa.searchParams.get('text');
+  assert.match(msg,/Maria da Costa/);
+  assert.match(msg,/admin\/cartinhas\?c=ec1_/);
+  assert.match(msg,/admin\/mensagens\?c=ec1_/);
+  assert.ok(!msg.includes(id),'no raw order IDs in prefilled WhatsApp URL');
+  assert.ok(!msg.includes('5533999546031'),'contact number remains inside encrypted context');
+  assert.ok(!wa.searchParams.has('utm_campaign'));
+
+  const preview=await worker.fetch(new Request(encrypted.data.link,{
+    headers:{'User-Agent':'facebookexternalhit/1.1'}
+  }),env);
+  assert.equal(preview.status,200);
+  const html=await preview.text();
+  assert.match(html,/Preciso de ajuda com minha cartinha/);
+  assert.match(html,/og-ajuda-minha-cartinha.png/);
+  assert.ok(!html.includes('Maria da Costa'));
+
+  const image=await worker.fetch(new Request('https://ejc.test/og-ajuda-minha-cartinha.png'),env);
+  assert.equal(image.status,200);
+  assert.equal(image.headers.get('Content-Type'),'image/png');
+  const buffer=new DataView(await image.arrayBuffer());
+  assert.equal(buffer.getUint32(16),1200);
+  assert.equal(buffer.getUint32(20),630);
+});
+
+test('nome e telefone podem ser retomados por um link criptografado de envio',async()=>{
+  const env=fixture(),{list}=await setup(env);
+  const person=list[0];
+  const created=await call(env,'/api/support/context','POST',{
+    purpose:'send',name:'Ana Clara',phone:'33999546031',
+    recipientSlugs:[person.slug],
+    source:'whatsapp',medium:'mensagem',campaign:'enviar_cartinha'
+  });
+  assert.equal(created.status,201);
+  assert.equal(created.data.send_urls.length,1);
+  const sent=new URL(created.data.send_urls[0]);
+  assert.equal(sent.pathname,'/enviar/'+person.slug);
+  assert.equal(sent.searchParams.size,1);
+  const c=sent.searchParams.get('c');
+  assert.match(c,/^ec1_/);
+  assert.ok(!sent.href.includes('33999546031'));
+  const restored=await call(env,'/api/support/context?c='+encodeURIComponent(c));
+  assert.equal(restored.status,200);
+  assert.equal(restored.data.name,'Ana Clara');
+  assert.equal(restored.data.phone,'5533999546031');
+  assert.deepEqual(restored.data.recipientSlugs,[person.slug]);
+  assert.equal('ids' in restored.data,false);
+  assert.equal('campaign' in restored.data,false);
+});
+
+test('o código de mural válido recupera WhatsApp do encontrista só dentro do token cifrado',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const person=list[0];
+  const patched=await call(env,'/api/admin/recipients/'+person.id,'PATCH',{
+    whatsapp_phone:'33999546031'
+  },admin);
+  assert.equal(patched.status,200);
+  const codeResp=await call(env,'/api/admin/mural-codes/generate','POST',{
+    regenerate:false
+  },admin);
+  assert.equal(codeResp.status,200);
+  const details=await call(env,'/api/admin/bootstrap','GET',undefined,admin);
+  const code=details.data.recipients.find(r=>r.id===person.id).mural_code;
+  const redeemed=await call(env,'/api/mural/redeem','POST',{code});
+  assert.equal(redeemed.status,200);
+  const minted=await call(env,'/api/support/context','POST',{
+    purpose:'support',name:'Nome inventado',phone:'',
+    muralSlug:person.slug,recipientSlugs:[person.slug],
+    campaign:'suporte_encontrista'
+  },{token:redeemed.data.grant});
+  assert.equal(minted.status,201);
+  assert.ok(!minted.data.link.includes('33999546031'));
+  const encrypted=new URL(minted.data.link).searchParams.get('c');
+  const inspected=await call(env,'/api/admin/support/context?c='+encrypted,
+    'GET',undefined,admin);
+  assert.equal(inspected.status,200);
+  assert.equal(inspected.data.context.name,person.name);
+  assert.equal(inspected.data.context.phone,'5533999546031');
+});

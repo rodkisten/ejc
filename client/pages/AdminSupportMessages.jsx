@@ -1,19 +1,24 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { ClipboardCopy, ExternalLink, MessageCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { api, track } from '../lib/api';
+import { readAdminListFilters, updateAdminListFilter, isReadyForSending,
+  matchesSupportOrder } from '../lib/adminListFilters.js';
 import { normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp';
-import { supportContactParams, supportContactAdminUrl } from '../lib/supportContactUrl.js';
+import { supportContactParams } from '../lib/supportContactUrl.js';
+import { createSecureSupportContext } from '../lib/secureSupport.js';
 import { publishDraftOg } from '../lib/draftOg.js';
 import {
   SUPPORT_TEMPLATE_FIELDS, loadCustomSupportTemplates, saveCustomSupportTemplates,
-  validateCustomSupportTemplate, customSupportTemplateSeed, renderCustomSupportTemplate,
+  validateCustomSupportTemplate, customSupportTemplateSeed, renderCustomSupportTemplate
 } from '../lib/supportTemplateCustomization.js';
 import {
   SUPPORT_MESSAGE_TEMPLATES, createSupportMessage, confirmedOrders,
   validContactName, supportRecipientNames,
 } from '../lib/supportMessages';
 import '../styles/support-messages.css';
+
+const SUPPORT_FILTERS = ['all', 'ready', 'paid-draft', 'empty-paid-draft', 'pending'];
 
 function WhatsAppTextPreview({ value }) {
   return (
@@ -34,7 +39,12 @@ function WhatsAppTextPreview({ value }) {
 
 export default function AdminSupportMessages({ info }) {
   const location = useLocation();
-  const navigate = useNavigate();
+  const [listParams, setListParams] = useSearchParams();
+  const { search, filter } = readAdminListFilters(listParams, SUPPORT_FILTERS);
+  const setSearch = value => setListParams(current => updateAdminListFilter(current, 'busca', value),
+    { replace: true, preventScrollReset: true });
+  const setFilter = value => setListParams(current => updateAdminListFilter(current, 'situacao', value),
+    { preventScrollReset: true });
   const initial = location.state?.support || {};
   const fromUrl = supportContactParams(location.search);
   const [letters, setLetters] = useState([]);
@@ -42,23 +52,26 @@ export default function AdminSupportMessages({ info }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [selectedRecipients, setSelectedRecipients] = useState(
-    fromUrl.recipients.length ? fromUrl.recipients :
-      initial.recipient_slug ? [initial.recipient_slug] : []
+    initial.recipient_slug ? [initial.recipient_slug] : []
   );
   const [template, setTemplate] = useState(
-    SUPPORT_MESSAGE_TEMPLATES.some(item => item.id === fromUrl.template)
-      ? fromUrl.template : initial.template || 'desculpas'
+    initial.template || 'desculpas'
   );
-  const [contactName, setContactName] = useState(fromUrl.name || initial.contact_name || '');
-  const [contactWhatsApp, setContactWhatsApp] = useState(fromUrl.phone || initial.contact_phone || '');
+  const [contactName, setContactName] = useState(initial.contact_name || '');
+  const [contactWhatsApp, setContactWhatsApp] = useState(initial.contact_phone || '');
   const [selectedOrderIds, setSelectedOrderIds] = useState(
-    fromUrl.orders.length ? fromUrl.orders :
-      initial.order_id ? [initial.order_id] : []
+    initial.order_id ? [initial.order_id] : []
   );
   const [resumeUrl, setResumeUrl] = useState(initial.resume_url || '');
   const [generatingResume, setGeneratingResume] = useState(false);
   const [text, setText] = useState('');
   const [edited, setEdited] = useState(false);
+  const [secureLinks,setSecureLinks] = useState(null);
+  const [secureBusy,setSecureBusy] = useState(false);
+  const [secureError,setSecureError] = useState('');
+  const selectionScope = JSON.stringify([
+    contactName, contactWhatsApp, selectedRecipients, selectedOrderIds, template
+  ]);
   const [customTemplates, setCustomTemplates] = useState(() =>
     loadCustomSupportTemplates(typeof window === 'undefined' ? null : window.localStorage));
   const [customizing, setCustomizing] = useState(false);
@@ -68,11 +81,10 @@ export default function AdminSupportMessages({ info }) {
     let active = true;
     api('/api/admin/support-templates').then(response => {
       if (active) setCustomTemplates(response.templates || {});
-    }).catch(() => {
-      // The local cache still allows previously saved messages to be edited.
-    });
+    }).catch(() => { /* Keep the local cache if the server cannot be reached. */ });
     return () => { active = false; };
   }, []);
+
 
   async function reload() {
     setLoading(true);
@@ -87,18 +99,24 @@ export default function AdminSupportMessages({ info }) {
     }
   }
   useEffect(() => { reload(); }, []);
-  // Reflect the contact and operational selection in the admin URL, so a link
-  // opened from support can prefill WhatsApp without storing a private token.
+  // A context URL can be safely opened from WhatsApp after an admin login.
+  // The server resolves sensitive data only after authentication.
   useEffect(() => {
-    const next = supportContactAdminUrl({
-      name: contactName, phone: contactWhatsApp,
-      recipients: selectedRecipients, orders: selectedOrderIds, template
-    });
-    if (next !== location.pathname + location.search) {
-      navigate(next, { replace: true, state: location.state });
-    }
-  }, [contactName, contactWhatsApp, selectedRecipients, selectedOrderIds, template,
-      location.pathname, location.search, location.state, navigate]);
+    const opaque=fromUrl.opaque;
+    if(!opaque)return;
+    let cancelled=false;
+    api('/api/admin/support/context?c='+encodeURIComponent(opaque))
+      .then(({context,orders})=>{
+        if(cancelled)return;
+        setContactName(context.name||'');
+        setContactWhatsApp(context.phone||'');
+        setSelectedRecipients(context.recipientSlugs||[]);
+        setSelectedOrderIds((orders||[]).map(order=>order.id));
+        setTemplate(initial.template || (context.purpose==='finished'?'recebida':'aguardando'));
+        setNotice('🔐 Atendimento recuperado. Os dados foram decifrados somente na sessão administrativa.');
+      }).catch(cause=>{if(!cancelled)setError(cause.message);});
+    return ()=>{cancelled=true;};
+  },[fromUrl.opaque]);
 
   useEffect(() => {
     if (validContactName(contactName) || !initial.order_id || !letters.length) return;
@@ -113,6 +131,12 @@ export default function AdminSupportMessages({ info }) {
   const people = recipients.filter(person => selectedRecipients.includes(person.slug));
   const availableLetters = letters.filter(letter => selectedRecipients.includes(letter.recipient_slug) && !letter.gift);
   const selectedOrders = availableLetters.filter(letter => selectedOrderIds.includes(letter.id));
+  const matchingLetters = useMemo(
+    () => letters.filter(letter => matchesSupportOrder(letter, search, filter)),
+    [letters, search, filter]
+  );
+  const visibleRelatedLetters = availableLetters.filter(letter => matchesSupportOrder(letter, search, filter));
+  const hasSearchFilters = Boolean(search.trim() || filter !== 'all');
   const senderSuggestions = [...new Set(availableLetters.map(letter => letter.sender_name)
     .filter(validContactName))].sort((a,b) => a.localeCompare(b,'pt-BR'));
   const names = supportRecipientNames(people.map(person => person.name));
@@ -125,76 +149,121 @@ export default function AdminSupportMessages({ info }) {
     selectedOrders.every(letter => !letter.submitted && !letter.has_content);
   const invalidConfirm = templateInfo?.requiresSubmitted && !readyToConfirm;
   const invalidEmpty = template === 'rascunho_vazio' && !emptyDraftsSelected;
-  // A response may be previewed and edited before contact details are supplied.
-  // Only statements about paid/sent or empty drafts require verified order selection.
   const blocked = invalidConfirm || invalidEmpty;
-  const canSend = !blocked && !!text.trim();
+  const canSend = !blocked && !missingName && !missingRecipients && !!text.trim() && !secureBusy &&
+    secureLinks?.scope === selectionScope &&
+    !text.includes('🔐 Link protegido em preparação');
+  useEffect(()=>{
+    let active=true;
+    setSecureLinks(null);
+    setSecureError('');
+    setSecureBusy(true);
+    const timeout=setTimeout(async()=>{
+      try{
+        const base={
+          name:contactName,phone:contactWhatsApp,
+          recipientSlugs:selectedRecipients,
+          ids:selectedOrderIds,
+          source:'whatsapp',medium:'mensagem',
+          campaign:'suporte_cartinhas',content:template,stage:'admin_mensagens'
+        };
+        const [help,send]=await Promise.all([
+          createSecureSupportContext({...base,purpose:template==='recebida'?'finished':'support'}),
+          createSecureSupportContext({...base,purpose:'send',ids:[]})
+        ]);
+        if(!active)return;
+        const c=new URL(help.link).searchParams.get('c');
+        const append=(path)=>{
+          const u=new URL(path,window.location.origin);u.searchParams.set('c',c);
+          return u.toString();
+        };
+        const bySlug={};
+        for(const address of send.send_urls||[]){
+          const parsed=new URL(address);
+          const slug=parsed.pathname.split('/').pop();
+          bySlug[slug]=address;
+        }
+        setSecureLinks({
+          scope:selectionScope,
+          help:help.link,recipientHelp:help.link,
+          home:append('/'),open:append('/abrir'),
+          sendBySlug:bySlug,admin:help.admin_url,letters:help.admin_letters_url
+        });
+      }catch(cause){if(active)setSecureError(cause.message);}
+      finally{if(active)setSecureBusy(false);}
+    },350);
+    return()=>{active=false;clearTimeout(timeout);};
+  },[contactName,contactWhatsApp,selectedRecipients.join('|'),
+      selectedOrderIds.join('|'),template]);
   const validOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://ejc.migos.club';
-  const customSource = customTemplates[template];
 
+  const customSource = customTemplates[template];
   const generated = useMemo(() => {
+    // Preview is always useful, even before personal details or encrypted links are
+    // available. Until the API supplies safe URLs, links are displayed as placeholders
+    // that can never be sent to WhatsApp.
+    const pending = '🔐 Link protegido em preparação';
+    const links = (secureLinks?.scope === selectionScope ? secureLinks : null) || {
+      help:pending,recipientHelp:pending,home:pending,open:pending,
+      sendBySlug:Object.fromEntries(people.map(person => [person.slug,pending]))
+    };
     try {
       const context = {
-        contactName, recipientNames: names, recipients: people,
-        orders: selectedOrders, origin: validOrigin, resumeUrl,
+        contactName, recipientNames:names, recipients:people, orders:selectedOrders,
+        origin:validOrigin, resumeUrl, secureLinks:links
       };
       return customSource
         ? renderCustomSupportTemplate(customSource, context)
-        : createSupportMessage(template, { ...context, preview: true });
+        : createSupportMessage(template, { ...context, preview:true });
     } catch (cause) {
-      return 'Não foi possível gerar este modelo. Selecione outro ou restaure o original.';
+      return 'Não foi possível gerar o modelo. Escolha outro ou restaure o original.';
     }
   }, [template, customSource, contactName, selectedRecipients.join('|'),
-    selectedOrderIds.join('|'), names.join('|'), letters, resumeUrl, validOrigin]);
-  // Never overwrite a manual edit on a background reload or contact change.
+    selectedOrderIds.join('|'), names.join('|'), letters, resumeUrl, validOrigin, secureLinks]);
+  // Keep the author's manual edits across background refreshes and selections.
   useEffect(() => {
     if (!edited) setText(generated);
   }, [generated, edited]);
+  // Changes to contact identity or linked orders must regenerate encrypted URLs.
+  // A manual edit from the previous contact must never be reused with another.
+  useEffect(() => { setEdited(false); }, [selectionScope, resumeUrl]);
 
   function beginCustomization() {
     try {
       setTemplateDraft(customSource || customSupportTemplateSeed(template));
       setCustomizing(true);
       setError('');
-    } catch (cause) {
-      setError(cause.message);
-    }
+    } catch (cause) { setError(cause.message); }
   }
   async function saveTemplate() {
     setSavingTemplate(true);
     try {
-      const cleaned = validateCustomSupportTemplate(templateDraft);
-      const next = { ...customTemplates, [template]: cleaned };
-      await api('/api/admin/support-templates', { method: 'PUT', data: { templates: next } });
-      try { saveCustomSupportTemplates(window.localStorage, next); } catch { /* Cache is optional. */ }
+      const clean = validateCustomSupportTemplate(templateDraft);
+      const next = { ...customTemplates, [template]: clean };
+      await api('/api/admin/support-templates', { method:'PUT', data:{ templates:next } });
+      try { saveCustomSupportTemplates(window.localStorage, next); } catch { /* Cache optional. */ }
       setCustomTemplates(next);
       setEdited(false);
       setCustomizing(false);
-      setNotice('✅ Modelo personalizado salvo no sistema. Você poderá reutilizá-lo em outros atendimentos e dispositivos.');
+      setNotice('✅ Modelo salvo no sistema para uso da equipe em outros dispositivos.');
       setError('');
-    } catch (cause) {
-      setError(cause.message || 'Não foi possível salvar o modelo.');
-    } finally {
-      setSavingTemplate(false);
-    }
+    } catch (cause) { setError(cause.message || 'Não foi possível salvar.'); }
+    finally { setSavingTemplate(false); }
   }
   async function restoreTemplate() {
     setSavingTemplate(true);
     try {
       const next = { ...customTemplates };
       delete next[template];
-      await api('/api/admin/support-templates', { method: 'PUT', data: { templates: next } });
-      try { saveCustomSupportTemplates(window.localStorage, next); } catch { /* Cache is optional. */ }
+      await api('/api/admin/support-templates', { method:'PUT', data:{ templates:next } });
+      try { saveCustomSupportTemplates(window.localStorage, next); } catch { /* Cache optional. */ }
       setCustomTemplates(next);
       setEdited(false);
       setCustomizing(false);
-      setNotice('Modelo original restaurado no sistema.');
+      setNotice('✅ Modelo original restaurado no sistema.');
       setError('');
-    } catch (cause) {
-      setError(cause.message || 'Não foi possível restaurar o modelo.');
-    } finally {
-      setSavingTemplate(false);
-    }
+    } catch (cause) { setError(cause.message || 'Não foi possível restaurar.'); }
+    finally { setSavingTemplate(false); }
   }
 
   function addRecipient(slug) {
@@ -207,6 +276,17 @@ export default function AdminSupportMessages({ info }) {
     const ids = new Set(letters.filter(letter => letter.recipient_slug === slug).map(letter => letter.id));
     setSelectedOrderIds(previous => previous.filter(id => !ids.has(id)));
     setNotice('');
+  }
+
+  function selectMatchingLetter(letter) {
+    setSelectedRecipients(previous => previous.includes(letter.recipient_slug)
+      ? previous : [...previous, letter.recipient_slug]);
+    setSelectedOrderIds(previous => previous.includes(letter.id)
+      ? previous : [...previous, letter.id]);
+    if (!validContactName(contactName) && validContactName(letter.sender_name)) {
+      setContactName(letter.sender_name);
+    }
+    setNotice('✅ Cartinha de ' + letter.recipient_name + ' selecionada para o atendimento.');
   }
 
   // The chosen recipients come from the admin's D1-backed orders, never a
@@ -224,11 +304,14 @@ export default function AdminSupportMessages({ info }) {
       for(const letter of drafts){
         const response=await api('/api/admin/cartinhas/'+encodeURIComponent(letter.id)+
           '/resume-link',{method:'POST',data:{}});
+        const context=await createSecureSupportContext({
+          purpose:'send',name:contactName,phone:contactWhatsApp,
+          ids:[letter.id],recipientSlugs:[letter.recipient_slug],
+          source:'whatsapp',medium:'mensagem',
+          campaign:'recuperacao_cartinha',content:'rascunho_pago',stage:'retomar_edicao'
+        });
         const link=new URL(response.resume_url);
-        link.searchParams.set('utm_source','whatsapp');
-        link.searchParams.set('utm_medium','mensagem');
-        link.searchParams.set('utm_campaign','recuperacao_cartinha');
-        link.searchParams.set('utm_content','rascunho_pago');
+        link.search='?c='+encodeURIComponent(new URL(context.link).searchParams.get('c'));
         created.push({name:letter.recipient_name,url:link.toString()});
       }
       setResumeUrl(created.length===1?created[0].url:
@@ -276,24 +359,23 @@ export default function AdminSupportMessages({ info }) {
     const phone = contactWhatsApp.trim();
     const number = phone ? normalizeBrazilianWhatsApp(phone) : '';
     if (phone && !number) {
-      setError('Informe um WhatsApp válido com DDD ou deixe o campo vazio para escolher a conversa no aplicativo.');
+      setError('Informe um WhatsApp válido com DDD ou deixe vazio para escolher a conversa.');
       return;
     }
     const url = number
       ? 'https://wa.me/' + number + '?text=' + encodeURIComponent(text)
       : 'https://api.whatsapp.com/send?text=' + encodeURIComponent(text);
-    // Open during the tap, before any asynchronous OG publishing. This matters
-    // on Safari iPhone, which blocks popups opened after an awaited promise.
-    const opened = window.open(url, '_blank');
+    // All links are already securely generated. Open directly on the iPhone tap.
+    const opened = window.open(url,'_blank');
     if (opened) opened.opener = null;
     else window.location.assign(url);
     setError('');
-    setNotice('WhatsApp aberto para revisão. Confira a conversa e envie manualmente.');
-    track('admin_support_template_whatsapp_opened', { stage: template });
+    setNotice('WhatsApp aberto. Confira a conversa e envie manualmente.');
+    track('admin_support_template_whatsapp_opened',{stage:template});
     ensurePersonalizedDraftOg().then(image => {
-      if (image) setNotice('WhatsApp aberto. A arte personalizada dos rascunhos foi atualizada.');
+      if (image) setNotice('WhatsApp aberto. A arte personalizada também foi atualizada.');
     }).catch(cause => {
-      setNotice('WhatsApp aberto. A arte personalizada não pôde ser atualizada: ' + cause.message);
+      setNotice('WhatsApp aberto. Não foi possível atualizar a arte: '+cause.message);
     });
   }
 
@@ -340,23 +422,79 @@ export default function AdminSupportMessages({ info }) {
             <input id="support-contact-phone" type="tel" inputMode="tel" autoComplete="off"
               placeholder="(33) 99999-9999" value={contactWhatsApp}
               onChange={event => setContactWhatsApp(event.target.value.slice(0,25))}/>
-            <small>O nome e o WhatsApp entram na URL desta aba para preencher os próximos links de atendimento. Não são gravados no banco nem enviados ao Analytics. Use apenas links internos da equipe.</small>
-            <button type="button" className="btn ghost" onClick={async () => {
-              const url=window.location.origin+supportContactAdminUrl({
-                name:contactName,phone:contactWhatsApp,
-                recipients:selectedRecipients,orders:selectedOrderIds,template
-              });
-              try {
-                await navigator.clipboard.writeText(url);
-                setNotice('✅ Link do atendimento com nome e telefone copiado!');
-              } catch {
-                window.prompt('Copie o link do atendimento:',url);
-              }
-            }}>🔗 Copiar link preenchido do atendimento</button>
+            <small>Nome, telefone, IDs e UTMs são armazenados somente no contexto criptografado do link, que expira em 14 dias.</small>
+            <button type="button" className="btn ghost" disabled={!secureLinks}
+              onClick={async()=>{
+                try{
+                  await navigator.clipboard.writeText(secureLinks.admin);
+                  setNotice('✅ Link criptografado do atendimento copiado!');
+                }catch{
+                  if(secureLinks)window.prompt('Copie o link seguro do atendimento:',secureLinks.admin);
+                }
+              }}>🔗 Copiar link seguro do atendimento</button>
+            {secureLinks && <a className="btn outline" href={secureLinks.letters}
+              target="_blank" rel="noopener noreferrer">
+              👁 Conferir cartinhas relacionadas no admin
+            </a>}
+            {secureBusy&&<small>🔐 Preparando links protegidos…</small>}
+            {secureError&&<div className="notice error" role="alert">{secureError}</div>}
           </section>
 
           <section className="form-card support-messages-card">
             <h2>2. Para qual encontrista?</h2>
+            <div className="support-filter-grid">
+              <label htmlFor="support-order-search">
+                Buscar por encontrista, remetente ou ID
+                <input id="support-order-search" type="search" value={search}
+                  placeholder="Buscar cartinhas…" autoComplete="off"
+                  onChange={event => setSearch(event.target.value)} />
+              </label>
+              <label htmlFor="support-order-filter">
+                Situação das cartinhas
+                <select id="support-order-filter" value={filter}
+                  onChange={event => setFilter(event.target.value)}>
+                  <option value="all">Todas as situações</option>
+                  <option value="ready">💌 Prontos para envio</option>
+                  <option value="paid-draft">Pagas, ainda em rascunho</option>
+                  <option value="empty-paid-draft">Pagas, sem conteúdo</option>
+                  <option value="pending">Pix pendente</option>
+                </select>
+              </label>
+              {hasSearchFilters && <button type="button" className="btn ghost"
+                onClick={() => {
+                  setListParams(current => {
+                    const next = updateAdminListFilter(current, 'busca', '');
+                    return updateAdminListFilter(next, 'situacao', 'all');
+                  }, { preventScrollReset: true });
+                }}>Limpar filtros</button>}
+            </div>
+            <small className="muted">Os filtros de busca e situação ficam na URL.
+              Nome e telefone do atendimento não são incluídos nesses parâmetros.</small>
+            {hasSearchFilters && <div className="support-search-results">
+              <strong aria-live="polite">{matchingLetters.length} cartinha(s) encontrada(s)</strong>
+              {matchingLetters.length > 0 ? <div className="support-order-list">
+                {matchingLetters.slice(0, 60).map(letter => <div
+                  className="support-order-item support-order-result" key={letter.id}>
+                  <span>
+                    <strong>{letter.recipient_name}</strong>
+                    <small>{letter.id} · {letter.sender_name}</small>
+                    <small className={isReadyForSending(letter) ? 'is-ready' : ''}>
+                      {isReadyForSending(letter) ? '✅ Pronta para envio' :
+                        letter.submitted ? 'Pix pendente ou em conferência' :
+                        !letter.has_content ? '⚠️ Sem conteúdo finalizado' : '📝 Rascunho com conteúdo'}
+                    </small>
+                  </span>
+                  <button type="button" className="btn outline"
+                    disabled={selectedOrderIds.includes(letter.id)}
+                    onClick={() => selectMatchingLetter(letter)}>
+                    {selectedOrderIds.includes(letter.id) ? '✓ Selecionada' : 'Selecionar'}
+                  </button>
+                </div>)}
+              </div> : <small className="muted">Nenhuma cartinha corresponde aos filtros escolhidos.</small>}
+              {matchingLetters.length > 60 && <small className="muted">
+                Exibindo as primeiras 60 cartinhas. Refine a busca para encontrar uma específica.
+              </small>}
+            </div>}
             <label htmlFor="support-recipient-select">Selecione um ou vários encontristas</label>
             <select id="support-recipient-select" value=""
               onChange={event => addRecipient(event.target.value)}>
@@ -377,7 +515,7 @@ export default function AdminSupportMessages({ info }) {
               <h3>Cartinhas relacionadas</h3>
               <p className="muted small">Marque apenas as cartinhas que fazem parte desta conversa. Os IDs são incluídos na mensagem e nos links de suporte, sem revelar o conteúdo.</p>
               <div className="support-order-list">
-                {availableLetters.map(letter =>
+                {visibleRelatedLetters.map(letter =>
                   <label className="support-order-item" key={letter.id}>
                     <input type="checkbox" checked={selectedOrderIds.includes(letter.id)}
                       onChange={event => setSelectedOrderIds(previous => event.target.checked
@@ -399,6 +537,9 @@ export default function AdminSupportMessages({ info }) {
                     </Link>
                   </label>)}
               </div>
+              {!visibleRelatedLetters.length && <small className="muted">
+                Nenhuma cartinha relacionada corresponde à busca atual. As seleções permanecem guardadas.
+              </small>}
             </>}
           </section>
 
@@ -418,16 +559,13 @@ export default function AdminSupportMessages({ info }) {
               <button type="button" className="btn outline" onClick={beginCustomization}>
                 {customSource ? '✏️ Editar modelo personalizado' : '✏️ Personalizar este modelo'}
               </button>
-              {customSource && <button type="button" className="btn ghost" onClick={restoreTemplate} disabled={savingTemplate}>
-                Restaurar modelo original
-              </button>}
+              {customSource && <button type="button" className="btn ghost" disabled={savingTemplate}
+                onClick={restoreTemplate}>Restaurar modelo original</button>}
             </div>
             {customizing && <div className="support-template-customizer">
-              <label htmlFor="support-template-source">Seu modelo, reutilizável para outros atendimentos</label>
-              <p className="muted small">
-                Use as variáveis abaixo para preencher automaticamente nomes, IDs e links. O modelo fica salvo no sistema para acesso da equipe em outros dispositivos.
-                Não escreva tokens nem links privados diretamente no modelo.
-              </p>
+              <label htmlFor="support-template-source">Modelo reutilizável para toda a equipe</label>
+              <p className="muted small">Use as variáveis para personalizar automaticamente cada atendimento.
+                Os modelos são salvos no sistema, sem códigos individuais nem links de acesso privados.</p>
               <div className="support-template-variables">
                 {SUPPORT_TEMPLATE_FIELDS.map(field => <button key={field} type="button"
                   onClick={() => setTemplateDraft(previous => previous + (previous ? ' ' : '') + field)}>
@@ -435,22 +573,23 @@ export default function AdminSupportMessages({ info }) {
                 </button>)}
               </div>
               <textarea id="support-template-source" className="support-template-source"
-                value={templateDraft} rows={12} spellCheck
-                onChange={event => setTemplateDraft(event.target.value)} />
+                rows={12} value={templateDraft}
+                onChange={event => setTemplateDraft(event.target.value)}/>
               <div className="support-template-custom-actions">
-                <button type="button" className="btn" onClick={saveTemplate} disabled={savingTemplate}>
+                <button className="btn" type="button" onClick={saveTemplate} disabled={savingTemplate}>
                   {savingTemplate ? 'Salvando modelo…' : 'Salvar meu modelo'}
                 </button>
-                <button type="button" className="btn ghost" onClick={() => setCustomizing(false)}>
+                <button className="btn ghost" type="button" onClick={() => setCustomizing(false)}>
                   Cancelar
                 </button>
               </div>
             </div>
             {(template==='rascunho_vazio'||template==='link_privado')&&<>
               <label htmlFor="support-resume-link">Link privado de continuação <small>(se o administrador já gerou um)</small></label>
-              <input id="support-resume-link" type="url" autoComplete="off" spellCheck={false}
-                value={resumeUrl} onChange={event => setResumeUrl(event.target.value)}
-                placeholder="https://ejc.migos.club/pedido/…" />
+              <textarea id="support-resume-link" rows={selectedOrderIds.length>1?4:2}
+                autoComplete="off" spellCheck={false} value={resumeUrl}
+                onChange={event=>setResumeUrl(event.target.value)}
+                placeholder="https://ejc.migos.club/pedido/…?c=…" />
               <button type="button" className="btn outline" disabled={generatingResume}
                 onClick={createResumeLinks}>
                 {generatingResume?'Preparando links e arte…':'💌 Gerar automaticamente link(s) e OG com os nomes'}
@@ -474,41 +613,45 @@ export default function AdminSupportMessages({ info }) {
               <span className="muted small">{text.length} caracteres</span>
             </div>
             {missingName && template !== 'pedir_nome' && <div className="notice warning">
-              O nome ainda não foi informado. A mensagem usa uma saudação genérica até você preenchê-lo.
-              Você também pode usar o modelo “Qual é seu nome?”.
+              Nenhum nome informado ainda. A prévia usa uma saudação genérica até você preencher o contato.
+              Você também pode escolher “Qual é seu nome?”.
             </div>}
             {missingRecipients && template !== 'pedir_nome' && <p className="muted small">
-              Selecione encontristas acima para acrescentar os nomes e IDs. Você já pode revisar a mensagem abaixo.
+              Selecione encontristas acima para incluir os nomes e IDs. Você já pode revisar o texto.
             </p>}
             {blocked && <div className="notice warning" role="alert">
               {invalidConfirm
-                ? 'Para confirmar recebimento, selecione cartinha(s) com Pix confirmado e envio finalizado. A prévia pode ser editada, mas o envio permanece bloqueado.'
-                : 'Selecione cartinhas realmente vazias e não finalizadas para usar este aviso. A prévia pode ser editada.'}
+                ? 'Selecione cartinhas pagas e finalizadas antes de confirmar recebimento. Você ainda pode revisar a prévia.'
+                : 'Selecione cartinhas realmente vazias e não finalizadas para usar este aviso. A prévia continua editável.'}
             </div>}
             <label htmlFor="support-editor">Mensagem editável para WhatsApp</label>
             <textarea id="support-editor" className="support-textarea" value={text} rows={18}
-              placeholder="A mensagem aparece aqui. Você pode escrever, adaptar ou usar um modelo personalizado."
+              placeholder="Escreva ou adapte uma mensagem de atendimento aqui."
               onChange={event => {setText(event.target.value);setEdited(true);}}/>
             <div className="support-message-editor-tools">
-              <span className="muted small">Use *negrito*, _itálico_ e emojis. As alterações aparecem na prévia.</span>
+              <span className="muted small">Use *negrito*, _itálico_ e emojis. A prévia abaixo é atualizada na hora.</span>
               {edited && <button type="button" className="text-button"
                 onClick={() => {setText(generated);setEdited(false);}}>
-                Restaurar mensagem gerada
+                Restaurar mensagem e links protegidos
               </button>}
             </div>
+            {(secureBusy || !secureLinks) && <p className="muted small">
+              🔐 {secureBusy ? 'Preparando links seguros para envio…' :
+                'Os links seguros ainda não estão disponíveis. Confira a conexão antes de enviar.'}
+            </p>}
             <div className="support-message-actions">
               <button type="button" className="btn" disabled={!canSend} onClick={copyMessage}>
                 <ClipboardCopy size={17}/> Copiar mensagem
               </button>
-              <button type="button" className="btn outline" disabled={!canSend}
-                onClick={openWhatsApp}>
+              <button type="button" className="btn outline" disabled={!canSend} onClick={openWhatsApp}>
                 <MessageCircle size={17}/> Abrir WhatsApp
               </button>
             </div>
             {notice && <p className="notice success" role="status">{notice}</p>}
             <details className="support-preview-details" open>
               <summary>Prévia com negrito e itálico</summary>
-              {text.trim() ? <WhatsAppTextPreview value={text} /> : <p className="support-message-preview">Nenhuma mensagem digitada.</p>}
+              {text.trim() ? <WhatsAppTextPreview value={text} /> :
+                <p className="support-message-preview">Escreva a mensagem para visualizar a prévia.</p>}
             </details>
             <p className="muted small">O WhatsApp abre para revisão. <strong>O sistema não envia automaticamente.</strong> Confira o destinatário e toque em Enviar no aplicativo.</p>
           </section>

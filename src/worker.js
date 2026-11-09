@@ -1,4 +1,6 @@
 import { generatePix } from './pix.js';
+import {cleanSupportContext,encryptSupportContext,decryptSupportContext} from './supportContext.js';
+import { defaultHelpOgPng } from './defaultHelpOg.js';
 import { adminStatistics } from './statistics.js';
 import { normalizePaymentLookup, likeTerm, maskedStatus } from './paymentSearch.js';
 import { isSquareRecipientJpeg } from './photo.js';
@@ -671,7 +673,160 @@ async function createCheckout(req,env,config) {
   },201);
 }
 
+async function encryptedSupportLink(req,env,url,finished=false){
+  let context;
+  try{context=await decryptSupportContext(env.SESSION_SECRET,url.searchParams.get('c')||'');}
+  catch{bad('Seu link de atendimento expirou ou é inválido. Peça um novo à equipe.',410);}
+  const agent=req.headers.get('User-Agent')||'';
+  const robot=/whatsapp|facebookexternalhit|facebot|twitterbot|telegrambot|slackbot|discordbot|linkedinbot|pinterest/i.test(agent)&&
+    req.headers.get('Sec-Fetch-Mode')!=='navigate'&&
+    req.headers.get('Sec-Fetch-Dest')!=='document';
+  if(robot)return null; // Existing OG HTML handles the preview.
+  if(req.method==='GET')try {
+    await env.DB.prepare(
+      'INSERT INTO help_link_counts(day,campaign,clicks) VALUES(?,?,1) '+
+      'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'
+    ).bind(new Date().toISOString().slice(0,10),
+      'encrypted:'+context.campaign).run();
+  }catch(error){console.warn('Encrypted support aggregate unavailable',error?.message);}
+  const origin=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
+  const admin=origin+'/admin/mensagens?c='+encodeURIComponent(url.searchParams.get('c'));
+  const overview=origin+'/admin/cartinhas?c='+encodeURIComponent(url.searchParams.get('c'));
+  const intro=context.name
+    ?'Olá! Eu sou '+context.name+' e estou precisando de ajuda com minhas cartinhas. 💌'
+    :'Olá! Estou precisando de ajuda com minhas cartinhas. 💌';
+  const lines=[
+    '💌 *SUPORTE · CARTINHAS VIRTUAIS · MINI MERCADO*','',
+    finished
+      ?'✅ Finalizei minha cartinha e gostaria de confirmar o recebimento.'
+      :intro,
+    ...(context.name?['*Nome:* '+context.name]:[]),
+    // Phone and order IDs stay inside the encrypted admin context.
+    '*Etapa:* '+(context.stage||'suporte'),
+    '',
+    '👁 *Conferir o pedido e a cartinha (admin):*',
+    overview,
+    '💬 *Responder pelo painel do Mini Mercado:*',
+    admin,
+    '',
+    'IDs, UTMs, telefone e identificação estão criptografados nos links acima.',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '✍️ *O que está acontecendo?*',
+    '_Descreva aqui o que precisa de ajuda._',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '🌹 *Mini Mercado · XX EJC Simonésia*'
+  ];
+  const whatsapp=new URL('https://wa.me/5533999546031');
+  whatsapp.searchParams.set('text',lines.join('\n'));
+  return new Response(req.method==='HEAD'?null:null,{status:302,headers:{
+    Location:whatsapp.toString(),'Cache-Control':'no-store',
+    'Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow, noarchive'
+  }});
+}
+async function supportContextMint(req,env){
+  const input=await jsonBody(req,5000);
+  if(!input||typeof input!=='object'||Array.isArray(input))bad('Contexto inválido.');
+  const data=cleanSupportContext(input);
+  if(Array.isArray(input.ids)&&input.ids.length!==data.ids.length)
+    bad('IDs de cartinhas inválidos ou repetidos.',400);
+  const admin=await isAdmin(req,env);
+  // In the private mural, only a verified recipient grant may recover their
+  // registered WhatsApp number. It stays inside the encrypted support context.
+  if(!admin&&typeof input.muralSlug==='string'&&
+      /^[a-z0-9-]{1,65}$/.test(input.muralSlug)){
+    const auth=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
+    const person=await env.DB.prepare(
+      'SELECT id,name,slug,mural_code,whatsapp_phone FROM recipients WHERE slug=? AND active=1'
+    ).bind(input.muralSlug).first();
+    if(person&&await validMuralGrant(env,auth,person)){
+      if(data.recipientSlugs.some(slug=>slug!==person.slug))
+        bad('Este link de suporte não pertence ao seu mural.',403);
+      data.name=person.name;
+      data.phone=normaliseWhatsAppPhone(person.whatsapp_phone||data.phone);
+      data.recipientSlugs=[person.slug];
+    }
+  }
+  let owned=[];
+  if(data.ids.length&&!admin){
+    const auth=req.headers.get('Authorization')||'';
+    if(auth.startsWith('Bearer ')){
+      try {
+        const order=await buyer(req,env);
+        owned=[order.id];
+      }catch{
+        try {
+          const {checkout}=await checkoutBuyer(req,env);
+          owned=(await env.DB.prepare('SELECT id FROM orders WHERE checkout_id=?')
+            .bind(checkout.id).all()).results.map(row=>row.id);
+        }catch{
+          const muralSlug=String(input.muralSlug||'').slice(0,65);
+          if(/^[a-z0-9-]+$/.test(muralSlug)){
+            const recipient=await env.DB.prepare(
+              'SELECT id,mural_code FROM recipients WHERE slug=? AND active=1'
+            ).bind(muralSlug).first();
+            if(recipient&&await validMuralGrant(env,auth.slice(7),recipient))
+              owned=(await env.DB.prepare(
+                "SELECT id FROM orders WHERE recipient_id=? AND status IN ('paid','preparing','delivered')"
+              ).bind(recipient.id).all()).results.map(row=>row.id);
+          }
+        }
+      }
+    }
+    if(!data.ids.every(id=>owned.includes(id)))
+      bad('Autorização da cartinha necessária para incluir seus IDs no suporte.',403);
+  }
+  if(data.ids.length){
+    const found=(await env.DB.prepare(
+      'SELECT o.id,r.slug FROM orders o JOIN recipients r ON r.id=o.recipient_id '+
+      'WHERE o.id IN ('+data.ids.map(()=>'?').join(',')+')'
+    ).bind(...data.ids).all()).results;
+    if(found.length!==data.ids.length)bad('Cartinha não encontrada.',404);
+    data.recipientSlugs=[...new Set([...data.recipientSlugs,...found.map(row=>row.slug)])];
+  }
+  if(data.recipientSlugs.length){
+    const count=await env.DB.prepare('SELECT COUNT(*) AS n FROM recipients WHERE slug IN ('+
+      data.recipientSlugs.map(()=>'?').join(',')+')'
+    ).bind(...data.recipientSlugs).first();
+    if(Number(count?.n||0)!==data.recipientSlugs.length)
+      bad('Encontrista não encontrado.',404);
+  }
+  const opaque=await encryptSupportContext(env.SESSION_SECRET,data);
+  const origin=new URL(env.PUBLIC_ORIGIN||req.url).origin;
+  const help=new URL(data.purpose==='finished'
+    ?'/ajuda/terminei-a-cartinha':'/ajuda/minha-cartinha',origin);
+  help.searchParams.set('c',opaque);
+  return result({
+    link:help.toString(),
+    admin_url:origin+'/admin/mensagens?c='+encodeURIComponent(opaque),
+    admin_letters_url:origin+'/admin/cartinhas?c='+encodeURIComponent(opaque),
+    send_urls:data.recipientSlugs.map(slug=>
+      origin+'/enviar/'+encodeURIComponent(slug)+'?c='+encodeURIComponent(opaque)),
+    expires_in_days:14
+  },201);
+}
+async function supportContextView(req,env,admin=false){
+  const raw=new URL(req.url).searchParams.get('c')||'';
+  let data;
+  try{data=await decryptSupportContext(env.SESSION_SECRET,raw);}
+  catch{bad('Este link de atendimento é inválido ou expirou.',410);}
+  if(!admin){
+    if(data.purpose!=='send')bad('Este contexto só está disponível à equipe.',403);
+    return result({name:data.name,phone:data.phone,recipientSlugs:data.recipientSlugs});
+  }
+  const orders=data.ids.length?(await env.DB.prepare(
+    'SELECT o.id,o.status,o.submitted_at,r.name AS recipient_name,r.slug AS recipient_slug '+
+    'FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.id IN ('+
+    data.ids.map(()=>'?').join(',')+')'
+  ).bind(...data.ids).all()).results:[];
+  return result({context:data,orders});
+}
+
 async function publicRoute(req,env,path) {
+  if(path==='/api/support/context'&&req.method==='POST')
+    return supportContextMint(req,env);
+  if(path==='/api/support/context'&&req.method==='GET')
+    return supportContextView(req,env,false);
   const muralOg=path.match(/^\/api\/og\/mural\/([a-z0-9-]+)\.png$/);
   if(muralOg&&(req.method==='GET'||req.method==='HEAD')){
     const r=await env.DB.prepare(
@@ -1045,6 +1200,8 @@ async function adminRoute(req,env,path) {
     ).bind(JSON.stringify(templates)).run();
     return result({ok:true,templates});
   }
+  if(path==='/api/admin/support/context'&&req.method==='GET')
+    return supportContextView(req,env,true);
   if(path==='/api/admin/statistics' && req.method==='GET'){
     const query=new URL(req.url).searchParams;
     const from=query.get('from')||'',to=query.get('to')||'';
@@ -1473,14 +1630,20 @@ async function adminRoute(req,env,path) {
         .bind(row.recipient_id).first()).mural_code;
     }
     const grant=await muralGrant(env,{id:row.recipient_id,mural_code:row.mural_code});
-    const link=new URL('/mural/'+encodeURIComponent(row.slug),env.PUBLIC_ORIGIN||req.url);
-    link.searchParams.set('utm_source','whatsapp');
-    link.searchParams.set('utm_medium','mensagem');
-    link.searchParams.set('utm_campaign','cartinha_recuperada');
-    link.searchParams.set('utm_content','aviso_encontrista');
+    const origin=new URL(env.PUBLIC_ORIGIN||req.url).origin;
+    const opaque=await encryptSupportContext(env.SESSION_SECRET,{
+      purpose:'invite',name:row.recipient_name,phone:row.whatsapp_phone,
+      ids:[row.id],recipientSlugs:[row.slug],
+      source:'whatsapp',medium:'mensagem',campaign:'cartinha_recuperada',
+      content:'aviso_encontrista',stage:'convite_recuperada'
+    });
+    const link=new URL('/mural/'+encodeURIComponent(row.slug),origin);
+    link.searchParams.set('c',opaque);
     link.hash='token='+encodeURIComponent(grant);
     return result({phone:row.whatsapp_phone,recipient_name:row.recipient_name,
-      order_id:row.id,url:link.toString(),released:released(await settings(env)),
+      order_id:row.id,url:link.toString(),
+      support_url:origin+'/ajuda/minha-cartinha?c='+encodeURIComponent(opaque),
+      released:released(await settings(env)),
       already_notified:!!row.recipient_notified_at});
   }
   if(path==='/api/admin/help-link/stats'&&req.method==='GET'){
@@ -2142,6 +2305,10 @@ export default {
       if(path==='/ajuda/minha-cartinha'||path==='/ajuda/minha-cartinha/'){
         if(request.method!=='GET'&&request.method!=='HEAD')
           return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
+        if(url.searchParams.has('c')){
+          const encrypted=await encryptedSupportLink(request,env,url,false);
+          if(encrypted)return encrypted;
+        }
         const ua=request.headers.get('User-Agent')||'';
         const navigate=request.headers.get('Sec-Fetch-Mode')==='navigate'||
           request.headers.get('Sec-Fetch-Dest')==='document';
@@ -2152,7 +2319,7 @@ export default {
           const image=await env.MEDIA.head('og/help-recipient-v1.png');
           const version=image?.uploaded?.getTime()||'fallback';
           const og=base+'/og-ajuda-minha-cartinha.png?v='+encodeURIComponent(version);
-          const title='Me ajude com a minha cartinha! | Cartinhas Virtuais';
+          const title='Preciso de ajuda com minha cartinha! | Cartinhas Virtuais';
           const description='Suporte do Mini Mercado · XX EJC Simonésia. Estamos aqui para ajudar você!';
           const properties={
             'og:type':'website','og:locale':'pt_BR',
@@ -2161,7 +2328,7 @@ export default {
             'og:url':base+'/ajuda/minha-cartinha',
             'og:image':og,'og:image:secure_url':og,
             'og:image:type':'image/png','og:image:width':'1200','og:image:height':'630',
-            'og:image:alt':'Me ajude com a minha cartinha. Mini Mercado XX EJC Simonésia.'
+            'og:image:alt':'Preciso de ajuda com minha cartinha. Mini Mercado XX EJC Simonésia.'
           };
           const meta=Object.entries(properties).map(([key,value])=>
             '<meta property="'+escapeMeta(key)+'" content="'+escapeMeta(value)+'" />').join('');
@@ -2227,7 +2394,7 @@ export default {
           '━━━━━━━━━━━━━━━━━━━━',
           '💛 *Mini Mercado · XX EJC Simonésia*'
         ];
-        const whats=new URL('https://wa.me/5532999662604');
+        const whats=new URL('https://wa.me/5533999546031');
         whats.searchParams.set('text',details.join('\n'));
         for(const [key,backup] of Object.entries({
           utm_source:source,utm_medium:medium,utm_campaign:campaign,
@@ -2248,12 +2415,22 @@ export default {
           'Content-Type':'image/png','Content-Length':String(image.size),
           'Cache-Control':'public, max-age=3600','X-Content-Type-Options':'nosniff'
         }});
-        return env.ASSETS.fetch(new Request(new URL('/og-ejc-default.png',url.origin),request));
+        const bytes=await defaultHelpOgPng();
+        return new Response(request.method==='HEAD'?null:bytes,{headers:{
+          'Content-Type':'image/png','Content-Length':String(bytes.byteLength),
+          'Cache-Control':'public, max-age=86400',
+          'X-Content-Type-Options':'nosniff',
+          'X-Robots-Tag':'noindex, nofollow'
+        }});
       }
       // Link-sharing crawlers need HTML for the WhatsApp OG preview.
       if (path==='/ajuda/terminei-a-cartinha'||path==='/ajuda/terminei-a-cartinha/') {
         if(request.method!=='GET'&&request.method!=='HEAD')
           return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
+        if(url.searchParams.has('c')){
+          const encrypted=await encryptedSupportLink(request,env,url,true);
+          if(encrypted)return encrypted;
+        }
         const agent=request.headers.get('User-Agent')||'';
         const navigation=request.headers.get('Sec-Fetch-Mode')==='navigate'||
           request.headers.get('Sec-Fetch-Dest')==='document';

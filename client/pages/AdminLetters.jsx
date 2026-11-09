@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { CheckCheck, Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, Sparkles } from 'lucide-react';
 import { api, track } from '../lib/api';
 import { readyLetterWhatsAppMessage } from '../lib/helpLink.js';
+import { readAdminListFilters, updateAdminListFilter, isReadyForSending } from '../lib/adminListFilters.js';
 import { publishDraftOg } from '../lib/draftOg.js';
+import { createSecureSupportContext } from '../lib/secureSupport.js';
 import { whatsappShareUrl, normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp.js';
 import { supportContactParams, supportContactAdminUrl } from '../lib/supportContactUrl.js';
 import { validContactName, createSupportMessage } from '../lib/supportMessages.js';
@@ -15,6 +17,8 @@ import '../styles/admin-bulk-finalize.css';
 import { THEMES } from '../../shared/letter.js';
 
 const paid = (status) => ['paid', 'preparing', 'delivered'].includes(status);
+const LETTER_FILTERS = ['all', 'pending', 'paid', 'ready', 'sent', 'recovered',
+  'ready-notify', 'draft', 'paid-draft', 'empty-paid-draft'];
 function createdAt(value) {
   const raw = String(value || '').trim().replace(' ', 'T');
   const normalized = /(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(raw) ? raw : raw + 'Z';
@@ -92,6 +96,7 @@ function ResumeDraftLink({ letter }) {
       recipients: [{ name:letter.recipient_name, slug:letter.recipient_slug }],
       orders: [{ id:letter.id, recipient_name:letter.recipient_name }],
       resumeUrl: recovery.resume_url, origin: window.location.origin,
+      secureLinks:{help:recovery.help_url},
     })
     : '';
 
@@ -111,12 +116,19 @@ function ResumeDraftLink({ letter }) {
       } catch (cause) {
         ogWarning='O link funciona, mas a prévia personalizada não pôde ser gerada: '+cause.message;
       }
+      const common={
+        name:contactName||response.sender_name,phone:contactPhone,
+        ids:[letter.id],recipientSlugs:[letter.recipient_slug],
+        stage:'retomar_rascunho',source:'whatsapp',medium:'mensagem',
+        campaign:'recuperacao_cartinha',content:'rascunho_pago'
+      };
+      const [help,send]=await Promise.all([
+        createSecureSupportContext({...common,purpose:'support'}),
+        createSecureSupportContext({...common,purpose:'send'})
+      ]);
       const tracked=new URL(response.resume_url);
-      tracked.searchParams.set('utm_source','whatsapp');
-      tracked.searchParams.set('utm_medium','mensagem');
-      tracked.searchParams.set('utm_campaign','recuperacao_cartinha');
-      tracked.searchParams.set('utm_content','rascunho_pago');
-      setRecovery({...response,resume_url:tracked.toString()});
+      tracked.search='?c='+encodeURIComponent(new URL(send.link).searchParams.get('c'));
+      setRecovery({...response,resume_url:tracked.toString(),help_url:help.link});
       if(ogWarning)setError(ogWarning);
     } catch (cause) {
       setError(cause.message || 'Não foi possível criar o link.');
@@ -183,10 +195,8 @@ function ResumeDraftLink({ letter }) {
           </div>
         </div>
       )}
-      <Link className="btn outline" to={supportContactAdminUrl({
-        name:contactName,phone:contactPhone,recipients:[letter.recipient_slug],
-        orders:[letter.id],template:'rascunho_vazio'
-      })} state={{ support: {
+      <Link className="btn outline" to={supportContactAdminUrl({opaque:fromUrl.opaque})}
+        state={{ support: {
         template:'rascunho_vazio',recipient_slug:letter.recipient_slug,
         order_id:letter.id,contact_name:contactName,contact_phone:contactPhone,
         resume_url:recovery?.resume_url||''
@@ -259,7 +269,33 @@ function RecoveredLetterNotice({letter,onUpdated}){
 export default function AdminLetters() {
   const { slug } = useParams();
   const location = useLocation();
-  const technicalMode = new URLSearchParams(location.search).get('secret') === '000000';
+  const [listParams, setListParams] = useSearchParams();
+  const { search, filter } = readAdminListFilters(listParams, LETTER_FILTERS);
+  const setSearch = value => setListParams(current => updateAdminListFilter(current, 'busca', value),
+    { replace: true, preventScrollReset: true });
+  const setFilter = value => setListParams(current => updateAdminListFilter(current, 'situacao', value),
+    { preventScrollReset: true });
+  const params = new URLSearchParams(location.search);
+  const technicalMode = params.get('secret') === '000000';
+  const encryptedContext=params.get('c')||'';
+  const [contextOrderIds,setContextOrderIds] = useState([]);
+  const [contextError,setContextError] = useState('');
+  useEffect(()=>{
+    if(!encryptedContext){setContextOrderIds([]);setContextError('');return;}
+    let alive=true;
+    api('/api/admin/support/context?c='+encodeURIComponent(encryptedContext))
+      .then(data=>{
+        if(!alive)return;
+        const ids=(data.orders||[]).map(row=>row.id);
+        setContextOrderIds(ids);
+        setExpanded(previous=>({...previous,
+          ...Object.fromEntries(ids.map(id=>[id,true]))
+        }));
+        setContextError('');
+      })
+      .catch(cause=>{if(alive)setContextError(cause.message);});
+    return()=>{alive=false;};
+  },[encryptedContext]);
   const [technicalInput, setTechnicalInput] = useState('');
   const [technicalPassword, setTechnicalPassword] = useState('');
   const [muralRecipient, setMuralRecipient] = useState('');
@@ -278,8 +314,6 @@ export default function AdminLetters() {
   const [letters, setLetters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('all');
   const [expanded, setExpanded] = useState({});
   const [finalizeSummary, setFinalizeSummary] = useState(null);
   const [finalizeBusy, setFinalizeBusy] = useState(false);
@@ -353,8 +387,10 @@ export default function AdminLetters() {
   const selected = slug ? letters.find((letter) => letter.recipient_slug === slug) : null;
   const rows = useMemo(() => letters.filter((letter) => {
     if (slug && letter.recipient_slug !== slug) return false;
+    if(contextOrderIds.length&&!contextOrderIds.includes(letter.id))return false;
     if (filter === 'pending' && paid(letter.status)) return false;
     if (filter === 'paid' && !paid(letter.status)) return false;
+    if (filter === 'ready' && !isReadyForSending(letter)) return false;
     if (filter === 'draft' && letter.submitted) return false;
     if (filter === 'paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift)) return false;
     if (filter === 'empty-paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift || letter.has_content)) return false;
@@ -364,7 +400,7 @@ export default function AdminLetters() {
     const query = search.trim().toLocaleLowerCase('pt-BR');
     return !query || [letter.recipient_name, letter.sender_name, letter.id]
       .some((text) => String(text).toLocaleLowerCase('pt-BR').includes(query));
-  }), [letters, slug, search, filter]);
+  }), [letters, slug, search, filter, contextOrderIds]);
   const heading = slug ? 'Cartinhas de ' + (selected?.recipient_name || 'encontrista') : 'Todas as cartinhas';
   const recipients = useMemo(() => Array.from(new Map(letters.map(letter => [letter.recipient_slug, letter.recipient_name])).entries()).sort((a,b) => a[1].localeCompare(b[1], 'pt-BR')), [letters]);
   function openRecipientMural(event) {
@@ -501,6 +537,7 @@ export default function AdminLetters() {
           <option value="all">Todas as situações</option>
           <option value="pending">Pix pendente</option>
           <option value="paid">Pagas</option>
+          <option value="ready">💌 Prontas para envio</option>
           <option value="sent">Enviadas</option>
           <option value="recovered">✅ Cartinhas vazias recuperadas</option>
           <option value="ready-notify">📲 Recuperadas prontas para avisar</option>
@@ -510,6 +547,15 @@ export default function AdminLetters() {
         </select>
         <strong aria-live="polite">{rows.length} cartinha(s)</strong>
       </div>
+      {contextError&&<div className="notice error" role="alert">{contextError}</div>}
+      {contextOrderIds.length>0&&<div className="notice success">
+        🔐 Atendimento recuperado: {contextOrderIds.length} cartinha(s) selecionada(s).
+        A visualização do conteúdo continua exigindo a autorização técnica habitual.
+        {!technicalMode&&<Link className="btn outline"
+          to={'/admin/cartinhas?c='+encodeURIComponent(encryptedContext)+'&secret=000000'}>
+          Conferir conteúdo com autorização técnica
+        </Link>}
+      </div>}
       {loading && <div className="loading">Carregando cartinhas...</div>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {!loading && !error && !rows.length && (
@@ -539,11 +585,9 @@ export default function AdminLetters() {
                 <span className={'admin-letter-status ' + (paid(letter.status) ? 'is-paid' : 'is-pending')}>
                   {statusText(letter)}
                 </span>
-                <Link className="btn ghost" to={supportContactAdminUrl({
-                  name:validContactName(letter.sender_name)?letter.sender_name:'',
-                  recipients:[letter.recipient_slug],orders:[letter.id],
-                  template:letter.submitted?'recebida':!letter.has_content?'rascunho_vazio':'aguardando'
-                })} state={{support:{
+                <Link className="btn ghost"
+                  to={supportContactAdminUrl({opaque:encryptedContext})}
+                  state={{support:{
                   template:letter.submitted?'recebida':!letter.has_content?'rascunho_vazio':'aguardando',
                   recipient_slug:letter.recipient_slug, order_id:letter.id,
                   contact_name:validContactName(letter.sender_name)?letter.sender_name:''

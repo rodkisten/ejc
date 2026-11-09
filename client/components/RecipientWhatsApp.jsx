@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Check, Copy, ExternalLink, ImagePlus, MessageCircle, Phone, RefreshCw } from 'lucide-react';
 import { api, track } from '../lib/api';
+import { readAdminListFilters, updateAdminListFilter } from '../lib/adminListFilters.js';
 import { publishMuralOgImage } from '../lib/og';
 import { muralInvitationMessage, whatsappShareUrl } from '../lib/recipientWhatsApp';
-import { recipientSupportLink } from '../lib/helpLink.js';
+import { createSecureSupportContext } from '../lib/secureSupport.js';
 import MiniMercadoCampaign from './MiniMercadoCampaign';
 import { CAMPAIGN_KEY, renderCampaignWhatsApp } from '../../shared/ejcCampaign.js';
 import '../styles/recipient-whatsapp.css';
@@ -78,8 +80,19 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
       const details=await api('/api/admin/recipients/'+recipient.id+'/whatsapp-link',{
         method:'POST',data:{},
       });
+      const context=await createSecureSupportContext({
+        purpose:'invite',name:details.name,phone:details.phone,
+        ids:details.letter_ids||[],recipientSlugs:[recipient.slug],
+        stage:isCampaign?'convite_campanha':'convite_mural',
+        source:'whatsapp',medium:'mensagem',
+        campaign:isCampaign?'pos_encontro':'convite_mural',
+        content:'convite_encontrista'
+      });
       const trackedUrl=new URL(details.url);
-      trackedUrl.searchParams.set('utm_campaign',isCampaign?'pos_encontro':'convite_mural');
+      // The mural grant stays in the URL fragment, but operational attribution
+      // and the contact's phone/IDs are encapsulated in the encrypted context.
+      const opaque=new URL(context.link).searchParams.get('c');
+      trackedUrl.search='?c='+encodeURIComponent(opaque);
       const inviteUrl=trackedUrl.toString();
       let message;
       if(isCampaign){
@@ -87,13 +100,10 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
         message=renderCampaignWhatsApp(campaign.campaign.whatsapp,{
           name:details.name,url:inviteUrl,count:Math.max(0,details.count-1),
         });
-        message += '\n\n🆘 *Precisa de ajuda com suas cartinhas?*\n'+recipientSupportLink({
-          name:details.name,ids:details.letter_ids||[],origin:new URL(inviteUrl).origin,source:'whatsapp',
-          medium:'mensagem',campaign:'pos_encontro',
-          content:'suporte_encontrista',stage:'convite_campanha',
-        })+'\n_É só abrir e contar para a equipe o que aconteceu._';
+        message += '\n\n🆘 *Precisa de ajuda com suas cartinhas?*\n'+context.link+'\n_É só abrir e contar para a equipe o que aconteceu._';
       }else{
-        message=muralInvitationMessage({name:details.name,url:inviteUrl,count:details.count,ids:details.letter_ids||[]});
+        message=muralInvitationMessage({name:details.name,url:inviteUrl,count:details.count,
+          ids:details.letter_ids||[],supportUrl:context.link});
       }
       const href=whatsappShareUrl({phone:details.phone,message});
       track('admin_whatsapp_invite_opened',{stage:isCampaign?'campaign':'mural'});
@@ -161,9 +171,15 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
   );
 }
 
+const WHATSAPP_FILTERS = ['all', 'ready', 'sent', 'unsent', 'missing-phone'];
+
 export default function WhatsAppAdmin({ info, reload }) {
-  const [query, setQuery] = useState('');
-  const [view, setView] = useState('all');
+  const [listParams, setListParams] = useSearchParams();
+  const { search: query, filter: view } = readAdminListFilters(listParams, WHATSAPP_FILTERS);
+  const setQuery = value => setListParams(current => updateAdminListFilter(current, 'busca', value),
+    { replace: true, preventScrollReset: true });
+  const setView = value => setListParams(current => updateAdminListFilter(current, 'situacao', value),
+    { preventScrollReset: true });
   const [imageBusy, setImageBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');

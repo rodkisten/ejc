@@ -46,7 +46,7 @@ export function completedLetterHelpLink({sender='',items=[],origin='https://ejc.
   return url.toString();
 }
 
-export function readyLetterWhatsAppMessage({recipient_name,order_id,url,released=true}){
+export function readyLetterWhatsAppMessage({recipient_name,order_id,url,released=true,support_url=''}){
   const first=String(recipient_name||'encontrista').trim().split(/\s+/)[0];
   return [
     '💌✨ *'+first+', sua cartinha ficou prontinha!*',
@@ -58,14 +58,10 @@ export function readyLetterWhatsAppMessage({recipient_name,order_id,url,released
     '🌹 Que Deus abençoe sua caminhada e que você persevere sempre na fé! *Filipenses 1,6*',
     '',
     '_Com carinho, equipe do Mini Mercado · XX EJC Simonésia_',
-    '_Referência para suporte: '+order_id+'_',
+    '_A referência da sua cartinha está protegida no link de suporte._',
     '',
     '🆘 *Precisa de ajuda para abrir ou visualizar sua cartinha?*',
-    recipientSupportLink({
-      origin:new URL(url).origin,name:recipient_name,ids:[order_id],
-      source:'whatsapp',medium:'mensagem',campaign:'cartinha_recuperada',
-      content:'suporte_encontrista',stage:'convite_recuperada'
-    }),
+    support_url || new URL('/ajuda/minha-cartinha',url).toString(),
     '_O link de ajuda abre nosso WhatsApp com uma mensagem pronta. É só explicar o que aconteceu!_',
     '',
     '🔒 _O acesso ao mural é pessoal. Não o compartilhe._',

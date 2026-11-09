@@ -67,6 +67,73 @@ function SecretLetterPreview({ letter }) {
   );
 }
 
+function ResumeDraftLink({ letter }) {
+  const [recovery, setRecovery] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState('');
+  const recipient = letter.sender_name || 'remetente';
+  const shareText = recovery
+    ? 'Olá, ' + recipient + '! 💌 Sua cartinha para ' + letter.recipient_name +
+      ' foi paga, mas ainda está como rascunho. Use este link privado para continuar a edição, ' +
+      'salvar suas fotos e áudios e enviar a cartinha: ' + recovery.resume_url
+    : '';
+
+  async function createLink() {
+    setBusy(true);
+    setError('');
+    setCopied(false);
+    try {
+      const response = await api('/api/admin/cartinhas/' + encodeURIComponent(letter.id) + '/resume-link', {
+        method: 'POST', data: {},
+      });
+      setRecovery(response);
+    } catch (cause) {
+      setError(cause.message || 'Não foi possível criar o link.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyMessage() {
+    try {
+      await navigator.clipboard.writeText(shareText);
+      setCopied(true);
+    } catch {
+      window.prompt('Copie a mensagem e o link de continuação:', shareText);
+    }
+  }
+
+  return (
+    <div className="admin-draft-recovery">
+      <p><strong>⚠️ Sem conteúdo salvo no servidor.</strong> O pagamento foi confirmado,
+        mas ainda não há texto, foto ou áudio finalizado para aprovar.</p>
+      {!recovery ? (
+        <button type="button" className="btn outline" disabled={busy} onClick={createLink}>
+          <LockKeyhole size={16} /> {busy ? 'Criando link…' : 'Criar link para ' + recipient + ' continuar'}
+        </button>
+      ) : (
+        <div className="admin-draft-recovery-link">
+          <p>Link privado de <strong>{recovery.sender_name}</strong>, válido por 14 dias.
+            Envie diretamente ao remetente. O link original continua funcionando.</p>
+          <a href={recovery.resume_url} target="_blank" rel="noopener noreferrer">
+            {recovery.resume_url}
+          </a>
+          <div className="inline-actions">
+            <button type="button" className="btn" onClick={copyMessage}>
+              {copied ? '✓ Mensagem copiada' : 'Copiar mensagem e link'}
+            </button>
+            <button type="button" className="btn ghost" onClick={createLink} disabled={busy}>
+              <RefreshCw size={15} /> Renovar validade
+            </button>
+          </div>
+        </div>
+      )}
+      {error && <p className="notice error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 export default function AdminLetters() {
   const { slug } = useParams();
   const location = useLocation();
@@ -168,6 +235,7 @@ export default function AdminLetters() {
     if (filter === 'paid' && !paid(letter.status)) return false;
     if (filter === 'draft' && letter.submitted) return false;
     if (filter === 'paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift)) return false;
+    if (filter === 'empty-paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift || letter.has_content)) return false;
     if (filter === 'sent' && !letter.submitted) return false;
     const query = search.trim().toLocaleLowerCase('pt-BR');
     return !query || [letter.recipient_name, letter.sender_name, letter.id]
@@ -312,6 +380,7 @@ export default function AdminLetters() {
           <option value="sent">Enviadas</option>
           <option value="draft">Rascunhos</option>
           <option value="paid-draft">Pagos que ainda são rascunhos</option>
+          <option value="empty-paid-draft">Pagos sem conteúdo salvo</option>
         </select>
         <strong aria-live="polite">{rows.length} cartinha(s)</strong>
       </div>
@@ -330,6 +399,12 @@ export default function AdminLetters() {
                 {slug && <strong className="admin-letter-recipient">{letter.recipient_name}</strong>}
                 <p>De: <strong>{letter.sender_name}</strong></p>
                 <small>{letter.id} · {createdAt(letter.created_at)}</small>
+                {paid(letter.status) && !letter.submitted && !letter.gift && (
+                  <p className="admin-letter-content-status">
+                    {letter.has_content ? '✅ Mensagem ou anexo salvo · pronta para revisão'
+                      : '⚠️ Rascunho vazio no servidor'}
+                  </p>
+                )}
               </div>
               <div className="admin-letter-summary-actions">
                 <span className={'admin-letter-status ' + (paid(letter.status) ? 'is-paid' : 'is-pending')}>
@@ -340,15 +415,22 @@ export default function AdminLetters() {
                     ...previous, [letter.id]: !previous[letter.id],
                   }))}>
                   {expanded[letter.id] ? <EyeOff size={16} /> : <Eye size={16} />}
-                  {expanded[letter.id] ? 'Fechar prévia' : technicalMode && technicalPassword ? 'Conferir layout completo' : 'Ver prévia protegida'}
+                  {expanded[letter.id] ? 'Fechar prévia' : 'Ver cartinha completa'}
                 </button>
               </div>
             </div>
-            {expanded[letter.id] && (technicalMode && technicalPassword
-              ? <TechnicalLetterPreview orderId={letter.id} password={technicalPassword}
-                  allowFinalize={paid(letter.status) && !letter.submitted && !letter.gift}
-                  onFinalized={()=>Promise.all([refresh(),updateFinalizeSummary()])} />
-              : <SecretLetterPreview letter={letter} />)}
+            {expanded[letter.id] && (
+              <TechnicalLetterPreview
+                orderId={letter.id}
+                adminSession={!technicalMode || !technicalPassword}
+                password={technicalMode && technicalPassword ? technicalPassword : undefined}
+                allowFinalize={paid(letter.status) && !letter.submitted && !letter.gift}
+                onFinalized={() => Promise.all([refresh(), updateFinalizeSummary()])}
+              />
+            )}
+            {paid(letter.status) && !letter.submitted && !letter.gift && !letter.has_content && (
+              <ResumeDraftLink letter={letter} />
+            )}
           </article>
         ))}
       </div>

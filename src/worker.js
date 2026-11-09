@@ -2006,7 +2006,7 @@ export default {
         // Anonymous aggregate only. No address, browser identifier or letter content.
         const campaign=String(url.searchParams.get('utm_campaign')||'recuperacao_cartinhas')
           .replace(/[^a-z0-9_-]/gi,'').slice(0,60)||'recuperacao_cartinhas';
-        try{
+        if(request.method==='GET')try{
           await env.DB.prepare(
             'INSERT INTO help_link_counts(day,campaign,clicks) VALUES(?,?,1) '+
             'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'

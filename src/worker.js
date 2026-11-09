@@ -1527,6 +1527,10 @@ async function adminRoute(req,env,path) {
       const latest=await env.DB.prepare('SELECT mural_code FROM recipients WHERE id=?').bind(person.id).first();
       person.mural_code=latest.mural_code;
     }
+    const readyLetters=(await env.DB.prepare(
+      "SELECT id FROM orders WHERE recipient_id=? AND submitted_at IS NOT NULL "+
+      "AND status IN ('paid','preparing','delivered') ORDER BY submitted_at DESC LIMIT 20"
+    ).bind(person.id).all()).results;
     const grant=await muralGrant(env,person);
     const origin=new URL(env.PUBLIC_ORIGIN||req.url).origin;
     const image=socialImage(person,null,'mural');
@@ -1539,6 +1543,7 @@ async function adminRoute(req,env,path) {
     address.hash='token='+encodeURIComponent(grant);
     return result({
       name:person.name,phone,url:address.toString(),count:ready.count,
+      letter_ids:readyLetters.map(letter=>letter.id),
       og_url:origin+image.path,expires_in_days:14
     });
   }

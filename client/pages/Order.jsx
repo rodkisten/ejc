@@ -69,6 +69,18 @@ export default function Order() {
       track('help_link_clicked',{stage:submitted?'letter_submitted':'draft_saved'});
     }catch(cause){setError(cause.message);}
   };
+  const copyPrivateShortLink=async()=>{
+    if(!order?.id)return;
+    try{
+      const destination=privateOrder(token);
+      const short=await api('/api/links/shorten',{
+        method:'POST',token,data:{url:destination}
+      });
+      try{await navigator.clipboard.writeText(short.url);}
+      catch{window.prompt('Copie seu link curto e secreto:',short.url);}
+      track('private_short_link_copied',{stage:'order'});
+    }catch(cause){setError(cause.message||'Não foi possível gerar um link curto.');}
+  };
   const [receiptEmail, setReceiptEmail] = useState('');
   const [receiptBusy,setReceiptBusy] = useState(false);
   const [completion,setCompletion] = useState(null);
@@ -363,7 +375,7 @@ export default function Order() {
         <aside className="form-card pix-access">
           <h3>Guarde o acesso à sua cartinha 🔐</h3>
           <p>Você pode voltar a qualquer momento pelo mesmo link, inclusive depois de pagar.</p>
-          <button className="btn ghost wide" onClick={() => copy(privateOrder(token))}>
+          <button className="btn ghost wide" onClick={copyPrivateShortLink}>
             <LockKeyhole size={17} /> Copiar link secreto
           </button>
           <div className="pix-admin-identification">
@@ -513,7 +525,7 @@ export default function Order() {
           <aside className="compose-side">
             <div className="form-card">
               <h3>Seu link secreto 🔐</h3>
-              <button className="btn ghost wide" onClick={() => copy(privateOrder(token))}>
+              <button className="btn ghost wide" onClick={copyPrivateShortLink}>
                 <Copy size={16} /> Copiar link
               </button>
               <p className="muted small">

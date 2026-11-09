@@ -31,10 +31,12 @@ export default function Send() {
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(true);
   const [error, setError] = useState('');
+  const firstEdit=useRef(false);
   const assetRef = useRef([]);
   assetRef.current = assets;
 
   const key = editId ? cartDraftKey(editId) : draftKey(slug);
+  useEffect(()=>{firstEdit.current=false;track('letter_composer_view',{stage:editId?'editing':'new'});},[slug,editId]);
   useEffect(() => {
     let active = true;
     setReady(false);
@@ -78,9 +80,10 @@ export default function Send() {
   }), [html, sender, composition, assets]);
 
   function add(file, kind) {
-    if (file) setAssets((previous) => [
-      ...previous, { file, kind, url: URL.createObjectURL(file) },
-    ]);
+    if(file){
+      track('letter_attachment_added',{kind});
+      setAssets((previous) => [...previous,{file,kind,url:URL.createObjectURL(file)}]);
+    }
   }
   function remove(index) {
     setAssets((previous) => {
@@ -103,7 +106,7 @@ export default function Send() {
         assets: assets.map(({ file, kind }) => ({ file, kind })),
       });
       if (!editId) await draftRemove(draftKey(slug));
-      track('letter_added_to_cart');
+      track('letter_added_to_cart',{stage:editId?'updated':'new',letters:cart.items.length+1});
       navigate('/carrinho');
     } catch (cause) {
       setError(cause.message || 'Não foi possível salvar a cartinha.');
@@ -172,7 +175,9 @@ export default function Send() {
 
         <section className="form-card">
           <h2>01. Suas palavras ✍️</h2>
-          <RichEditor value={html} onChange={setHtml} />
+          <RichEditor value={html} onChange={(value)=>{setHtml(value);
+            if(!firstEdit.current&&value?.trim()){firstEdit.current=true;track('letter_first_edit',{stage:'composer'});}
+          }} />
         </section>
 
         <section className="form-card">
@@ -230,7 +235,7 @@ export default function Send() {
 
         {error && <div className="notice error" role="alert">{error}</div>}
         <div className="inline-actions spaced cart-composer-actions">
-          <button className="btn ghost" type="button" onClick={() => setPreview((value) => !value)}>
+          <button className="btn ghost" type="button" onClick={() => {track('letter_preview_toggled',{stage:preview?'hide':'show'});setPreview((value) => !value);}}>
             {preview ? 'Ocultar prévia' : 'Ver minha cartinha'}
           </button>
           <button className="btn" type="button" onClick={putInCart}

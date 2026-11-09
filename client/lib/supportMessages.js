@@ -74,7 +74,8 @@ export function createSupportMessage(id,{
   });
   const recipientHelp=secureLinks.recipientHelp||generatedRecipientHelp;
   const sign='\n\n*Com carinho,*\n🌹 *Equipe do Mini Mercado*\n*XX EJC Simonésia* 💛';
-  const refs=orderLines?'\n\n📋 *Referência das cartinhas:*\n'+orderLines:'';
+  const refs=humanOrders.length?'\n\n🔐 *Conferência dos pedidos pela equipe:*\n'+
+    (secureLinks.admin||'Referências disponíveis no painel da coordenação.') :'';
   const noNewPix='\n\n💛 *Se você já pagou, não precisa fazer outro Pix.*';
   const template=SUPPORT_MESSAGE_TEMPLATES.find(item=>item.id===id);
   if(!template)throw new Error('Modelo de mensagem desconhecido.');

@@ -488,14 +488,14 @@ async function checkoutBuyer(req, env) {
 }
 async function checkoutInfo(env,checkout,access) {
   const rows=(await env.DB.prepare(
-    'SELECT o.id,o.status,o.sender_name,o.rich_html,o.checkout_item_index,r.name AS recipient_name,r.slug AS recipient_slug FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.checkout_id=? ORDER BY o.checkout_item_index'
+    'SELECT o.id,o.status,o.sender_name,o.rich_html,o.submitted_at,o.checkout_item_index,r.name AS recipient_name,r.slug AS recipient_slug FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.checkout_id=? ORDER BY o.checkout_item_index'
   ).bind(checkout.id).all()).results;
   return {
     id:checkout.id,status:checkout.status,amount_cents:checkout.total_cents,
     txid:checkout.txid,pix_code:checkout.pix_payload,created_at:checkout.created_at,
     claimed_at:checkout.claimed_at,confirmed_at:checkout.confirmed_at,
     items:await Promise.all(rows.map(async row=>({
-      id:row.id,status:row.status,recipient_name:row.recipient_name,
+      id:row.id,status:row.status,submitted:!!row.submitted_at,recipient_name:row.recipient_name,
        sender_name:row.sender_name,has_draft:!!excerpt(row.rich_html),
       recipient_slug:row.recipient_slug,token:await digest(access+':item:'+row.checkout_item_index)
     })))

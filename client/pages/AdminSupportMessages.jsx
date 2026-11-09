@@ -174,21 +174,19 @@ export default function AdminSupportMessages({ info }) {
           createSecureSupportContext({...base,purpose:'send',ids:[]})
         ]);
         if(!active)return;
-        const c=new URL(help.link).searchParams.get('c');
+        const c=help.context_token;
         const append=(path)=>{
           const u=new URL(path,window.location.origin);u.searchParams.set('c',c);
           return u.toString();
         };
         const bySlug={};
-        for(const address of send.send_urls||[]){
-          const parsed=new URL(address);
-          const slug=parsed.pathname.split('/').pop();
-          bySlug[slug]=address;
-        }
+        selectedRecipients.forEach((slug,index)=>{
+          if(send.send_urls?.[index])bySlug[slug]=send.send_urls[index];
+        });
         setSecureLinks({
           scope:selectionScope,
           help:help.link,recipientHelp:help.link,
-          home:append('/'),open:append('/abrir'),
+          home:help.home_url,open:help.open_url,
           sendBySlug:bySlug,admin:help.admin_url,letters:help.admin_letters_url
         });
       }catch(cause){if(active)setSecureError(cause.message);}
@@ -313,8 +311,11 @@ export default function AdminSupportMessages({ info }) {
           campaign:'recuperacao_cartinha',content:'rascunho_pago',stage:'retomar_edicao'
         });
         const link=new URL(response.resume_url);
-        link.search='?c='+encodeURIComponent(new URL(context.link).searchParams.get('c'));
-        created.push({name:letter.recipient_name,url:link.toString()});
+        link.search='?c='+encodeURIComponent(context.context_token);
+        const short=await api('/api/admin/links/shorten',{
+          method:'POST',data:{url:link.toString(),kind:'draft'}
+        });
+        created.push({name:letter.recipient_name,url:short.url});
       }
       setResumeUrl(created.length===1?created[0].url:
         created.map(item=>'• '+item.name+': '+item.url).join('\n'));
@@ -588,7 +589,7 @@ export default function AdminSupportMessages({ info }) {
               <textarea id="support-resume-link" rows={selectedOrderIds.length>1?4:2}
                 autoComplete="off" spellCheck={false} value={resumeUrl}
                 onChange={event=>setResumeUrl(event.target.value)}
-                placeholder="https://ejc.migos.club/pedido/…?c=…" />
+                placeholder="https://ejc.migos.club/s/…"/>
               <button type="button" className="btn outline" disabled={generatingResume}
                 onClick={createResumeLinks}>
                 {generatingResume?'Preparando links e arte…':'💌 Gerar automaticamente link(s) e OG com os nomes'}

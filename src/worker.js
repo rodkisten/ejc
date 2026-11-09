@@ -1961,8 +1961,11 @@ export default {
       if (path==='/ajuda/terminei-a-cartinha'||path==='/ajuda/terminei-a-cartinha/') {
         if(request.method!=='GET'&&request.method!=='HEAD')
           return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
+        const agent=request.headers.get('User-Agent')||'';
+        const navigation=request.headers.get('Sec-Fetch-Mode')==='navigate'||
+          request.headers.get('Sec-Fetch-Dest')==='document';
         const bot=/whatsapp|facebookexternalhit|facebot|twitterbot|telegrambot|slackbot|discordbot|linkedinbot|pinterest/i
-          .test(request.headers.get('User-Agent')||'');
+          .test(agent) && !navigation;
         if(bot){
           const base=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
           const og=base+'/og-ajuda-cartinhas.png?v=20261109b';

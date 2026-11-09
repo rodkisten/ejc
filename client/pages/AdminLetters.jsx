@@ -4,6 +4,7 @@ import { CheckCheck, Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, S
 import { api, track } from '../lib/api';
 import { readyLetterWhatsAppMessage } from '../lib/helpLink.js';
 import { publishDraftOg } from '../lib/draftOg.js';
+import { createSecureSupportContext } from '../lib/secureSupport.js';
 import { whatsappShareUrl, normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp.js';
 import { supportContactParams, supportContactAdminUrl } from '../lib/supportContactUrl.js';
 import { validContactName, createSupportMessage } from '../lib/supportMessages.js';
@@ -92,6 +93,7 @@ function ResumeDraftLink({ letter }) {
       recipients: [{ name:letter.recipient_name, slug:letter.recipient_slug }],
       orders: [{ id:letter.id, recipient_name:letter.recipient_name }],
       resumeUrl: recovery.resume_url, origin: window.location.origin,
+      secureLinks:{help:recovery.help_url},
     })
     : '';
 
@@ -111,12 +113,19 @@ function ResumeDraftLink({ letter }) {
       } catch (cause) {
         ogWarning='O link funciona, mas a prévia personalizada não pôde ser gerada: '+cause.message;
       }
+      const common={
+        name:contactName||response.sender_name,phone:contactPhone,
+        ids:[letter.id],recipientSlugs:[letter.recipient_slug],
+        stage:'retomar_rascunho',source:'whatsapp',medium:'mensagem',
+        campaign:'recuperacao_cartinha',content:'rascunho_pago'
+      };
+      const [help,send]=await Promise.all([
+        createSecureSupportContext({...common,purpose:'support'}),
+        createSecureSupportContext({...common,purpose:'send'})
+      ]);
       const tracked=new URL(response.resume_url);
-      tracked.searchParams.set('utm_source','whatsapp');
-      tracked.searchParams.set('utm_medium','mensagem');
-      tracked.searchParams.set('utm_campaign','recuperacao_cartinha');
-      tracked.searchParams.set('utm_content','rascunho_pago');
-      setRecovery({...response,resume_url:tracked.toString()});
+      tracked.search='?c='+encodeURIComponent(new URL(send.link).searchParams.get('c'));
+      setRecovery({...response,resume_url:tracked.toString(),help_url:help.link});
       if(ogWarning)setError(ogWarning);
     } catch (cause) {
       setError(cause.message || 'Não foi possível criar o link.');

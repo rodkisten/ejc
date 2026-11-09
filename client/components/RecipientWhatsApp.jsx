@@ -3,6 +3,7 @@ import { Check, Copy, ExternalLink, ImagePlus, MessageCircle, Phone, RefreshCw }
 import { api, track } from '../lib/api';
 import { publishMuralOgImage } from '../lib/og';
 import { muralInvitationMessage, whatsappShareUrl } from '../lib/recipientWhatsApp';
+import { recipientSupportLink } from '../lib/helpLink.js';
 import MiniMercadoCampaign from './MiniMercadoCampaign';
 import { CAMPAIGN_KEY, renderCampaignWhatsApp } from '../../shared/ejcCampaign.js';
 import '../styles/recipient-whatsapp.css';
@@ -86,6 +87,11 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
         message=renderCampaignWhatsApp(campaign.campaign.whatsapp,{
           name:details.name,url:inviteUrl,count:Math.max(0,details.count-1),
         });
+        message += '\n\n🆘 *Precisa de ajuda com suas cartinhas?*\n'+recipientSupportLink({
+          name:details.name,origin:new URL(inviteUrl).origin,source:'whatsapp',
+          medium:'mensagem',campaign:'pos_encontro',
+          content:'suporte_encontrista',stage:'convite_campanha',
+        })+'\n_É só abrir e contar para a equipe o que aconteceu._';
       }else{
         message=muralInvitationMessage({name:details.name,url:inviteUrl,count:details.count});
       }

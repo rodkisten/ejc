@@ -697,14 +697,17 @@ async function publicRoute(req,env,path) {
       const unfinished=!o.submitted_at;
       const empty=unfinished || (!excerpt(o.rich_html) && !o.has_ready_media);
       if(!empty)return {id:o.id,submitted_at:o.submitted_at};
-      // Never disclose an anonymous sender even when a name was entered.
-      let anonymous=false;
-      try { anonymous=normalizeComposition(JSON.parse(o.composition_json||'{}')).anonymous; }
-      catch { anonymous=true; }
+      // Use only the publicly chosen signature, never override an alias with
+      // the real sender name. Anonymous letters expose no sender identity.
+      let signature='';
+      try {
+        const design=normalizeComposition(JSON.parse(o.composition_json||'{}'));
+        if(!design.anonymous)signature=(design.authorName||o.sender_name||'').trim();
+      } catch { /* Invalid legacy composition: keep the sender anonymous. */ }
       return {
         id:o.id,submitted_at:o.submitted_at,
         ...(unfinished?{draft_pending:true}:{empty_content:true}),
-        sender_name:anonymous?'':(o.sender_name||'').trim(),
+        sender_name:signature,
       };
     });
     return result({recipient:{name:person.name,slug:person.slug,photo_url:person.active?recipientPhotoUrl(person):null},

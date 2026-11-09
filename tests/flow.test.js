@@ -1913,8 +1913,14 @@ test('suporte criptografado recupera nome telefone IDs e UTMs só no admin',asyn
   assert.equal(wa.searchParams.get('phone'),'5532999662604');
   const msg=wa.searchParams.get('text');
   assert.match(msg,/Maria da Costa/);
-  assert.match(msg,/https:\/\/ejc\.test\/admin\/cartinhas\?c=ec1_/);
-  assert.match(msg,/https:\/\/ejc\.test\/admin\/mensagens\?c=ec1_/);
+  const messageLinks=[...msg.matchAll(/https:\/\/ejc\.test\/s\/[A-Za-z0-9_-]{14}/g)].map(match=>match[0]);
+  assert.equal(messageLinks.length,2,'both admin inspection and replies are short');
+  const first=await worker.fetch(new Request(messageLinks[0]),env);
+  assert.equal(first.status,302);
+  assert.match(first.headers.get('Location'),/\/admin\/cartinhas\?c=ec1_/);
+  const second=await worker.fetch(new Request(messageLinks[1]),env);
+  assert.equal(second.status,302);
+  assert.match(second.headers.get('Location'),/\/admin\/mensagens\?c=ec1_/);
   assert.ok(!msg.includes(id),'no raw order IDs in prefilled WhatsApp URL');
   assert.ok(!msg.includes('5533999546031'),'contact number remains inside encrypted context');
   assert.ok(!wa.searchParams.has('utm_campaign'));

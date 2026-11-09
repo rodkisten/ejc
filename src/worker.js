@@ -59,13 +59,15 @@ async function settings(env) {
   return Object.fromEntries(rows.results.map(({key,value})=>[key,value]));
 }
 function editable(config, order=null) {
-  // A temporary, signed recovery link can finish an existing paid draft
-  // even when the general deadline for new messages has passed.
+  // The original private bearer token may complete an existing, already paid
+  // and unsubmitted draft after the general deadline. New drafts remain closed.
+  // A recovery grant is narrower: it expires as soon as submission succeeds.
   if (order?.recovery_access) {
     if (!activeOrder(order) || order.submitted_at)
       bad('Este link de continuação não pode mais editar a cartinha.',403);
     return;
   }
+  if (order && activeOrder(order) && !order.submitted_at) return;
   if (Date.now() >= brazilTimeEnd(config.deadline))
     bad('O prazo para editar as homenagens terminou.',403);
 }
@@ -2192,7 +2194,7 @@ export default {
           '━━━━━━━━━━━━━━━━━━━━',
           '💛 *Mini Mercado · XX EJC Simonésia*'
         ];
-        const whats=new URL('https://wa.me/5533999546031');
+        const whats=new URL('https://wa.me/5532999662604');
         whats.searchParams.set('text',details.join('\n'));
         for(const [key,backup] of Object.entries({
           utm_source:source,utm_medium:medium,utm_campaign:campaign,
@@ -2265,7 +2267,7 @@ export default {
             'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'
           ).bind(new Date().toISOString().slice(0,10),campaign).run();
         }catch(error){console.warn('Help-link count unavailable',error?.message);}
-        const whats=new URL('https://wa.me/5533999546031');
+        const whats=new URL('https://wa.me/5532999662604');
         const clean=(value,max=100)=>String(value||'').replace(/[\r\n<>]/g,' ').trim().slice(0,max);
         const sender=clean(url.searchParams.get('remetente'));
         if(!sender||/^(?:remetente(?: não informado)?|sem nome|an[oô]nimo|uma pessoa especial)$/i.test(sender))

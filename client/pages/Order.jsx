@@ -18,17 +18,14 @@ import { api, btime, money, privateOrder, uploadMedia, track } from '../lib/api'
 import { draftGet, draftSet, draftKey } from '../lib/drafts';
 import { cartDraftKey } from '../lib/cart';
 import { rememberPrivateOrder } from '../lib/unfinishedLetters.js';
-import { completedLetterHelpLink } from '../lib/helpLink.js';
-import RichEditor from '../components/RichEditor';
-import Recorder from '../components/Recorder';
-import VoicePlayer from '../components/VoicePlayer';
 import QrCode from '../components/QrCode';
 import CheckoutSupport from '../components/CheckoutSupport';
 import { useApp } from '../main';
 import { LetterCard } from '../components/LetterCard';
-import LetterControls from '../components/letter/LetterControls';
 import InstagramExportPanel from '../components/social/InstagramExportPanel';
 import { useLetterComposer } from '../hooks/useLetterComposer';
+import LetterComposerFields from '../components/LetterComposerFields';
+import { completedLetterWhatsAppHref } from '../lib/helpLink';
 function sameDraft(a, b) {
   return a === b;
 }
@@ -50,6 +47,8 @@ export default function Order() {
   const startedTracking=useRef(false);
   const [receiptEmail, setReceiptEmail] = useState('');
   const [receiptBusy,setReceiptBusy] = useState(false);
+  const [completion,setCompletion] = useState(null);
+  const [preview,setPreview] = useState(true);
   const reload = useCallback(async () => {
     try {
       const o = await api('/api/order', { token });
@@ -69,6 +68,7 @@ export default function Order() {
     setSaved(false);
     setError('');
     setProgress('');
+    setCompletion(null);
     setHtml('');
     setSender('');
     setAssets((previous) => {
@@ -109,7 +109,7 @@ export default function Order() {
       .catch(() => {});
   }, [order?.status, token]);
   const paid = order && ['paid', 'preparing', 'delivered'].includes(order.status),
-    ended = !order?.resume_access && order?.deadline &&
+    ended = !order?.resume_access && !(paid && !order?.submitted) && order?.deadline &&
       Date.now() >= new Date(`${order.deadline}:00-03:00`).getTime();
   const add = (file, kind) => {
     if(!file)return;
@@ -143,6 +143,7 @@ export default function Order() {
   async function save(withSubmit = false) {
     setBusy(true);
     setError('');
+    setCompletion(null);
     try {
       await api('/api/order/message', {
         method: 'PUT',
@@ -177,13 +178,13 @@ export default function Order() {
         track('letter_submitted',{stage:paid?'paid':'pending'});
       }
       await reload();
-      setProgress(withSubmit ? 'Cartinha enviada! Ela ficará no mural privado após o horário de liberação.' : 'Alterações confirmadas e salvas!');
-      if (!withSubmit && !paid && order.checkout_id) {
-        const checkoutToken = localStorage.getItem('ejc-checkout-' + order.checkout_id);
-        if (checkoutToken) navigate('/checkout/' + checkoutToken, {
-          state: { notice: 'Alterações de ' + order.recipient_name + ' confirmadas! O mesmo Pix continua válido.' }
-        });
-      }
+      setProgress('');
+      setCompletion({
+        type: withSubmit ? 'submitted' : 'saved',
+        sender: sender || order.sender_name || '',
+        items: [{ id: order.id, recipient_name: order.recipient_name }],
+      });
+      // Do not navigate automatically: the sender should see the explicit confirmation.
     } catch (e) {
       setError(e.message);
     } finally {
@@ -364,7 +365,9 @@ export default function Order() {
                 'Seu Pix já foi gerado. Edite, salve e confirme suas alterações agora, mesmo antes de pagar'}
               {' '}{order.resume_access
                 ? 'Este link privado de continuação permite terminar o rascunho pago.'
-                : ended ? 'O prazo de edição terminou.' : `até ${btime(order.deadline)}.`}
+                : paid && !order.submitted
+                  ? 'Seu rascunho pago pode ser finalizado com este link privado, mesmo após o prazo geral.'
+                  : ended ? 'O prazo de edição terminou.' : `até ${btime(order.deadline)}.`}
               {!paid && <span> O envio ao mural será liberado após a conferência bancária.</span>}
             </div>
             {order.checkout_id && localStorage.getItem('ejc-checkout-' + order.checkout_id) && (
@@ -372,151 +375,99 @@ export default function Order() {
                 <ArrowRight size={16} /> Voltar para o Pix deste pedido
               </Link>
             )}
-            <div className="form-card">
-              <label htmlFor="checkout-letter-sender">Quem assina esta cartinha? (opcional)</label>
-              <input id="checkout-letter-sender" type="text" autoComplete="name" maxLength={100}
-                disabled={ended} value={sender} onChange={(event) => {
-                  setSender(event.target.value);
-                  setComposition(previous => ({ ...previous, authorName: '' }));
-                }} />
-              <p className="muted small">O remetente pode ser alterado sem gerar outro Pix.</p>
+            <div className="step-label">SUA CARTINHA / {order.submitted ? 'HOMENAGEM ENVIADA' : 'EDITANDO RASCUNHO'}</div>
+            <div className="send-recipient">
+              {recipient?.photo_url ? <img src={recipient.photo_url} alt={'Foto de ' + order.recipient_name} /> :
+                <span className="recipient-initial">{order.recipient_name?.[0]}</span>}
+              <span>Para <strong>{order.recipient_name}</strong></span>
             </div>
-            <div className="form-card">
-              <div className="row between">
-                <h2>Escreva sua cartinha</h2>
-                <span className="micro-label">formatação livre</span>
-              </div>
-              <RichEditor
-                key={saved ? 'loaded' : 'initial'}
-                value={html}
-                onChange={(value)=>{setHtml(value);if(!startedTracking.current&&value?.trim()){
-                  startedTracking.current=true;track('letter_first_edit',{stage:paid?'paid':'pending'});}}}
-                disabled={ended}
-              />
-            </div>
-            <div className="form-card">
-              <h2>Áudios</h2>
-              {!ended && <Recorder onAdd={(f) => add(f, 'audio')} />}
-              <div className="asset-list">
-                {(order.media || [])
-                  .filter((m) => m.kind === 'audio')
-                  .map((m) => (
-                    <div className="asset-row" key={m.id}>
-                      <VoicePlayer src={m.url} title={m.filename} compact />
-                      <button
-                        className="icon-button danger"
-                        type="button"
-                        title="Excluir áudio"
-                        disabled={ended}
-                        onClick={async () => {
-                          try {
-                            await api(`/api/order/media/${m.id}/delete`, { method: 'DELETE', token });
-                            await reload();
-                          } catch (e) {
-                            setError(e.message);
-                          }
-                        }}
-                      >
-                        <Trash2 size={17} />
-                      </button>
-                    </div>
-                  ))}
-                {assets
-                  .filter((a) => a.kind === 'audio')
-                  .map((a) => (
-                    <div className="asset-row" key={a.url}>
-                      <VoicePlayer src={a.url} title="Novo áudio" />
-                      <button className="icon-button danger" onClick={() => discard(assets.indexOf(a))}>
-                        <Trash2 size={17} />
-                      </button>
-                    </div>
-                  ))}
-              </div>
-            </div>
-            <div className="form-card">
-              <h2>Fotos</h2>
-              {!ended && (
-                <label className="upload-label">
-                  <ImagePlus size={20} /> Adicionar fotos
-                  <input
-                    type="file"
-                    accept="image/*,.heic,.heif"
-                    multiple
-                    onChange={(e) => {
-                      [...e.target.files].forEach((f) => add(f, 'image'));
-                      e.target.value = '';
-                    }}
-                  />
-                </label>
-              )}
-              <div className="photos-grid">
-                {(order.media || [])
-                  .filter((m) => m.kind === 'image')
-                  .map((m) => (
-                    <div className="photo-item" key={m.id}>
-                      <img src={m.url} alt="Foto enviada" />
-                      {!ended && (
-                        <button
-                          onClick={async () => {
-                            try {
-                              await api(`/api/order/media/${m.id}/delete`, { method: 'DELETE', token });
-                              await reload();
-                            } catch (e) {
-                              setError(e.message);
-                            }
-                          }}
-                        >
-                          <Trash2 size={17} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                {assets
-                  .filter((a) => a.kind === 'image')
-                  .map((a) => (
-                    <div className="photo-item" key={a.url}>
-                      <img src={a.url} alt="Foto selecionada" />
-                      <button onClick={() => discard(assets.indexOf(a))}>
-                        <Trash2 size={17} />
-                      </button>
-                    </div>
-                  ))}
-              </div>
-            </div>
-            {!ended && <LetterControls composition={composition} onChange={setComposition} senderName={sender} />}
+            <h1>Uma cartinha para <em>{order.recipient_name}.</em></h1>
+            <p className="muted">Escreva, decore e escolha suas fotos ou áudios, do mesmo jeitinho de quando criou a cartinha.</p>
+            <LetterComposerFields
+              sender={sender}
+              onSenderChange={value => { setSender(value); setCompletion(null); }}
+              html={html}
+              onHtmlChange={value => {
+                setHtml(value);
+                setCompletion(null);
+                if (!startedTracking.current && value?.trim()) {
+                  startedTracking.current = true;
+                  track('letter_first_edit', { stage: paid ? 'paid' : 'pending' });
+                }
+              }}
+              composition={composition}
+              onCompositionChange={setComposition}
+              assets={assets}
+              onAddAsset={add}
+              onRemoveAsset={asset => discard(assets.indexOf(asset))}
+              existingMedia={order.media || []}
+              onRemoveExistingMedia={async asset => {
+                try {
+                  await api('/api/order/media/' + asset.id + '/delete', { method: 'DELETE', token });
+                  setCompletion(null);
+                  await reload();
+                } catch (cause) {
+                  setError(cause.message);
+                }
+              }}
+              disabled={ended}
+              showPrivacyNotice={false}
+            />
             <div className="notice">
               <LockKeyhole size={18} />
               Sua cartinha é privada: não aparece em uma galeria pública nem passa por leitura ou escuta da coordenação.
               O painel da equipe acompanha o pagamento e a situação do envio, além do nome do remetente e dos stickers escolhidos.
             </div>
-            {error && <div className="notice error">{error}</div>}
-            {progress && <div className="notice success">{progress}</div>}
-            <div className="inline-actions spaced">
-              <button className={paid ? 'btn outline' : 'btn'} disabled={busy || ended} onClick={() => save(false)}>
+            {error && <div className="notice error" role="alert">{error}</div>}
+            {progress && <div className="notice success" role="status">{progress}</div>}
+            {completion && <div className="ejc-letter-completion" role="status" aria-live="polite">
+              <div className="ejc-letter-completion-icon"><CheckCircle2 size={31} /></div>
+              <span className="eyebrow">TUDO CERTO! 💌</span>
+              <h2>{completion.type === 'submitted' ? 'Sua cartinha foi enviada com sucesso!' : 'Seu rascunho foi salvo com sucesso!'}</h2>
+              <p>{completion.type === 'submitted'
+                ? 'Prontinho! A cartinha de ' + order.recipient_name + ' foi recebida pelo sistema e está pronta para o mural privado.'
+                : 'As alterações da cartinha para ' + order.recipient_name + ' foram registradas. Você poderá finalizar o envio quando estiver liberado.'}</p>
+              <p className="ejc-letter-completion-reference">
+                <strong>{order.recipient_name}</strong> · referência <code>{order.id}</code>
+              </p>
+              <p>Se desejar, avise a equipe do Mini Mercado pelo WhatsApp. A mensagem já traz o nome e o ID do encontrista. <strong>É opcional.</strong></p>
+              <a className="btn ejc-letter-completion-whatsapp" href={completedLetterWhatsAppHref({
+                sender: completion.sender, items: completion.items, submitted: completion.type === 'submitted'
+              })} target="_blank" rel="noopener noreferrer"
+                onClick={() => track('help_link_clicked', { stage: 'letter_' + completion.type })}>
+                <Share2 size={18} /> Avisar a equipe pelo WhatsApp (opcional)
+              </a>
+            </div>}
+            <div className="inline-actions spaced cart-composer-actions">
+              <button className="btn ghost" type="button" onClick={() => setPreview(value => !value)}>
+                {preview ? 'Ocultar prévia' : 'Ver minha cartinha'}
+              </button>
+              <button className="btn outline" type="button" disabled={busy || ended} onClick={() => save(false)}>
                 <Save size={17} /> {busy ? 'Salvando...' : paid ? 'Salvar rascunho' : 'Confirmar alterações'}
               </button>
-              {paid && <button className="btn" disabled={busy || ended} onClick={() => save(true)}>
-                <Send size={17} /> {busy ? 'Enviando...' : 'Enviar ao mural privado'}
+              {paid && <button className="btn" type="button" disabled={busy || ended} onClick={() => save(true)}>
+                <Send size={17} /> {busy ? 'Enviando...' : order.submitted ? 'Atualizar envio' : 'Finalizar e enviar cartinha'}
               </button>}
             </div>
-            <div className="notice success">
+            {!completion && <div className="notice success">
               {order.submitted
                 ? 'Cartinha enviada. Somente quem tiver acesso privado ao mural poderá vê-la, após a liberação.'
                 : paid ? 'Sua cartinha ainda é um rascunho. Você pode revisar antes de enviar.' :
                   'As alterações salvas ficarão disponíveis para qualquer pessoa com este link privado, inclusive em outro aparelho.'}
-            </div>
-            {order.submitted && <div className="notice success">
-              <strong>💌 Terminou sua cartinha? Avise nossa equipe!</strong>
-              <p>Confirme o recebimento e descubra o próximo passo. O link leva só o nome e o ID para suporte, nunca o conteúdo ou o acesso privado.</p>
-              <a className="btn" href={completedLetterHelpLink({
-                origin:window.location.origin,sender:sender||order.sender_name,
-                items:[{id:order.id,recipient_name:order.recipient_name}]
-              })} target="_blank" rel="noopener noreferrer"
-                onClick={()=>track('help_link_clicked',{stage:'letter_submitted'})}>
-                📲 Avisar que terminei minha cartinha
+            </div>}
+            {order.submitted && !completion && <div className="notice success">
+              <strong>💌 Sua cartinha já foi enviada!</strong>
+              <p>Se desejar, avise a equipe usando apenas o ID e o nome do encontrista.</p>
+              <a className="btn outline" href={completedLetterWhatsAppHref({
+                sender: sender || order.sender_name,
+                items: [{ id: order.id, recipient_name: order.recipient_name }],
+                submitted: true
+              })} target="_blank" rel="noopener noreferrer">
+                <Share2 size={17} /> Avisar a equipe (opcional)
               </a>
             </div>}
-            <h2 className="spaced">Prévia da cartinha</h2>
+            {preview && <div className="preview-popup letter-reveal">
+              <h2 className="spaced">Prévia da cartinha</h2>
             <LetterCard
               actions={false}
               editable={!ended}
@@ -534,6 +485,7 @@ export default function Order() {
               letter={{ ...order, sender_name: sender, rich_html: html, composition, media: [...(order.media || []), ...assets] }}
               recipient={order.recipient_name}
             />
+            </div>}
           </div>
           <aside className="compose-side">
             <div className="form-card">

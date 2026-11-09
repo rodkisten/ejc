@@ -1,3 +1,36 @@
+import { SUPPORT_WHATSAPP } from './checkoutSupport.js';
+
+// This is built only when the sender explicitly chooses to contact the team.
+// IDs are operational references, never private editing tokens or mural grants.
+export function completedLetterWhatsAppHref({sender = '',items = [],submitted = true} = {}) {
+  const author=String(sender||'').replace(/[\r\n<>]/g,' ').trim().slice(0,100);
+  const names=items
+    .filter(item => /^EJC-[A-F0-9]{12}$/.test(String(item.id||'')))
+    .slice(0,20)
+    .map(item => ({
+      id:item.id,
+      name:String(item.recipient_name||'Encontrista').replace(/[\r\n<>]/g,' ').trim().slice(0,100)
+    }));
+  const lines=[
+    '💌 *XX EJC SIMONÉSIA · MINI MERCADO*',
+    '',
+    author ? 'Olá! Aqui é '+author+'.' : 'Olá, equipe do Mini Mercado!',
+    submitted
+      ? '✅ *Finalizei e enviei minha(s) cartinha(s) com sucesso!*'
+      : '📝 *Salvei as alterações do meu rascunho com sucesso.*',
+    submitted
+      ? 'Podem conferir o registro do envio no sistema, por favor?'
+      : 'O envio final ainda não foi feito. Gostaria de avisar que o rascunho está salvo.',
+    '',
+    '*Encontrista(s) e ID(s) de referência:*',
+    ...(names.length ? names.map((item,index) =>
+      (index+1)+'. *'+item.name+'* · '+item.id) : ['Não informado']),
+    '',
+    '💜 Obrigado pelo carinho! '
+  ];
+  return 'https://wa.me/'+SUPPORT_WHATSAPP+'?text='+encodeURIComponent(lines.join('\n'));
+}
+
 // Only public operational identifiers are included. Never put a private link/token in query parameters.
 export function completedLetterHelpLink({sender='',items=[],origin='https://ejc.migos.club',campaign='recuperacao_cartinhas'}={}){
   const url=new URL('/ajuda/terminei-a-cartinha',origin);

@@ -7,6 +7,7 @@ import { isSquareRecipientJpeg } from './photo.js';
 import { normalizeComposition, STICKERS_BY_ID, plainLetter } from '../shared/letter.js';
 import { draftOgCaption, draftOgTitle, draftOgIds } from '../shared/draftOg.js';
 import { CAMPAIGN_KEY, CAMPAIGN_SENDER, DEFAULT_CAMPAIGN, letterMarkdownToHtml } from '../shared/ejcCampaign.js';
+import { setWhatsAppText } from '../shared/whatsappText.js';
 import { enqueue, enableReceipt, disableReceipt, confirmReceipt, markRead, queueRelease, dispatch, validateEmail, emailsReady } from './notify.js';
 
 const PART_SIZE = 8 * 1024 * 1024;
@@ -719,7 +720,7 @@ async function encryptedSupportLink(req,env,url,finished=false){
     '🌹 *Mini Mercado · XX EJC Simonésia*'
   ];
   const whatsapp=new URL('https://wa.me/' + SUPPORT_WHATSAPP);
-  whatsapp.searchParams.set('text',lines.join('\n'));
+  setWhatsAppText(whatsapp,lines.join('\n'));
   return new Response(req.method==='HEAD'?null:null,{status:302,headers:{
     Location:whatsapp.toString(),'Cache-Control':'no-store',
     'Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow, noarchive'
@@ -2396,7 +2397,7 @@ export default {
           '💛 *Mini Mercado · XX EJC Simonésia*'
         ];
         const whats=new URL('https://wa.me/' + SUPPORT_WHATSAPP);
-        whats.searchParams.set('text',details.join('\n'));
+        setWhatsAppText(whats,details.join('\n'));
         for(const [key,backup] of Object.entries({
           utm_source:source,utm_medium:medium,utm_campaign:campaign,
           utm_content:content
@@ -2495,7 +2496,7 @@ export default {
           'Gostaria de confirmar o recebimento e saber qual é o próximo passo.',
           ...(letters.length?['','*Cartinhas para conferência:*',...letters]:[])
         ].join('\n');
-        whats.searchParams.set('text',message);
+        setWhatsAppText(whats,message);
         for(const [key,backup] of Object.entries({
           utm_source:'whatsapp',utm_medium:'mensagem',utm_campaign:'recuperacao_cartinhas'
         })) whats.searchParams.set(key,clean(url.searchParams.get(key)||backup,70).replace(/[^a-z0-9_-]/gi,''));

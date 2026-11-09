@@ -1,4 +1,5 @@
 import { SUPPORT_WHATSAPP } from './checkoutSupport.js';
+import { whatsappMessageUrl } from '../../shared/whatsappText.js';
 
 // This is built only when the sender explicitly chooses to contact the team.
 // IDs are operational references, never private editing tokens or mural grants.
@@ -28,7 +29,7 @@ export function completedLetterWhatsAppHref({sender = '',items = [],submitted = 
     '',
     '💜 Obrigado pelo carinho! '
   ];
-  return 'https://wa.me/'+SUPPORT_WHATSAPP+'?text='+encodeURIComponent(lines.join('\n'));
+  return whatsappMessageUrl({ phone: SUPPORT_WHATSAPP, message: lines.join('\n') });
 }
 
 // Only public operational identifiers are included. Never put a private link/token in query parameters.

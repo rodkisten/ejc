@@ -1,3 +1,5 @@
+import { whatsappMessageUrl } from '../../shared/whatsappText.js';
+
 // WhatsApp formatting uses *bold*, _italics_ and a plain URL.
 export function normalizeBrazilianWhatsApp(value) {
   const digits=String(value||'').replace(/\D/g,'');
@@ -42,5 +44,5 @@ export function muralInvitationMessage({ name, url, count=1, ids=[], supportUrl=
 export function whatsappShareUrl({phone,message}) {
   const normalized=normalizeBrazilianWhatsApp(phone);
   if(!normalized)throw new Error('WhatsApp inválido. Cadastre o número com DDD.');
-  return 'https://wa.me/'+normalized+'?text='+encodeURIComponent(message);
+  return whatsappMessageUrl({ phone: normalized, message });
 }

@@ -6,6 +6,7 @@ import { readAdminListFilters, updateAdminListFilter, isReadyForSending,
   matchesSupportOrder } from '../lib/adminListFilters.js';
 import { normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp';
 import { navigateToWhatsApp } from '../lib/whatsappNavigation.js';
+import { normalizeWhatsAppText, whatsappMessageUrl } from '../../shared/whatsappText.js';
 import { supportContactParams } from '../lib/supportContactUrl.js';
 import { createSecureSupportContext } from '../lib/secureSupport.js';
 import { publishDraftOg } from '../lib/draftOg.js';
@@ -213,9 +214,9 @@ export default function AdminSupportMessages({ info }) {
         contactName, recipientNames:names, recipients:people, orders:selectedOrders,
         origin:validOrigin, resumeUrl, secureLinks:links
       };
-      return customSource
+      return normalizeWhatsAppText(customSource
         ? renderCustomSupportTemplate(customSource, context)
-        : createSupportMessage(template, { ...context, preview:true });
+        : createSupportMessage(template, { ...context, preview:true }));
     } catch (cause) {
       return 'Não foi possível gerar o modelo. Escolha outro ou restaure o original.';
     }
@@ -231,7 +232,7 @@ export default function AdminSupportMessages({ info }) {
 
   function beginCustomization() {
     try {
-      setTemplateDraft(customSource || customSupportTemplateSeed(template));
+      setTemplateDraft(normalizeWhatsAppText(customSource || customSupportTemplateSeed(template)));
       setCustomizing(true);
       setError('');
     } catch (cause) { setError(cause.message); }
@@ -239,7 +240,7 @@ export default function AdminSupportMessages({ info }) {
   async function saveTemplate() {
     setSavingTemplate(true);
     try {
-      const clean = validateCustomSupportTemplate(templateDraft);
+      const clean = validateCustomSupportTemplate(normalizeWhatsAppText(templateDraft));
       const next = { ...customTemplates, [template]: clean };
       await api('/api/admin/support-templates', { method:'PUT', data:{ templates:next } });
       try { saveCustomSupportTemplates(window.localStorage, next); } catch { /* Cache optional. */ }
@@ -340,7 +341,7 @@ export default function AdminSupportMessages({ info }) {
     try {
       // Clipboard needs the user gesture, particularly on iPhone Safari.
       // Publish the image only after successfully capturing the copied text.
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(normalizeWhatsAppText(text));
       setNotice('✅ Mensagem copiada com a formatação do WhatsApp!');
       try {
         const generated=await ensurePersonalizedDraftOg();
@@ -352,7 +353,7 @@ export default function AdminSupportMessages({ info }) {
       }
       track('admin_support_template_copied', { stage: template });
     } catch {
-      window.prompt('Copie a mensagem:', text);
+      window.prompt('Copie a mensagem:', normalizeWhatsAppText(text));
     }
   }
   function openWhatsApp() {
@@ -363,9 +364,7 @@ export default function AdminSupportMessages({ info }) {
       setError('Informe um WhatsApp válido com DDD ou deixe vazio para escolher a conversa.');
       return;
     }
-    const url = number
-      ? 'https://wa.me/' + number + '?text=' + encodeURIComponent(text)
-      : 'https://api.whatsapp.com/send?text=' + encodeURIComponent(text);
+    const url = whatsappMessageUrl({ phone: number, message: text });
     // Same-tab navigation avoids leaving an orphan tab after the native app opens.
     navigateToWhatsApp(url);
     setError('');
@@ -649,7 +648,7 @@ export default function AdminSupportMessages({ info }) {
             {notice && <p className="notice success" role="status">{notice}</p>}
             <details className="support-preview-details" open>
               <summary>Prévia com negrito e itálico</summary>
-              {text.trim() ? <WhatsAppTextPreview value={text} /> :
+              {text.trim() ? <WhatsAppTextPreview value={normalizeWhatsAppText(text)} /> :
                 <p className="support-message-preview">Escreva a mensagem para visualizar a prévia.</p>}
             </details>
             <p className="muted small">O WhatsApp abre para revisão. <strong>O sistema não envia automaticamente.</strong> Confira o destinatário e toque em Enviar no aplicativo.</p>

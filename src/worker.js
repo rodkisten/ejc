@@ -719,7 +719,8 @@ async function encryptedSupportLink(req,env,url,finished=false){
     '━━━━━━━━━━━━━━━━━━━━',
     '🌹 *Mini Mercado · XX EJC Simonésia*'
   ];
-  const whatsapp=new URL('https://wa.me/' + SUPPORT_WHATSAPP);
+  const whatsapp=new URL('https://api.whatsapp.com/send');
+  whatsapp.searchParams.set('phone',SUPPORT_WHATSAPP);
   setWhatsAppText(whatsapp,lines.join('\n'));
   return new Response(req.method==='HEAD'?null:null,{status:302,headers:{
     Location:whatsapp.toString(),'Cache-Control':'no-store',
@@ -2396,7 +2397,8 @@ export default {
           '━━━━━━━━━━━━━━━━━━━━',
           '💛 *Mini Mercado · XX EJC Simonésia*'
         ];
-        const whats=new URL('https://wa.me/' + SUPPORT_WHATSAPP);
+        const whats=new URL('https://api.whatsapp.com/send');
+        whats.searchParams.set('phone',SUPPORT_WHATSAPP);
         setWhatsAppText(whats,details.join('\n'));
         for(const [key,backup] of Object.entries({
           utm_source:source,utm_medium:medium,utm_campaign:campaign,
@@ -2479,7 +2481,8 @@ export default {
             'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'
           ).bind(new Date().toISOString().slice(0,10),campaign).run();
         }catch(error){console.warn('Help-link count unavailable',error?.message);}
-        const whats=new URL('https://wa.me/' + SUPPORT_WHATSAPP);
+        const whats=new URL('https://api.whatsapp.com/send');
+        whats.searchParams.set('phone',SUPPORT_WHATSAPP);
         const clean=(value,max=100)=>String(value||'').replace(/[\r\n<>]/g,' ').trim().slice(0,max);
         const sender=clean(url.searchParams.get('remetente'));
         if(!sender||/^(?:remetente(?: não informado)?|sem nome|an[oô]nimo|uma pessoa especial)$/i.test(sender))

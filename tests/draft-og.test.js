@@ -9,7 +9,7 @@ test('texto da OG usa nomes reais no singular e plural, sem Fulano',()=>{
   assert.equal(draftOgCaption(['Maria Eduarda','João Pedro']),
     'Vamos finalizar e deixar Maria Eduarda e João Pedro felizes?');
   assert.equal(draftOgCaption(['Maria','João','Ana']),
-    'Vamos finalizar e deixar Maria, João e mais 1 encontristas felizes?');
+    'Vamos finalizar e deixar Maria, João e mais 1 encontrista felizes?');
   assert.deepEqual(draftOgNames(['  Maria  Eduarda ','Maria Eduarda','João']),['Maria Eduarda','João']);
   assert.deepEqual(draftOgIds(['EJC-123456789ABC','EJC-123456789ABC','invalid']),
     ['EJC-123456789ABC']);

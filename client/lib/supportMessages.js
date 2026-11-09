@@ -40,7 +40,7 @@ export function confirmedOrders(orders) {
 
 export function createSupportMessage(id,{
   contactName='',recipientNames=[],recipients=[],orders=[],
-  origin='https://ejc.migos.club',resumeUrl=''
+  origin='https://ejc.migos.club',resumeUrl='',secureLinks={}
 }={}) {
   const name=validContactName(contactName)?String(contactName).trim():'';
   const first=name.split(/\s+/)[0]||'';
@@ -53,24 +53,26 @@ export function createSupportMessage(id,{
   const orderIds=humanOrders.map(order=>order.id);
   const orderLines=humanOrders.map(order=>
     '• '+order.id+' · '+(order.recipient_name||people)).join('\n');
-  const help=completedLetterHelpLink({
+  const generatedHelp=completedLetterHelpLink({
     sender:name,origin,campaign:'suporte_cartinhas',
     items:humanOrders.map(order=>({
       id:order.id,recipient_name:order.recipient_name||names[0]||''
     }))
   });
-  const home=trackedUrl(origin,'/','inicio');
-  const open=trackedUrl(origin,'/abrir','abrir_mural');
+  const help=secureLinks.help||generatedHelp;
+  const home=secureLinks.home||trackedUrl(origin,'/','inicio');
+  const open=secureLinks.open||trackedUrl(origin,'/abrir','abrir_mural');
   const sendLinks=(recipients||[]).filter(recipient=>recipient.slug).map(recipient=>
-    '• *'+recipient.name+':* '+trackedUrl(origin,
-      '/enviar/'+encodeURIComponent(recipient.slug),'enviar_cartinha')
+    '• *'+recipient.name+':* '+(secureLinks.sendBySlug?.[recipient.slug]||trackedUrl(origin,
+      '/enviar/'+encodeURIComponent(recipient.slug),'enviar_cartinha'))
   );
   const howToSend=(sendLinks.length?sendLinks.join('\n'):home);
-  const recipientHelp=recipientSupportLink({
+  const generatedRecipientHelp=recipientSupportLink({
     name:names[0]||'',ids:orderIds,origin,
     source:'whatsapp',medium:'mensagem',campaign:'suporte_cartinhas',
     content:'ajuda_encontrista',stage:'orientacoes'
   });
+  const recipientHelp=secureLinks.recipientHelp||generatedRecipientHelp;
   const sign='\n\n*Com carinho,*\n🌹 *Equipe do Mini Mercado*\n*XX EJC Simonésia* 💛';
   const refs=orderLines?'\n\n📋 *Referência das cartinhas:*\n'+orderLines:'';
   const noNewPix='\n\n💛 *Se você já pagou, não precisa fazer outro Pix.*';

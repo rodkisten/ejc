@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Check, ClipboardCopy, ExternalLink, LifeBuoy, MessageCircle, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { ClipboardCopy, ExternalLink, MessageCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { api, track } from '../lib/api';
 import { normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp';
 import {

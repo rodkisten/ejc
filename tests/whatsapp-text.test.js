@@ -17,7 +17,7 @@ test('emojis, accents, formatting and multi-line messages survive exactly one UR
 });
 
 test('legacy Unicode escapes, HTML emoji entities, mojibake and percent escapes become real emoji', () => {
-  const input = String.raw('\uD83D\uDC8C \u{1F339} \U0001F49B &#x1F48C; &#129395; %F0%9F%92%8C ðŸ’Œ');
+  const input = '\\uD83D\\uDC8C \\u{1F339} \\U0001F49B &#x1F48C; &#129395; %F0%9F%92%8C ðŸ’Œ';
   const message = normalizeWhatsAppText(input);
   assert.equal(message, '💌 🌹 💛 💌 🥳 💌 💌');
   const href = whatsappMessageUrl({ message });
@@ -49,7 +49,15 @@ test('completed-letter and checkout links decode into readable Unicode', () => {
 });
 
 test('malformed or solitary emoji escape sequences do not crash message building', () => {
-  assert.equal(normalizeWhatsAppText(String.raw('\uD83D')), String.raw('\uD83D'));
+  assert.equal(normalizeWhatsAppText('\\uD83D'), '\\uD83D');
   assert.equal(normalizeWhatsAppText('%F0%9F'), '%F0%9F');
   assert.equal(normalizeWhatsAppText('texto normal'), 'texto normal');
+});
+
+test('double-encoded and legacy percent-u emoji are repaired without changing other URL data', () => {
+  const fixed = normalizeWhatsAppText('%25F0%259F%2592%258C %uD83D%uDC8C');
+  assert.equal(fixed, '💌 💌');
+  const output = whatsappMessageUrl({ phone: '5532999662604', message: fixed });
+  assert.equal(new URL(output).searchParams.get('text'), fixed);
+  assert.doesNotMatch(output, /%25F0%259F/);
 });

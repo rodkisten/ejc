@@ -7,7 +7,7 @@ import { LetterCard } from './LetterCard';
 // No media URL or letter body is available via the standard admin list.
 // Each technical preview requires a valid admin cookie plus the *separate*
 // strong technical password, submitted only in POST bodies.
-export default function TechnicalLetterPreview({ orderId, password, allowFinalize = false, onFinalized }) {
+export default function TechnicalLetterPreview({ orderId, password, adminSession = false, allowFinalize = false, onFinalized }) {
   const [letter, setLetter] = useState(null);
   const [finishing, setFinishing] = useState(false);
   const [success, setSuccess] = useState('');
@@ -23,14 +23,16 @@ export default function TechnicalLetterPreview({ orderId, password, allowFinaliz
       setError('');
       setLetter(null);
       try {
-        const base = '/api/admin/technical-preview/' + encodeURIComponent(orderId);
-        async function post(url) {
+        const base = adminSession
+          ? '/api/admin/cartinhas/' + encodeURIComponent(orderId) + '/preview'
+          : '/api/admin/technical-preview/' + encodeURIComponent(orderId);
+        async function fetchPrivate(url) {
           const response = await fetch(url, {
-            method: 'POST',
+            method: adminSession ? 'GET' : 'POST',
             credentials: 'same-origin',
             cache: 'no-store',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password }),
+            headers: adminSession ? undefined : { 'Content-Type': 'application/json' },
+            body: adminSession ? undefined : JSON.stringify({ password }),
           });
           if (!response.ok) {
             const body = await response.json().catch(() => ({}));
@@ -38,10 +40,10 @@ export default function TechnicalLetterPreview({ orderId, password, allowFinaliz
           }
           return response;
         }
-        const details = await (await post(base)).json();
+        const details = await (await fetchPrivate(base)).json();
         const media = [];
         for (const file of details.media || []) {
-          const response = await post(base + '/media/' + encodeURIComponent(file.id));
+          const response = await fetchPrivate(base + '/media/' + encodeURIComponent(file.id));
           const blob = await response.blob();
           const url = URL.createObjectURL(blob);
           created.push(url);
@@ -59,16 +61,19 @@ export default function TechnicalLetterPreview({ orderId, password, allowFinaliz
       cancelled = true;
       created.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [orderId, password]);
+  }, [orderId, password, adminSession]);
 
   async function finalizeAfterReview() {
     if(!letter || finishing || letter.submitted) return;
     if(!window.confirm('Você conferiu o conteúdo completo desta cartinha e deseja ENVIÁ-LA ao mural privado?\n\nA cartinha precisa estar paga e ter mensagem ou mídia salva. O acesso ao mural continuará obedecendo ao horário de liberação.'))return;
     setFinishing(true);setError('');setSuccess('');
     try {
-      await api('/api/admin/technical-preview/'+encodeURIComponent(orderId)+'/finalize',{
-        method:'POST',data:{password},
-      });
+      await api(
+        adminSession
+          ? '/api/admin/cartinhas/'+encodeURIComponent(orderId)+'/finalize'
+          : '/api/admin/technical-preview/'+encodeURIComponent(orderId)+'/finalize',
+        { method:'POST', data:adminSession?{}:{password} },
+      );
       setLetter(previous=>({...previous,submitted:true}));
       setSuccess('Cartinha revisada e enviada ao mural privado. ✅');
       await onFinalized?.();
@@ -80,8 +85,8 @@ export default function TechnicalLetterPreview({ orderId, password, allowFinaliz
     <section className="technical-letter-preview" aria-label="Visualização técnica privativa">
       <div className="notice warning">
         <LockKeyhole size={18} />
-        <span><strong>Prévia exclusivamente técnica.</strong> Conteúdo completo apenas nesta sessão,
-          sem modificar pagamento, privacidade, publicação ou mensagens.</span>
+        <span><strong>{adminSession ? 'Conferência administrativa autenticada.' : 'Prévia exclusivamente técnica.'}</strong>
+          {' '}Conteúdo completo apenas nesta sessão, sem modificar pagamento, privacidade, publicação ou mensagens.</span>
       </div>
       {busy && <p className="muted" role="status"><RefreshCw size={16} /> Carregando cartinha completa…</p>}
       {error && <p className="notice error" role="alert">{error}</p>}

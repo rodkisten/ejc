@@ -1962,6 +1962,116 @@ export default {
   async fetch(request,env,ctx) {
     try {
       const url=new URL(request.url), path=url.pathname;
+      // Public short support route. WhatsApp previews receive OG HTML; real visitors
+      // receive a ready-to-send message. No mural token is ever accepted or copied.
+      if(path==='/ajuda/minha-cartinha'||path==='/ajuda/minha-cartinha/'){
+        if(request.method!=='GET'&&request.method!=='HEAD')
+          return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
+        const ua=request.headers.get('User-Agent')||'';
+        const navigate=request.headers.get('Sec-Fetch-Mode')==='navigate'||
+          request.headers.get('Sec-Fetch-Dest')==='document';
+        const bot=/whatsapp|facebookexternalhit|facebot|twitterbot|telegrambot|slackbot|discordbot|linkedinbot|pinterest/i
+          .test(ua)&&!navigate;
+        if(bot){
+          const base=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
+          const image=await env.MEDIA.head('og/help-recipient-v1.png');
+          const version=image?.uploaded?.getTime()||'fallback';
+          const og=base+'/og-ajuda-minha-cartinha.png?v='+encodeURIComponent(version);
+          const title='Me ajude com a minha cartinha! | Cartinhas Virtuais';
+          const description='Suporte do Mini Mercado · XX EJC Simonésia. Estamos aqui para ajudar você!';
+          const properties={
+            'og:type':'website','og:locale':'pt_BR',
+            'og:site_name':'Cartinhas Virtuais · Mini Mercado XX EJC Simonésia',
+            'og:title':title,'og:description':description,
+            'og:url':base+'/ajuda/minha-cartinha',
+            'og:image':og,'og:image:secure_url':og,
+            'og:image:type':'image/png','og:image:width':'1200','og:image:height':'630',
+            'og:image:alt':'Me ajude com a minha cartinha. Mini Mercado XX EJC Simonésia.'
+          };
+          const meta=Object.entries(properties).map(([key,value])=>
+            '<meta property="'+escapeMeta(key)+'" content="'+escapeMeta(value)+'" />').join('');
+          const html='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'+
+            '<meta name="robots" content="noindex, nofollow">'+
+            '<title>'+escapeMeta(title)+'</title>'+
+            '<meta name="description" content="'+escapeMeta(description)+'" />'+meta+
+            '<meta name="twitter:card" content="summary_large_image" />'+
+            '<meta name="twitter:title" content="'+escapeMeta(title)+'" />'+
+            '<meta name="twitter:image" content="'+escapeMeta(og)+'" />'+
+            '</head><body><p>Mini Mercado · XX EJC Simonésia</p></body></html>';
+          return new Response(request.method==='HEAD'?null:html,{headers:{
+            'Content-Type':'text/html; charset=utf-8','Cache-Control':'public, max-age=60',
+            'Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'
+          }});
+        }
+        const clean=(value,max=100)=>String(value||'').replace(/[\\r\\n<>]/g,' ').trim().slice(0,max);
+        const campaign=clean(url.searchParams.get('utm_campaign')||'suporte_encontrista',60)
+          .replace(/[^a-z0-9_-]/gi,'')||'suporte_encontrista';
+        if(request.method==='GET')try{
+          await env.DB.prepare(
+            'INSERT INTO help_link_counts(day,campaign,clicks) VALUES(?,?,1) '+
+            'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'
+          ).bind(new Date().toISOString().slice(0,10),'suporte:'+campaign).run();
+        }catch(error){console.warn('Support count unavailable',error?.message);}
+        const name=clean(url.searchParams.get('encontrista'))||'encontrista';
+        const ids=url.searchParams.getAll('id').filter(id=>/^EJC-[A-F0-9]{12}$/.test(id))
+          .slice(0,20);
+        const origin=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
+        const stage=clean(url.searchParams.get('etapa')||'convite',50);
+        const source=clean(url.searchParams.get('utm_source')||'whatsapp',70);
+        const medium=clean(url.searchParams.get('utm_medium')||'mensagem',70);
+        const content=clean(url.searchParams.get('utm_content')||'suporte_encontrista',70);
+        const browser=clean(url.searchParams.get('navegador')||ua,260);
+        const viewport=clean(url.searchParams.get('tela')||'Não informado',30);
+        const lang=clean(url.searchParams.get('idioma')||
+          request.headers.get('Accept-Language')||'Não informado',40);
+        const connection=clean(url.searchParams.get('conexao')||'Não informado',20);
+        const time=clean(url.searchParams.get('horario')||
+          new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}),45);
+        const details=[
+          '💌 *SUPORTE · CARTINHAS VIRTUAIS · XX EJC SIMONÉSIA*','',
+          'Olá, eu sou o(a) encontrista *'+name+'* e estou precisando de ajuda com minha cartinha. 🙏','',
+          '📋 *Dados para a equipe*',
+          '*Encontrista:* '+name,
+          '*Cartinha(s):* '+(ids.length?ids.join(', '):'Não informado'),
+          ...(ids.length?['*Acessos administrativos:*',
+            ...ids.map(id=>origin+'/admin/pedidos/'+id)]:[]),
+          '*Etapa:* '+stage,
+          '*Origem:* '+source+' / '+medium,
+          '*Campanha:* '+campaign,
+          '*Referência:* '+content,
+          '*Navegador:* '+browser,
+          '*Idioma:* '+lang,
+          '*Tela:* '+viewport,
+          '*Conexão:* '+connection,
+          '*Horário:* '+time,'',
+          '━━━━━━━━━━━━━━━━━━━━',
+          '✍️ *O que está acontecendo?*',
+          '_Conte aqui o que aconteceu, qual mensagem apareceu e em que etapa precisou de ajuda._','',
+          '━━━━━━━━━━━━━━━━━━━━',
+          '💛 *Mini Mercado · XX EJC Simonésia*'
+        ];
+        const whats=new URL('https://wa.me/5533999546031');
+        whats.searchParams.set('text',details.join('\\n'));
+        for(const [key,backup] of Object.entries({
+          utm_source:source,utm_medium:medium,utm_campaign:campaign,
+          utm_content:content
+        }))whats.searchParams.set(key,
+          String(backup).replace(/[^a-z0-9_-]/gi,'').slice(0,70));
+        return new Response(null,{status:302,headers:{
+          Location:whats.toString(),'Cache-Control':'no-store',
+          'Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow, noarchive'
+        }});
+      }
+      if(path==='/og-ajuda-minha-cartinha.png'&&
+         (request.method==='GET'||request.method==='HEAD')){
+        const image=await env.MEDIA.get('og/help-recipient-v1.png')||
+          await env.MEDIA.get('og/help-finished-v1.png');
+        if(image)return new Response(request.method==='HEAD'?null:image.body,{headers:{
+          'Content-Type':'image/png','Content-Length':String(image.size),
+          'Cache-Control':'public, max-age=3600','X-Content-Type-Options':'nosniff'
+        }});
+        return env.ASSETS.fetch(new Request(new URL('/og-ejc-default.png',url.origin),request));
+      }
       // Link-sharing crawlers need HTML for the WhatsApp OG preview.
       if (path==='/ajuda/terminei-a-cartinha'||path==='/ajuda/terminei-a-cartinha/') {
         if(request.method!=='GET'&&request.method!=='HEAD')

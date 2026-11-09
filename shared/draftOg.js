@@ -9,10 +9,11 @@ export function draftOgNames(names=[]){
 export function draftOgCaption(names=[]){
   const people=draftOgNames(names);
   if(!people.length)return 'Vamos finalizar e fazer alguém feliz?';
-  const first=people.map(name=>name.split(' ')[0]);
-  if(first.length===1)return 'Vamos deixar '+first[0]+' feliz?';
-  if(first.length===2)return 'Vamos deixar '+first[0]+' e '+first[1]+' felizes?';
-  return 'Vamos deixar '+first[0]+', '+first[1]+' e mais '+(first.length-2)+' encontristas felizes?';
+  if(people.length===1)return 'Vamos finalizar e deixar '+people[0]+' feliz?';
+  if(people.length===2)return 'Vamos finalizar e deixar '+people[0]+' e '+people[1]+' felizes?';
+  const plural=people.length-2;
+  return 'Vamos finalizar e deixar '+people[0]+', '+people[1]+
+    ' e mais '+plural+' encontristas felizes?';
 }
 export function draftOgTitle(names=[]){
   return 'Termine sua cartinha 💌 | '+draftOgCaption(names);

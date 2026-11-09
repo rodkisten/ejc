@@ -530,7 +530,7 @@ async function draftOgDetails(env,rows,origin){
     'og:title':title,'og:description':description,'og:url':origin+'/ajuda/terminar-cartinha',
     'og:image':image,'og:image:secure_url':image,'og:image:type':'image/png',
     'og:image:width':object?'1200':'600','og:image:height':object?'630':'315',
-    'og:image:alt':'Termine sua cartinha. '+draftOgCaption(people)
+    'og:image:alt':'Finalize sua cartinha. '+draftOgCaption(people)
   };
   const tags=Object.entries(meta).map(([key,value])=>
     '<meta property="'+escapeMeta(key)+'" content="'+escapeMeta(value)+'" />').join('');

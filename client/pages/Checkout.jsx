@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, Clock3, Copy, LockKeyhole, Pencil, RefreshCw } from 'lucide-react';
 import { api, money, track, uploadMedia } from '../lib/api';
@@ -15,6 +15,7 @@ export default function Checkout() {
   const location = useLocation();
   const { config } = useApp();
   const [order, setOrder] = useState(null);
+  const lastTrackedStatus = useRef(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(location.state?.notice || '');
   const [error, setError] = useState('');
@@ -25,7 +26,11 @@ export default function Checkout() {
     try {
       const data = await api('/api/checkout', { token });
       setOrder(data);
-      track('checkout_view',{stage:data.status,letters:data.items?.length||0});
+      if(lastTrackedStatus.current!==data.status){
+        track(lastTrackedStatus.current===null?'checkout_view':'checkout_status_changed',
+          {stage:data.status,letters:data.items?.length||0});
+        lastTrackedStatus.current=data.status;
+      }
       localStorage.setItem('ejc-checkout-' + data.id, token);
       if (!localCheckouts().some((entry) => entry.id === data.id)) {
         rememberCheckout({ id: data.id, token, itemIds: [], created_at: data.created_at });

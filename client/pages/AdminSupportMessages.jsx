@@ -59,6 +59,9 @@ export default function AdminSupportMessages({ info }) {
   const [secureLinks,setSecureLinks] = useState(null);
   const [secureBusy,setSecureBusy] = useState(false);
   const [secureError,setSecureError] = useState('');
+  const selectionScope = JSON.stringify([
+    contactName, contactWhatsApp, selectedRecipients, selectedOrderIds, template
+  ]);
   const [customTemplates, setCustomTemplates] = useState(() =>
     loadCustomSupportTemplates(typeof window === 'undefined' ? null : window.localStorage));
   const [customizing, setCustomizing] = useState(false);
@@ -131,7 +134,8 @@ export default function AdminSupportMessages({ info }) {
   const invalidConfirm = templateInfo?.requiresSubmitted && !readyToConfirm;
   const invalidEmpty = template === 'rascunho_vazio' && !emptyDraftsSelected;
   const blocked = invalidConfirm || invalidEmpty;
-  const canSend = !blocked && !!text.trim() && !secureBusy && !!secureLinks &&
+  const canSend = !blocked && !!text.trim() && !secureBusy &&
+    secureLinks?.scope === selectionScope &&
     !text.includes('🔐 Link protegido em preparação');
   useEffect(()=>{
     let active=true;
@@ -164,6 +168,7 @@ export default function AdminSupportMessages({ info }) {
           bySlug[slug]=address;
         }
         setSecureLinks({
+          scope:selectionScope,
           help:help.link,recipientHelp:help.link,
           home:append('/'),open:append('/abrir'),
           sendBySlug:bySlug,admin:help.admin_url,letters:help.admin_letters_url
@@ -182,7 +187,7 @@ export default function AdminSupportMessages({ info }) {
     // available. Until the API supplies safe URLs, links are displayed as placeholders
     // that can never be sent to WhatsApp.
     const pending = '🔐 Link protegido em preparação';
-    const links = secureLinks || {
+    const links = (secureLinks?.scope === selectionScope ? secureLinks : null) || {
       help:pending,recipientHelp:pending,home:pending,open:pending,
       sendBySlug:Object.fromEntries(people.map(person => [person.slug,pending]))
     };
@@ -203,6 +208,9 @@ export default function AdminSupportMessages({ info }) {
   useEffect(() => {
     if (!edited) setText(generated);
   }, [generated, edited]);
+  // Changes to contact identity or linked orders must regenerate encrypted URLs.
+  // A manual edit from the previous contact must never be reused with another.
+  useEffect(() => { setEdited(false); }, [selectionScope, resumeUrl]);
 
   function beginCustomization() {
     try {

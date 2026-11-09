@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Heart, ArrowLeft, Instagram, ShieldCheck, ShoppingBag } from 'lucide-react';
 import { CartProvider, useCart } from './lib/cart';
-import { shouldShowOpenMuralButton } from './lib/muralNavigation';
+import { shouldShowOpenMuralButton, shouldShowCartButton, shouldShowBackButton } from './lib/muralNavigation';
 import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
 
@@ -56,9 +56,9 @@ function Shell({children}) {
   const choose = accepted => { const value=accepted?'yes':'no';localStorage.setItem('ejc-consent',value);setConsent(value);if(accepted)enableAnalytics(config?.analytics_id); };
   return <div className="app-shell">
     <header className="site-header"><div className="container header-inner">
-      {path !== '/' ? <button className="icon-button" aria-label="Voltar" onClick={()=>navigate(-1)}><ArrowLeft size={20}/></button> : <Heart size={23} className="header-heart"/>}
+      {shouldShowBackButton(path) ? <button className="icon-button" aria-label="Voltar" onClick={()=>navigate(-1)}><ArrowLeft size={20}/></button> : path === '/' ? <Heart size={23} className="header-heart"/> : null}
       <Link to="/" className="brand">cartinhas<span className="brand-spark">💌</span><small>XX EJC · SIMONÉSIA</small></Link>
-      <div className="header-actions">{shouldShowOpenMuralButton(path) && <Link to="/abrir" className="header-link">Abrir meu mural</Link>}<Link to="/carrinho" className="header-cart" aria-label={"Meu carrinho com " + cart.items.length + " cartinhas"}><ShoppingBag size={19}/><span>Carrinho</span>{cart.items.length>0&&<b>{cart.items.length}</b>}</Link></div>
+      <div className="header-actions">{shouldShowOpenMuralButton(path) && <Link to="/abrir" className="header-link">Abrir meu mural</Link>}{shouldShowCartButton(path) && <Link to="/carrinho" className="header-cart" aria-label={"Meu carrinho com " + cart.items.length + " cartinhas"}><ShoppingBag size={19}/><span>Carrinho</span>{cart.items.length>0&&<b>{cart.items.length}</b>}</Link>}</div>
     </div></header>
     <main className="container page">{children}</main>
     <footer className="container site-footer"><span>XX EJC Simonésia · 2026</span><span>Feito com amor pela <strong>equipe do Mini Mercado</strong> e arquitetado por Rodolfo Costa</span><Link to="/privacidade">Privacidade e segurança</Link></footer>

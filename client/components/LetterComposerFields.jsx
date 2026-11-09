@@ -25,6 +25,7 @@ export default function LetterComposerFields({
   onRemoveExistingMedia,
   disabled = false,
   readReceiptSlot = null,
+  showPrivacyNotice = true,
 }) {
   const photos = assets.filter(asset => asset.kind === 'image');
   const audios = assets.filter(asset => asset.kind === 'audio');
@@ -101,10 +102,10 @@ export default function LetterComposerFields({
 
       {readReceiptSlot}
 
-      <div className="notice">
+      {showPrivacyNotice && <div className="notice">
         <LockKeyhole size={18} />
         <span>Apenas quem tem o código pessoal do mural poderá ler. A coordenação pode ver o nome do remetente e os stickers, mas nunca o texto, fotos ou áudios.</span>
-      </div>
+      </div>}
     </>
   );
 }

@@ -1,16 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowRight, ImagePlus, Trash2, LockKeyhole, Info, ShoppingBag, Share2, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, Info, ShoppingBag, Share2, CheckCircle2 } from 'lucide-react';
 import { useApp } from '../main';
 import { money, track } from '../lib/api';
 import { draftGet, draftSet, draftRemove, draftKey } from '../lib/drafts';
 import { useCart, cartDraftKey, checkoutForDraft } from '../lib/cart';
-import RichEditor from '../components/RichEditor';
-import Recorder from '../components/Recorder';
-import VoicePlayer from '../components/VoicePlayer';
 import { LetterCard } from '../components/LetterCard';
-import LetterControls from '../components/letter/LetterControls';
 import { useLetterComposer } from '../hooks/useLetterComposer';
+import LetterComposerFields from '../components/LetterComposerFields';
 
 export default function Send() {
   const { slug } = useParams();
@@ -70,8 +67,6 @@ export default function Send() {
     if (a.url) URL.revokeObjectURL(a.url);
   }), []);
 
-  const photos = assets.filter((a) => a.kind === 'image');
-  const audios = assets.filter((a) => a.kind === 'audio');
   const letter = useMemo(() => ({
     rich_html: html, sender_name: sender, composition,
     media: assets.map((asset, index) => ({
@@ -162,73 +157,33 @@ export default function Send() {
         </div>
         <p className="muted">Escreva, decore e escolha suas fotos ou áudios. Você pode fazer uma cartinha diferente para cada pessoa ou duplicar a mesma no carrinho.</p>
 
-        <section className="form-card">
-          <label htmlFor="sender">Quem assina esta cartinha? <span className="muted">(opcional)</span></label>
-          <input id="sender" autoComplete="name" value={sender}
-            onChange={(event) => {
-              setSender(event.target.value.slice(0,100));
-              setComposition(previous => ({...previous,authorName:''}));
-            }}
-            placeholder="Seu nome, sua família, seus amigos..." />
-          <p className="muted small">O remetente é independente em cada cartinha. Você pode mudar ao duplicar.</p>
-        </section>
+        <LetterComposerFields
+          sender={sender}
+          onSenderChange={setSender}
+          html={html}
+          onHtmlChange={value => {
+            setHtml(value);
+            if (!firstEdit.current && value?.trim()) {
+              firstEdit.current = true;
+              track('letter_first_edit', { stage: 'composer' });
+            }
+          }}
+          composition={composition}
+          onCompositionChange={setComposition}
+          assets={assets}
+          onAddAsset={add}
+          onRemoveAsset={asset => remove(assets.indexOf(asset))}
+          readReceiptSlot={config?.read_emails_enabled && <section className="form-card email-read-field">
+            <label><input type="checkbox" checked={notifyOnRead}
+              onChange={event => setNotifyOnRead(event.target.checked)} />
+              Quero receber um e-mail quando esta cartinha for aberta (opcional)
+            </label>
+            {notifyOnRead && <input type="email" inputMode="email" autoComplete="email"
+              value={receiptEmail} placeholder="seuemail@exemplo.com"
+              onChange={event => setReceiptEmail(event.target.value.slice(0, 254))} />}
+          </section>}
+        />
 
-        <section className="form-card">
-          <h2>01. Suas palavras ✍️</h2>
-          <RichEditor value={html} onChange={(value)=>{setHtml(value);
-            if(!firstEdit.current&&value?.trim()){firstEdit.current=true;track('letter_first_edit',{stage:'composer'});}
-          }} />
-        </section>
-
-        <section className="form-card">
-          <h2>02. Sua voz 🎙️</h2>
-          <p className="muted small">Grave e regrave, quantas vezes precisar.</p>
-          <Recorder onAdd={(file) => add(file, 'audio')} />
-          {!!audios.length && <div className="asset-list">
-            {audios.map((asset) => <div className="asset-row" key={asset.url}>
-              <VoicePlayer src={asset.url} title={asset.file.name} compact />
-              <button className="icon-button danger" type="button" aria-label="Remover áudio"
-                onClick={() => remove(assets.indexOf(asset))}><Trash2 size={17} /></button>
-            </div>)}
-          </div>}
-        </section>
-
-        <section className="form-card">
-          <h2>03. Suas fotos 📸</h2>
-          <label className="upload-label">
-            <ImagePlus size={20} /> Adicionar fotos
-            <input type="file" multiple accept="image/*,.heic,.heif"
-              onChange={(event) => {
-                [...event.target.files].forEach((file) => add(file, 'image'));
-                event.target.value = '';
-                track('photo_selected');
-              }} />
-          </label>
-          {!!photos.length && <div className="photos-grid">
-            {photos.map((asset) => <div className="photo-item" key={asset.url}>
-              <img src={asset.url} alt="Prévia de foto" />
-              <button type="button" aria-label="Excluir foto"
-                onClick={() => remove(assets.indexOf(asset))}><Trash2 size={17} /></button>
-            </div>)}
-          </div>}
-        </section>
-
-        <LetterControls composition={composition} onChange={setComposition} senderName={sender} />
-
-        {config?.read_emails_enabled && <section className="form-card email-read-field">
-          <label><input type="checkbox" checked={notifyOnRead}
-            onChange={(event) => setNotifyOnRead(event.target.checked)} />
-            Quero receber um e-mail quando esta cartinha for aberta (opcional)
-          </label>
-          {notifyOnRead && <input type="email" inputMode="email" autoComplete="email"
-            value={receiptEmail} placeholder="seuemail@exemplo.com"
-            onChange={(event) => setReceiptEmail(event.target.value.slice(0, 254))} />}
-        </section>}
-
-        <div className="notice">
-          <LockKeyhole size={18} />
-          <span>Apenas quem tem o código pessoal do mural poderá ler. A coordenação pode ver o nome do remetente e os stickers, mas nunca o texto, fotos ou áudios.</span>
-        </div>
         <div className="notice"><Info size={17} />
           <span>Os rascunhos com fotos e áudios ficam neste navegador até serem enviados após o pagamento. Não limpe os dados do Safari ou troque de aparelho.</span>
         </div>

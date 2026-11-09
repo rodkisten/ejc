@@ -15,7 +15,18 @@ const ctx={
     {id:'EJC-123456789ABC',recipient_name:'Maria Eduarda',status:'paid',submitted:false},
     {id:'EJC-123456789ABD',recipient_name:'João Pedro',status:'paid',submitted:false},
   ],
-  origin:'https://ejc.migos.club'
+  origin:'https://ejc.migos.club',
+  secureLinks:{
+    help:'https://ejc.migos.club/ajuda/terminei-a-cartinha?c=ec1_'+('A'.repeat(70)),
+    home:'https://ejc.migos.club/?c=ec1_'+('A'.repeat(70)),
+    open:'https://ejc.migos.club/abrir?c=ec1_'+('A'.repeat(70)),
+    sendBySlug:{
+      'maria-eduarda':'https://ejc.migos.club/enviar/maria-eduarda?c=ec1_'+('A'.repeat(70)),
+      'joao-pedro':'https://ejc.migos.club/enviar/joao-pedro?c=ec1_'+('A'.repeat(70)),
+    },
+    admin:'https://ejc.migos.club/admin/mensagens?c=ec1_'+('A'.repeat(70)),
+    recipientHelp:'https://ejc.migos.club/ajuda/minha-cartinha?c=ec1_'+('A'.repeat(70))
+  }
 };
 
 test('todos os modelos de atendimento são renderizáveis com nomes e links',()=>{
@@ -35,27 +46,22 @@ test('apology includes the exact two-day explanation, all recipients and names',
   assert.match(msg,/Maria Eduarda, João Pedro/);
   assert.match(msg,/apenas \*dois dias, com muito amor/);
   assert.match(msg,/mil desculpas/);
-  assert.match(msg,/utm_source=whatsapp/);
-  assert.match(msg,/id=EJC-123456789ABC/);
-  assert.match(msg,/id=EJC-123456789ABD/);
+  assert.match(msg,/\/ajuda\/terminei-a-cartinha\?c=ec1_/);
+  assert.doesNotMatch(msg,/utm_source=|id=EJC-|telefone=/);
 });
 
-test('mensagem de rascunho vazio identifica a pessoa, destinatários e pedidos',()=>{
+test('rascunho vazio inclui nomes, link privado, mas referencias somente no contexto cifrado',()=>{
   const msg=createSupportMessage('rascunho_vazio',{
     ...ctx,resumeUrl:'https://ejc.migos.club/pedido/PRIVATE-RESUME-TOKEN'
   });
   assert.match(msg,/Oi, Ana!/);
   assert.match(msg,/Maria Eduarda, João Pedro/);
-  assert.match(msg,/EJC-123456789ABC/);
-  assert.match(msg,/EJC-123456789ABD/);
   assert.match(msg,/link privado de continuação/);
   assert.match(msg,/PRIVATE-RESUME-TOKEN/);
-  const support=new URL(msg.match(/https:\/\/ejc\.migos\.club\/ajuda\/terminei-a-cartinha[^\s]+/)[0]);
-  assert.equal(support.searchParams.get('remetente'),'Ana Carolina');
-  assert.deepEqual(support.searchParams.getAll('para'),['Maria Eduarda','João Pedro']);
-  assert.equal(support.searchParams.get('utm_campaign'),'suporte_cartinhas');
-  assert.doesNotMatch(support.toString(),/PRIVATE-RESUME-TOKEN/);
+  assert.match(msg,/admin\/mensagens\?c=ec1_/);
+  assert.doesNotMatch(msg,/id=EJC-|utm_source=|telefone=/);
 });
+
 
 test('modelo de confirmação não permite afirmar recebimento sem pedido pago e enviado',()=>{
   const waiting={...ctx,orders:ctx.orders};
@@ -78,12 +84,12 @@ test('sem nome, exige identificação antes de gerar mensagens personalizadas',(
 
 test('o passo a passo separa o link de leitura do link de edição',()=>{
   const steps=createSupportMessage('passo_a_passo',ctx);
-  assert.match(steps,/\/enviar\/maria-eduarda\?/);
-  assert.match(steps,/\/enviar\/joao-pedro\?/);
-  assert.match(steps,/utm_content=enviar_cartinha/);
+  assert.match(steps,/\/enviar\/maria-eduarda\?c=ec1_/);
+  assert.match(steps,/\/enviar\/joao-pedro\?c=ec1_/);
+  assert.doesNotMatch(steps,/utm_content=/);
   assert.match(steps,/Finalizar envio/);
   const open=createSupportMessage('abrir_novamente',ctx);
-  assert.match(open,/\/abrir\?/);
+  assert.match(open,/\/abrir\?c=ec1_/);
   assert.match(open,/para o \*encontrista ler\*/);
   assert.match(open,/link privado de compra\/edição/);
 });

@@ -368,14 +368,18 @@ test('mural mostra recado para cartinhas pagas não terminadas sem revelar o ras
   const second=await call(env,'/api/orders','POST',{
     recipient_slug:recipient.slug,sender_name:'Uma pessoa que pediu anonimato',
   });
+  const alias=await call(env,'/api/orders','POST',{
+    recipient_slug:recipient.slug,sender_name:'Nome civil não público',
+  });
   const unpaid=await call(env,'/api/orders','POST',{
     recipient_slug:recipient.slug,sender_name:'Pix ainda pendente',
   });
   assert.equal(first.status,201);
   assert.equal(second.status,201);
+  assert.equal(alias.status,201);
   assert.equal(unpaid.status,201);
 
-  for(const entry of [first,second]) {
+  for(const entry of [first,second,alias]) {
     const confirmed=await call(env,'/api/admin/orders/'+entry.data.id+'/status','PATCH',{
       status:'paid',bank_reference:'E2ETEST'+entry.data.id,
       bank_checked:true,amount_checked:true,
@@ -387,6 +391,11 @@ test('mural mostra recado para cartinhas pagas não terminadas sem revelar o ras
     composition:{anonymous:true},
   },{token:second.data.token});
   assert.equal(draft.status,200);
+  const aliasDraft=await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Outro rascunho que ainda não foi finalizado.</p>',
+    composition:{authorName:'Sua dinda do coração',anonymous:false},
+  },{token:alias.data.token});
+  assert.equal(aliasDraft.status,200);
 
   await call(env,'/api/admin/mural-codes/generate','POST',{regenerate:false},admin);
   const code=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data
@@ -403,15 +412,18 @@ test('mural mostra recado para cartinhas pagas não terminadas sem revelar o ras
   assert.equal((await call(env,path,'GET')).status,403);
   const after=await call(env,path,'GET',undefined,{token:grant});
   assert.equal(after.status,200);
-  assert.equal(after.data.cards.length,2);
+  assert.equal(after.data.cards.length,3);
   assert.ok(!JSON.stringify(after.data).includes('SEGREDO QUE AINDA'));
   assert.ok(!JSON.stringify(after.data).includes('Pix ainda pendente'));
+  assert.ok(!JSON.stringify(after.data).includes('Nome civil não público'));
   const named=after.data.cards.find(item=>item.id===first.data.id);
   const anonymous=after.data.cards.find(item=>item.id===second.data.id);
+  const aliasLetter=after.data.cards.find(item=>item.id===alias.data.id);
   assert.equal(named.draft_pending,true);
   assert.equal(named.sender_name,'Tia Maria');
   assert.equal(anonymous.draft_pending,true);
   assert.equal(anonymous.sender_name,'');
+  assert.equal(aliasLetter.sender_name,'Sua dinda do coração');
   assert.equal('rich_html' in named,false);
   assert.equal('media' in named,false);
   assert.equal((await call(env,path+'/cards/'+first.data.id,'GET',undefined,{token:grant})).status,404);

@@ -1100,7 +1100,9 @@ async function adminRoute(req,env,path) {
       cards:rows.map(row=>({
         id:row.id,status:row.status,submitted:!!row.submitted_at,
         created_at:row.created_at,submitted_at:row.submitted_at,
-        visible_to_recipient:recipientVisible && !!row.submitted_at && activeOrder(row),
+        visible_to_recipient:recipientVisible && activeOrder(row),
+        draft_pending:activeOrder(row) && !row.submitted_at,
+        empty_content:!!row.submitted_at && !excerpt(row.rich_html) && !(byOrder.get(row.id)||[]).length,
         sender_name:row.sender_name || 'Uma pessoa especial',
         recipient_name:recipient.name,
         rich_html:row.rich_html || '',

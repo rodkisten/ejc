@@ -192,10 +192,8 @@ function ResumeDraftLink({ letter }) {
           </div>
         </div>
       )}
-      <Link className="btn outline" to={supportContactAdminUrl({
-        name:contactName,phone:contactPhone,recipients:[letter.recipient_slug],
-        orders:[letter.id],template:'rascunho_vazio'
-      })} state={{ support: {
+      <Link className="btn outline" to={supportContactAdminUrl({opaque:fromUrl.opaque})}
+        state={{ support: {
         template:'rascunho_vazio',recipient_slug:letter.recipient_slug,
         order_id:letter.id,contact_name:contactName,contact_phone:contactPhone,
         resume_url:recovery?.resume_url||''
@@ -579,11 +577,9 @@ export default function AdminLetters() {
                 <span className={'admin-letter-status ' + (paid(letter.status) ? 'is-paid' : 'is-pending')}>
                   {statusText(letter)}
                 </span>
-                <Link className="btn ghost" to={supportContactAdminUrl({
-                  name:validContactName(letter.sender_name)?letter.sender_name:'',
-                  recipients:[letter.recipient_slug],orders:[letter.id],
-                  template:letter.submitted?'recebida':!letter.has_content?'rascunho_vazio':'aguardando'
-                })} state={{support:{
+                <Link className="btn ghost"
+                  to={supportContactAdminUrl({opaque:encryptedContext})}
+                  state={{support:{
                   template:letter.submitted?'recebida':!letter.has_content?'rascunho_vazio':'aguardando',
                   recipient_slug:letter.recipient_slug, order_id:letter.id,
                   contact_name:validContactName(letter.sender_name)?letter.sender_name:''

@@ -575,8 +575,14 @@ function HelpOgArtwork(){
     <span className="eyebrow">PRÉVIA DO WHATSAPP / AJUDA</span>
     <h2>💌 OG das Cartinhas Virtuais</h2>
     <p>Arte do link <code>/ajuda/terminei-a-cartinha</code>. A prévia precisa ser PNG em 1200 × 630 pixels.</p>
-    <p className="muted small">📊 Acessos ao link curto: <strong>{stats.reduce((sum,row)=>sum+Number(row.clicks||0),0)}</strong>
-      {' '}({stats.length} campanha(s)/dia(s) nos registros recentes). Contagem anônima, sem IP ou conteúdo.</p>
+    <p className="muted small">📊 Acessos aos links de WhatsApp: <strong>{stats.reduce((sum,row)=>sum+Number(row.clicks||0),0)}</strong>.
+      {' '}Contagem anônima, sem IP ou conteúdo de cartinhas.</p>
+    {stats.length>0&&<div className="inline-actions">
+      {[...new Set(stats.map(row=>row.campaign))].map(campaign=>
+        <span className="status-pill" key={campaign}>{campaign.replaceAll('_',' ')}:
+          {' '}{stats.filter(row=>row.campaign===campaign).reduce((sum,row)=>sum+Number(row.clicks||0),0)}
+        </span>)}
+    </div>}
     {status?.ready?<p className="notice success">✅ Imagem publicada no R2. O WhatsApp receberá a prévia personalizada.</p>:
       <p className="notice warning">A arte ainda não foi publicada. A prévia padrão do EJC será usada até enviar o PNG.</p>}
     {status?.ready&&<img src={(status.url||'/og-ajuda-cartinhas.png')+'&refresh='+version}

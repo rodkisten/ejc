@@ -18,6 +18,7 @@ import { api, btime, money, privateOrder, uploadMedia, track } from '../lib/api'
 import { draftGet, draftSet, draftKey } from '../lib/drafts';
 import { cartDraftKey } from '../lib/cart';
 import { rememberPrivateOrder } from '../lib/unfinishedLetters.js';
+import { completedLetterHelpLink } from '../lib/helpLink.js';
 import RichEditor from '../components/RichEditor';
 import Recorder from '../components/Recorder';
 import VoicePlayer from '../components/VoicePlayer';
@@ -46,6 +47,7 @@ export default function Order() {
     [progress, setProgress] = useState('');
   const activeToken = useRef(token);
   activeToken.current = token;
+  const startedTracking=useRef(false);
   const [receiptEmail, setReceiptEmail] = useState('');
   const [receiptBusy,setReceiptBusy] = useState(false);
   const reload = useCallback(async () => {
@@ -78,6 +80,9 @@ export default function Order() {
     return () => clearInterval(t);
   }, [reload]);
   useEffect(() => {
+    if(order?.id)track('letter_editor_view',{stage:order.submitted?'submitted':'draft'});
+  },[order?.id]);
+  useEffect(() => {
     if (!order || saved) return;
     setHtml(order.rich_html || '');
     setSender(order.sender_name || '');
@@ -106,7 +111,11 @@ export default function Order() {
   const paid = order && ['paid', 'preparing', 'delivered'].includes(order.status),
     ended = !order?.resume_access && order?.deadline &&
       Date.now() >= new Date(`${order.deadline}:00-03:00`).getTime();
-  const add = (file, kind) => setAssets((a) => [...a, { file, kind, url: URL.createObjectURL(file) }]);
+  const add = (file, kind) => {
+    if(!file)return;
+    track('letter_attachment_added',{kind});
+    setAssets((a) => [...a, { file, kind, url: URL.createObjectURL(file) }]);
+  };
   const discard = (index) =>
     setAssets((a) => {
       const list = [...a];
@@ -140,9 +149,11 @@ export default function Order() {
         token,
         data: { rich_html: html, sender_name: sender, composition },
       });
+      track('letter_saved',{stage:paid?'paid':'pending'});
       for (const a of assets) {
         setProgress(`Enviando ${a.file.name}...`);
         await uploadMedia(a.file, a.kind, token, (p) => setProgress(`${a.file.name} · ${p}%`));
+        track('letter_attachment_uploaded',{kind:a.kind});
       }
       assets.forEach((a) => URL.revokeObjectURL(a.url));
       setAssets([]);
@@ -163,7 +174,7 @@ export default function Order() {
       }
       if (withSubmit) {
         await api('/api/order/submit', { method: 'POST', token, data: {} });
-        track('letter_submitted');
+        track('letter_submitted',{stage:paid?'paid':'pending'});
       }
       await reload();
       setProgress(withSubmit ? 'Cartinha enviada! Ela ficará no mural privado após o horário de liberação.' : 'Alterações confirmadas e salvas!');
@@ -378,7 +389,8 @@ export default function Order() {
               <RichEditor
                 key={saved ? 'loaded' : 'initial'}
                 value={html}
-                onChange={setHtml}
+                onChange={(value)=>{setHtml(value);if(!startedTracking.current&&value?.trim()){
+                  startedTracking.current=true;track('letter_first_edit',{stage:paid?'paid':'pending'});}}}
                 disabled={ended}
               />
             </div>
@@ -493,6 +505,17 @@ export default function Order() {
                 : paid ? 'Sua cartinha ainda é um rascunho. Você pode revisar antes de enviar.' :
                   'As alterações salvas ficarão disponíveis para qualquer pessoa com este link privado, inclusive em outro aparelho.'}
             </div>
+            {order.submitted && <div className="notice success">
+              <strong>💌 Terminou sua cartinha? Avise nossa equipe!</strong>
+              <p>Confirme o recebimento e descubra o próximo passo. O link leva só o nome e o ID para suporte, nunca o conteúdo ou o acesso privado.</p>
+              <a className="btn" href={completedLetterHelpLink({
+                origin:window.location.origin,sender:sender||order.sender_name,
+                items:[{id:order.id,recipient_name:order.recipient_name}]
+              })} target="_blank" rel="noopener noreferrer"
+                onClick={()=>track('help_link_clicked',{stage:'letter_submitted'})}>
+                📲 Avisar que terminei minha cartinha
+              </a>
+            </div>}
             <h2 className="spaced">Prévia da cartinha</h2>
             <LetterCard
               actions={false}

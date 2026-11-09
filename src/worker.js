@@ -919,12 +919,36 @@ async function supportContextMint(req,env){
   const help=new URL(data.purpose==='finished'
     ?'/ajuda/terminei-a-cartinha':'/ajuda/minha-cartinha',origin);
   help.searchParams.set('c',opaque);
+  // Short URLs contain no name, phone, order ID or tracking information.
+  // The encrypted context is preserved behind each destination.
+  const contextQuery='?c='+encodeURIComponent(opaque);
+  const urls={
+    help:help.toString(),
+    admin:origin+'/admin/mensagens'+contextQuery,
+    letters:origin+'/admin/cartinhas'+contextQuery,
+    home:origin+'/'+contextQuery,
+    open:origin+'/abrir'+contextQuery,
+    send:data.recipientSlugs.map(slug=>
+      origin+'/enviar/'+encodeURIComponent(slug)+contextQuery)
+  };
+  const [shortHelp,shortAdmin,shortLetters,shortHome,shortOpen]=await Promise.all([
+    createShortLink(env,urls.help,{origin,kind:data.purpose==='finished'?'finished':'support'}),
+    createShortLink(env,urls.admin,{origin,kind:'admin'}),
+    createShortLink(env,urls.letters,{origin,kind:'letters'}),
+    createShortLink(env,urls.home,{origin,kind:'home'}),
+    createShortLink(env,urls.open,{origin,kind:'open'})
+  ]);
+  const send=await Promise.all(urls.send.map(destination=>
+    createShortLink(env,destination,{origin,kind:'send'})));
   return result({
-    link:help.toString(),
-    admin_url:origin+'/admin/mensagens?c='+encodeURIComponent(opaque),
-    admin_letters_url:origin+'/admin/cartinhas?c='+encodeURIComponent(opaque),
-    send_urls:data.recipientSlugs.map(slug=>
-      origin+'/enviar/'+encodeURIComponent(slug)+'?c='+encodeURIComponent(opaque)),
+    link:shortHelp.url,
+    admin_url:shortAdmin.url,
+    admin_letters_url:shortLetters.url,
+    home_url:shortHome.url,
+    open_url:shortOpen.url,
+    send_urls:send.map(item=>item.url),
+    // Internal application state: never append this value to a shared URL.
+    context_token:opaque,
     expires_in_days:14
   },201);
 }
@@ -2427,6 +2451,33 @@ export default {
   async fetch(request,env,ctx) {
     try {
       const url=new URL(request.url), path=url.pathname;
+      // First-party /s/<random> redirects, without exposing the destination
+      // to WhatsApp/Telegram crawlers. Previews are served as OG HTML here.
+      const shortCode=path.match(/^\/s\/([A-Za-z0-9_-]{14})$/);
+      if(shortCode){
+        if(request.method!=='GET'&&request.method!=='HEAD')
+          return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
+        const resolved=await resolveShortLink(env,shortCode[1],{
+          origin:new URL(env.PUBLIC_ORIGIN||url.origin).origin
+        });
+        if(resolved.status!==200)return new Response(
+          request.method==='HEAD'?null:
+            resolved.status===410?'Este link expirou. Peça um novo à equipe.':'Link não encontrado.',
+          {status:resolved.status,headers:{
+            'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store',
+            'X-Robots-Tag':'noindex,nofollow'
+          }}
+        );
+        if(isShortPreviewBot(request))return shortLinkPreview(
+          env,request,resolved.destination,resolved.kind,url.origin+path
+        );
+        return new Response(null,{status:302,headers:{
+          Location:resolved.destination,
+          'Cache-Control':'private, no-store',
+          'Referrer-Policy':'no-referrer',
+          'X-Robots-Tag':'noindex, nofollow, noarchive'
+        }});
+      }
       // Public short support route. WhatsApp previews receive OG HTML; real visitors
       // receive a ready-to-send message. No mural token is ever accepted or copied.
       if(path==='/ajuda/minha-cartinha'||path==='/ajuda/minha-cartinha/'){

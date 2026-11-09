@@ -537,12 +537,19 @@ function BrandLogo({ info, reload }) {
 }
 function HelpOgArtwork(){
   const [status,setStatus]=useState(null);
+  const [stats,setStats]=useState([]);
   const [file,setFile]=useState(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [version,setVersion]=useState(0);
   const reload=async()=>{
-    try{setStatus(await api('/api/admin/og/help-finished'));}catch(cause){setError(cause.message);}
+    try{
+      const [og,clicks]=await Promise.all([
+        api('/api/admin/og/help-finished'),
+        api('/api/admin/help-link/stats')
+      ]);
+      setStatus(og);setStats(clicks.rows||[]);
+    }catch(cause){setError(cause.message);}
   };
   useEffect(()=>{reload();},[]);
   async function upload(event){
@@ -568,6 +575,8 @@ function HelpOgArtwork(){
     <span className="eyebrow">PRÉVIA DO WHATSAPP / AJUDA</span>
     <h2>💌 OG das Cartinhas Virtuais</h2>
     <p>Arte do link <code>/ajuda/terminei-a-cartinha</code>. A prévia precisa ser PNG em 1200 × 630 pixels.</p>
+    <p className="muted small">📊 Acessos ao link curto: <strong>{stats.reduce((sum,row)=>sum+Number(row.clicks||0),0)}</strong>
+      {' '}({stats.length} campanha(s)/dia(s) nos registros recentes). Contagem anônima, sem IP ou conteúdo.</p>
     {status?.ready?<p className="notice success">✅ Imagem publicada no R2. O WhatsApp receberá a prévia personalizada.</p>:
       <p className="notice warning">A arte ainda não foi publicada. A prévia padrão do EJC será usada até enviar o PNG.</p>}
     {status?.ready&&<img src={(status.url||'/og-ajuda-cartinhas.png')+'&refresh='+version}

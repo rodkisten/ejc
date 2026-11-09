@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { ClipboardCopy, ExternalLink, MessageCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { api, track } from '../lib/api';
+import { readAdminListFilters, updateAdminListFilter, isReadyForSending,
+  matchesSupportOrder } from '../lib/adminListFilters.js';
 import { normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp';
 import { supportContactParams } from '../lib/supportContactUrl.js';
 import { createSecureSupportContext } from '../lib/secureSupport.js';
@@ -15,6 +17,8 @@ import {
   validContactName, supportRecipientNames,
 } from '../lib/supportMessages';
 import '../styles/support-messages.css';
+
+const SUPPORT_FILTERS = ['all', 'ready', 'paid-draft', 'empty-paid-draft', 'pending'];
 
 function WhatsAppTextPreview({ value }) {
   return (
@@ -35,6 +39,12 @@ function WhatsAppTextPreview({ value }) {
 
 export default function AdminSupportMessages({ info }) {
   const location = useLocation();
+  const [listParams, setListParams] = useSearchParams();
+  const { search, filter } = readAdminListFilters(listParams, SUPPORT_FILTERS);
+  const setSearch = value => setListParams(current => updateAdminListFilter(current, 'busca', value),
+    { replace: true, preventScrollReset: true });
+  const setFilter = value => setListParams(current => updateAdminListFilter(current, 'situacao', value),
+    { preventScrollReset: true });
   const initial = location.state?.support || {};
   const fromUrl = supportContactParams(location.search);
   const [letters, setLetters] = useState([]);
@@ -121,6 +131,12 @@ export default function AdminSupportMessages({ info }) {
   const people = recipients.filter(person => selectedRecipients.includes(person.slug));
   const availableLetters = letters.filter(letter => selectedRecipients.includes(letter.recipient_slug) && !letter.gift);
   const selectedOrders = availableLetters.filter(letter => selectedOrderIds.includes(letter.id));
+  const matchingLetters = useMemo(
+    () => letters.filter(letter => matchesSupportOrder(letter, search, filter)),
+    [letters, search, filter]
+  );
+  const visibleRelatedLetters = availableLetters.filter(letter => matchesSupportOrder(letter, search, filter));
+  const hasSearchFilters = Boolean(search.trim() || filter !== 'all');
   const senderSuggestions = [...new Set(availableLetters.map(letter => letter.sender_name)
     .filter(validContactName))].sort((a,b) => a.localeCompare(b,'pt-BR'));
   const names = supportRecipientNames(people.map(person => person.name));
@@ -260,6 +276,17 @@ export default function AdminSupportMessages({ info }) {
     const ids = new Set(letters.filter(letter => letter.recipient_slug === slug).map(letter => letter.id));
     setSelectedOrderIds(previous => previous.filter(id => !ids.has(id)));
     setNotice('');
+  }
+
+  function selectMatchingLetter(letter) {
+    setSelectedRecipients(previous => previous.includes(letter.recipient_slug)
+      ? previous : [...previous, letter.recipient_slug]);
+    setSelectedOrderIds(previous => previous.includes(letter.id)
+      ? previous : [...previous, letter.id]);
+    if (!validContactName(contactName) && validContactName(letter.sender_name)) {
+      setContactName(letter.sender_name);
+    }
+    setNotice('✅ Cartinha de ' + letter.recipient_name + ' selecionada para o atendimento.');
   }
 
   // The chosen recipients come from the admin's D1-backed orders, never a
@@ -415,6 +442,59 @@ export default function AdminSupportMessages({ info }) {
 
           <section className="form-card support-messages-card">
             <h2>2. Para qual encontrista?</h2>
+            <div className="support-filter-grid">
+              <label htmlFor="support-order-search">
+                Buscar por encontrista, remetente ou ID
+                <input id="support-order-search" type="search" value={search}
+                  placeholder="Buscar cartinhas…" autoComplete="off"
+                  onChange={event => setSearch(event.target.value)} />
+              </label>
+              <label htmlFor="support-order-filter">
+                Situação das cartinhas
+                <select id="support-order-filter" value={filter}
+                  onChange={event => setFilter(event.target.value)}>
+                  <option value="all">Todas as situações</option>
+                  <option value="ready">💌 Prontos para envio</option>
+                  <option value="paid-draft">Pagas, ainda em rascunho</option>
+                  <option value="empty-paid-draft">Pagas, sem conteúdo</option>
+                  <option value="pending">Pix pendente</option>
+                </select>
+              </label>
+              {hasSearchFilters && <button type="button" className="btn ghost"
+                onClick={() => {
+                  setListParams(current => {
+                    const next = updateAdminListFilter(current, 'busca', '');
+                    return updateAdminListFilter(next, 'situacao', 'all');
+                  }, { preventScrollReset: true });
+                }}>Limpar filtros</button>}
+            </div>
+            <small className="muted">Os filtros de busca e situação ficam na URL.
+              Nome e telefone do atendimento não são incluídos nesses parâmetros.</small>
+            {hasSearchFilters && <div className="support-search-results">
+              <strong aria-live="polite">{matchingLetters.length} cartinha(s) encontrada(s)</strong>
+              {matchingLetters.length > 0 ? <div className="support-order-list">
+                {matchingLetters.slice(0, 60).map(letter => <div
+                  className="support-order-item support-order-result" key={letter.id}>
+                  <span>
+                    <strong>{letter.recipient_name}</strong>
+                    <small>{letter.id} · {letter.sender_name}</small>
+                    <small className={isReadyForSending(letter) ? 'is-ready' : ''}>
+                      {isReadyForSending(letter) ? '✅ Pronta para envio' :
+                        letter.submitted ? 'Pix pendente ou em conferência' :
+                        !letter.has_content ? '⚠️ Sem conteúdo finalizado' : '📝 Rascunho com conteúdo'}
+                    </small>
+                  </span>
+                  <button type="button" className="btn outline"
+                    disabled={selectedOrderIds.includes(letter.id)}
+                    onClick={() => selectMatchingLetter(letter)}>
+                    {selectedOrderIds.includes(letter.id) ? '✓ Selecionada' : 'Selecionar'}
+                  </button>
+                </div>)}
+              </div> : <small className="muted">Nenhuma cartinha corresponde aos filtros escolhidos.</small>}
+              {matchingLetters.length > 60 && <small className="muted">
+                Exibindo as primeiras 60 cartinhas. Refine a busca para encontrar uma específica.
+              </small>}
+            </div>}
             <label htmlFor="support-recipient-select">Selecione um ou vários encontristas</label>
             <select id="support-recipient-select" value=""
               onChange={event => addRecipient(event.target.value)}>
@@ -435,7 +515,7 @@ export default function AdminSupportMessages({ info }) {
               <h3>Cartinhas relacionadas</h3>
               <p className="muted small">Marque apenas as cartinhas que fazem parte desta conversa. Os IDs são incluídos na mensagem e nos links de suporte, sem revelar o conteúdo.</p>
               <div className="support-order-list">
-                {availableLetters.map(letter =>
+                {visibleRelatedLetters.map(letter =>
                   <label className="support-order-item" key={letter.id}>
                     <input type="checkbox" checked={selectedOrderIds.includes(letter.id)}
                       onChange={event => setSelectedOrderIds(previous => event.target.checked
@@ -457,6 +537,9 @@ export default function AdminSupportMessages({ info }) {
                     </Link>
                   </label>)}
               </div>
+              {!visibleRelatedLetters.length && <small className="muted">
+                Nenhuma cartinha relacionada corresponde à busca atual. As seleções permanecem guardadas.
+              </small>}
             </>}
           </section>
 

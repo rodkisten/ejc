@@ -364,3 +364,61 @@
     min-height: 230px;
   }
 }
+
+/* Searchable operational metadata. Editing credentials remain out of the URL. */
+.support-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr);
+  align-items: end;
+  gap: 10px;
+}
+
+.support-filter-grid label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.support-filter-grid .btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.support-search-results {
+  display: grid;
+  gap: 10px;
+}
+
+.support-search-results .support-order-list {
+  max-height: 310px;
+}
+
+.support-order-result {
+  align-items: center;
+}
+
+.support-order-result .btn {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 135px;
+  font-size: 12px;
+  padding: 8px 10px;
+  white-space: normal;
+}
+
+@media (max-width: 520px) {
+  .support-filter-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .support-order-result {
+    flex-wrap: wrap;
+  }
+
+  .support-order-result .btn {
+    width: 100%;
+    max-width: none;
+  }
+}

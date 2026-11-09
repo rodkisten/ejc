@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import MuralGallery from '../components/MuralGallery';
 import { api, track } from '../lib/api';
 import { saveAllCards } from '../components/LetterCard';
+import { recipientSupportFromBrowser } from '../lib/helpLink.js';
 
 export default function Mural() {
   const { slug } = useParams();
@@ -73,8 +74,17 @@ export default function Mural() {
     }
   }
 
+  const supportLinkFor=(id)=>recipientSupportFromBrowser({
+    name:data?.recipient?.name||'',
+    ids:id?[id]:(data?.cards||[]).map(card=>card.id),
+    stage:id?'cartinha_aberta':'mural'
+  });
   return (
     <MuralGallery data={data} opened={opened} openBusy={openBusy} error={error} busy={busy}
-      onOpenLetter={openLetter} onDownloadAll={downloadAll} onRefresh={load} />
+      onOpenLetter={openLetter} onDownloadAll={downloadAll} onRefresh={load}
+      supportLinkFor={supportLinkFor}
+      onSupportClick={(id)=>track('recipient_support_whatsapp_clicked',{
+        stage:id?'cartinha_aberta':'mural'
+      })} />
   );
 }

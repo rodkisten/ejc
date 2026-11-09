@@ -1574,14 +1574,20 @@ async function adminRoute(req,env,path) {
         .bind(row.recipient_id).first()).mural_code;
     }
     const grant=await muralGrant(env,{id:row.recipient_id,mural_code:row.mural_code});
-    const link=new URL('/mural/'+encodeURIComponent(row.slug),env.PUBLIC_ORIGIN||req.url);
-    link.searchParams.set('utm_source','whatsapp');
-    link.searchParams.set('utm_medium','mensagem');
-    link.searchParams.set('utm_campaign','cartinha_recuperada');
-    link.searchParams.set('utm_content','aviso_encontrista');
+    const origin=new URL(env.PUBLIC_ORIGIN||req.url).origin;
+    const opaque=await encryptSupportContext(env.SESSION_SECRET,{
+      purpose:'invite',name:row.recipient_name,phone:row.whatsapp_phone,
+      ids:[row.id],recipientSlugs:[row.slug],
+      source:'whatsapp',medium:'mensagem',campaign:'cartinha_recuperada',
+      content:'aviso_encontrista',stage:'convite_recuperada'
+    });
+    const link=new URL('/mural/'+encodeURIComponent(row.slug),origin);
+    link.searchParams.set('c',opaque);
     link.hash='token='+encodeURIComponent(grant);
     return result({phone:row.whatsapp_phone,recipient_name:row.recipient_name,
-      order_id:row.id,url:link.toString(),released:released(await settings(env)),
+      order_id:row.id,url:link.toString(),
+      support_url:origin+'/ajuda/minha-cartinha?c='+encodeURIComponent(opaque),
+      released:released(await settings(env)),
       already_notified:!!row.recipient_notified_at});
   }
   if(path==='/api/admin/help-link/stats'&&req.method==='GET'){

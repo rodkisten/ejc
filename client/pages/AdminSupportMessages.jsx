@@ -503,9 +503,10 @@ export default function AdminSupportMessages({ info }) {
             </div>
             {(template==='rascunho_vazio'||template==='link_privado')&&<>
               <label htmlFor="support-resume-link">Link privado de continuação <small>(se o administrador já gerou um)</small></label>
-              <input id="support-resume-link" type="url" autoComplete="off" spellCheck={false}
-                value={resumeUrl} onChange={event => setResumeUrl(event.target.value)}
-                placeholder="https://ejc.migos.club/pedido/…" />
+              <textarea id="support-resume-link" rows={selectedOrderIds.length>1?4:2}
+                autoComplete="off" spellCheck={false} value={resumeUrl}
+                onChange={event=>setResumeUrl(event.target.value)}
+                placeholder="https://ejc.migos.club/pedido/…?c=…" />
               <button type="button" className="btn outline" disabled={generatingResume}
                 onClick={createResumeLinks}>
                 {generatingResume?'Preparando links e arte…':'💌 Gerar automaticamente link(s) e OG com os nomes'}

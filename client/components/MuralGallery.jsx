@@ -1,12 +1,13 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Download, LockKeyhole, Sparkles, MailOpen, LoaderCircle } from 'lucide-react';
+import { Download, LockKeyhole, Sparkles, MailOpen, LoaderCircle, LifeBuoy } from 'lucide-react';
 import { LetterCard } from './LetterCard';
 import UnfinishedLetterNotice from './UnfinishedLetterNotice';
 
 // Shared recipient layout: the user portal and the technical preview render the same UI.
 export default function MuralGallery({ data, opened = {}, openBusy = '', error = '', busy = false,
-  onOpenLetter, onDownloadAll, onRefresh, technical = false, technicalAll = true }) {
+  onOpenLetter, onDownloadAll, onRefresh, supportLinkFor,
+  onSupportClick, technical = false, technicalAll = true }) {
   const openLetter = onOpenLetter;
   const downloadAll = onDownloadAll;
   const availableToDownload = (data?.cards || []).some(
@@ -26,6 +27,11 @@ export default function MuralGallery({ data, opened = {}, openBusy = '', error =
         <div className="form-card" role="alert">
           <h2>Não foi possível abrir a cartinha 🔐</h2><p>{error}</p>
           {!technical && <Link to="/abrir" className="btn">Digitar meu código</Link>}
+          {!technical && supportLinkFor &&
+            <a className="btn outline" href={supportLinkFor()} target="_blank"
+              rel="noopener noreferrer" onClick={()=>onSupportClick?.()}>
+              <LifeBuoy size={16}/> Pedir ajuda no WhatsApp
+            </a>}
         </div>
       )}
       {data && (
@@ -53,7 +59,23 @@ export default function MuralGallery({ data, opened = {}, openBusy = '', error =
                           envelope.composition?.authorName || envelope.sender_name}
                         onRefresh={onRefresh} />
                     ) : opened[envelope.id] ? (
-                      <LetterCard letter={opened[envelope.id]} recipient={data.recipient.name} actions={!technical} />
+                      <>
+                        <LetterCard letter={opened[envelope.id]}
+                          recipient={data.recipient.name} actions={!technical} />
+                        {!technical && supportLinkFor &&
+                          <div className="notice mural-letter-support">
+                            <LifeBuoy size={18}/>
+                            <div>
+                              <strong>Precisa de ajuda com esta cartinha?</strong>
+                              <p>O link já identifica a cartinha e prepara uma mensagem para a equipe.</p>
+                              <a className="btn outline" href={supportLinkFor(envelope.id)}
+                                target="_blank" rel="noopener noreferrer"
+                                onClick={()=>onSupportClick?.(envelope.id)}>
+                                Falar com o Mini Mercado pelo WhatsApp
+                              </a>
+                            </div>
+                          </div>}
+                      </>
                     ) : (
                       <button type="button" className="mural-envelope-button"
                         disabled={!!openBusy} onClick={() => openLetter(envelope.id)}>
@@ -70,6 +92,15 @@ export default function MuralGallery({ data, opened = {}, openBusy = '', error =
               </button>}
             </>
           )}
+          {!technical && supportLinkFor && <div className="form-card">
+            <h3>🆘 Podemos ajudar!</h3>
+            <p>Se alguma cartinha não abrir, aparecer vazia ou você tiver qualquer dúvida,
+              fale com a equipe do Mini Mercado. Seu link de acesso permanece privado.</p>
+            <a className="btn outline wide" target="_blank" rel="noopener noreferrer"
+              href={supportLinkFor()} onClick={()=>onSupportClick?.()}>
+              <LifeBuoy size={18}/> Preciso de ajuda com minhas cartinhas
+            </a>
+          </div>}
           <p className="muted small center spaced">
             {technical ? "Conferência técnica em modo somente leitura, sem registrar abertura ou acionar notificações." : "Seu código é pessoal. Não compartilhe fotos da etiqueta ou o link privado."}
           </p>

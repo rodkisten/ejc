@@ -78,7 +78,66 @@ test('link de ajuda inclui remetente, nomes, IDs e links internos para o admin, 
   const message=target.searchParams.get('text');
   assert.match(message,/Olá, eu sou Ana/);
   assert.match(message,/Para Maria Eduarda: EJC-123456789ABC/);
-  assert.match(message,/https:\/\/ejc.test\/admin\/pedidos\/EJC-123456789ABC/);
+  assert.match(message,/https:\/\/ejc.migos.club\/admin\/pedidos\/EJC-123456789ABC/);
   assert.doesNotMatch(message,/\/pedido\//);
   assert.doesNotMatch(message,/token=/);
+});
+
+test('link /ajuda/minha-cartinha abre WhatsApp personalizado com identificadores e diagnóstico',async()=>{
+  const params=new URLSearchParams({
+    encontrista:'Maria Eduarda',etapa:'cartinha_aberta',
+    navegador:'Mobile Safari iOS',tela:'390x844',idioma:'pt-BR',
+    conexao:'online',horario:'2026-11-09T13:05:00.000Z',
+    utm_source:'mural',utm_medium:'link',utm_campaign:'suporte_encontrista',
+    utm_content:'cartinha_aberta'
+  });
+  params.append('id','EJC-123456789ABC');
+  params.append('id','EJC-123456789ABD');
+  params.append('id','invalid');
+  const response=await visit('/ajuda/minha-cartinha?'+params.toString());
+  assert.equal(response.status,302);
+  const redirect=new URL(response.headers.get('Location'));
+  assert.equal(redirect.origin,'https://wa.me');
+  assert.equal(redirect.pathname,'/5533999546031');
+  assert.equal(redirect.searchParams.get('utm_source'),'mural');
+  assert.equal(redirect.searchParams.get('utm_campaign'),'suporte_encontrista');
+  const msg=redirect.searchParams.get('text');
+  assert.match(msg,/encontrista \*Maria Eduarda\*/);
+  assert.match(msg,/EJC-123456789ABC, EJC-123456789ABD/);
+  assert.match(msg,/https:\/\/ejc\.migos\.club\/admin\/pedidos\/EJC-123456789ABC/);
+  assert.match(msg,/Mobile Safari iOS/);
+  assert.match(msg,/390x844/);
+  assert.match(msg,/pt-BR/);
+  assert.match(msg,/2026-11-09T13:05/);
+  assert.match(msg,/O que está acontecendo/);
+  assert.match(msg,/━━━━━━━━━━━━/);
+  assert.doesNotMatch(msg,/token=|#token|r1_/);
+  assert.doesNotMatch(msg,/invalid/);
+});
+
+test('link de suporte do encontrista oferece metadados OG ao WhatsApp, sem expor nome ou IDs',async()=>{
+  const response=await worker.fetch(new Request(base+
+    '/ajuda/minha-cartinha?encontrista=Maria&amigo=EJC-123456789ABC',{
+    headers:{'User-Agent':'facebookexternalhit/1.1'}
+  }),env);
+  assert.equal(response.status,200);
+  const html=await response.text();
+  assert.match(html,/Me ajude com a minha cartinha/);
+  assert.match(html,/og:image:width.*1200/);
+  assert.match(html,/og:image:height.*630/);
+  assert.match(html,/og-ajuda-minha-cartinha.png/);
+  assert.doesNotMatch(html,/Maria|EJC-123456789ABC|wa\.me/);
+});
+
+test('suporte abre com mensagem genérica quando o link não traz dados, e não aceita POST',async()=>{
+  const response=await visit('/ajuda/minha-cartinha');
+  assert.equal(response.status,302);
+  assert.match(new URL(response.headers.get('Location')).searchParams.get('text'),
+    /encontrista \*encontrista\*/);
+  const head=await visit('/ajuda/minha-cartinha','HEAD');
+  assert.equal(head.status,302);
+  assert.equal(await head.text(),'');
+  const post=await visit('/ajuda/minha-cartinha','POST');
+  assert.equal(post.status,405);
+  assert.equal(post.headers.get('Allow'),'GET, HEAD');
 });

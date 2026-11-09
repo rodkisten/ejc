@@ -150,7 +150,7 @@ export default function AdminSupportMessages({ info }) {
   const invalidConfirm = templateInfo?.requiresSubmitted && !readyToConfirm;
   const invalidEmpty = template === 'rascunho_vazio' && !emptyDraftsSelected;
   const blocked = invalidConfirm || invalidEmpty;
-  const canSend = !blocked && !!text.trim() && !secureBusy &&
+  const canSend = !blocked && !missingName && !missingRecipients && !!text.trim() && !secureBusy &&
     secureLinks?.scope === selectionScope &&
     !text.includes('🔐 Link protegido em preparação');
   useEffect(()=>{

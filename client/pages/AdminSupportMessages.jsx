@@ -152,7 +152,23 @@ export default function AdminSupportMessages({ info }) {
     // Safari requires the new tab to be opened in the user's tap gesture.
     const popup=window.open('about:blank','_blank');
     try {
-      popup?.document?.write('<p>Preparando sua mensagem para o WhatsApp…</p>');
+      popup?.document?.write(`
+      <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Popup Window</title>
+      <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; }
+        button { padding: 10px; background: #007bff; color: white; border: none; cursor: pointer; }
+      </style>
+    </head>
+    <body>
+      <h2>Aguarde...</h2>
+      <p>Preparando sua mensagem para o WhatsApp…</p>
+    </body>
+    </html>
+      
+      <p></p>`);
       const generated=await ensurePersonalizedDraftOg();
       const url=number
         ? 'https://wa.me/' + number + '?text=' + encodeURIComponent(text)

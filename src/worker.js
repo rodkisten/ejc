@@ -1403,7 +1403,9 @@ async function adminRoute(req,env,path) {
   // Publish the supplied OG artwork in R2, without changing other site images.
   if(path==='/api/admin/og/help-finished'&&req.method==='GET'){
     const image=await env.MEDIA.head('og/help-finished-v1.png');
-    return result({ready:!!image,url:'/og-ajuda-cartinhas.png?v=20261109b',bytes:image?.size||0});
+    return result({ready:!!image,
+      url:'/og-ajuda-cartinhas.png?v='+encodeURIComponent(image?.uploaded?.getTime()||'fallback'),
+      bytes:image?.size||0});
   }
   if(path==='/api/admin/og/help-finished'&&req.method==='POST'){
     const image=await receiveSafeImage(req,2*1024*1024);
@@ -1968,7 +1970,9 @@ export default {
           .test(agent) && !navigation;
         if(bot){
           const base=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
-          const og=base+'/og-ajuda-cartinhas.png?v=20261109b';
+          const image=await env.MEDIA.head('og/help-finished-v1.png');
+          const og=base+'/og-ajuda-cartinhas.png?v='+
+            encodeURIComponent(image?.uploaded?.getTime()||'fallback');
           const title='Cartinhas Virtuais | Enviei minha cartinha, e agora?';
           const description='Mini Mercado · XX EJC Simonésia. Confirme o recebimento e saiba o próximo passo.';
           const properties={

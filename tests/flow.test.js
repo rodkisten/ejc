@@ -1899,8 +1899,9 @@ test('suporte criptografado recupera nome telefone IDs e UTMs só no admin',asyn
   }),env);
   assert.equal(redirected.status,302);
   const wa=new URL(redirected.headers.get('Location'));
-  assert.equal(wa.origin,'https://wa.me');
-  assert.equal(wa.pathname,'/5532999662604');
+  assert.equal(wa.origin,'https://api.whatsapp.com');
+  assert.equal(wa.pathname,'/send');
+  assert.equal(wa.searchParams.get('phone'),'5532999662604');
   const msg=wa.searchParams.get('text');
   assert.match(msg,/Maria da Costa/);
   assert.match(msg,/admin\/cartinhas\?c=ec1_/);

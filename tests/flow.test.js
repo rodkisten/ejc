@@ -433,7 +433,7 @@ test('mural mostra recado para cartinhas pagas não terminadas sem revelar o ras
 
   // Defensive handling of a legacy record manually finalized without content.
   await env.DB.prepare(
-    "UPDATE orders SET rich_html='',submitted_at='2026-11-09 10:00:00' WHERE id=?"
+    "UPDATE orders SET rich_html='<p>&nbsp;</p>',submitted_at='2026-11-09 10:00:00' WHERE id=?"
   ).bind(second.data.id).run();
   const legacy=await call(env,path,'GET',undefined,{token:grant});
   const empty=legacy.data.cards.find(item=>item.id===second.data.id);

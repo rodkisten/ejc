@@ -56,7 +56,9 @@ export default function MuralGallery({ data, opened = {}, openBusy = '', error =
                       <UnfinishedLetterNotice
                         senderName={envelope.composition?.anonymous ? '' :
                           envelope.composition?.authorName || envelope.sender_name}
-                        onRefresh={onRefresh} />
+                        onRefresh={onRefresh}
+                        onSupportClick={!technical&&onSupportClick
+                          ?()=>onSupportClick(envelope.id):undefined} />
                     ) : opened[envelope.id] ? (
                       <>
                         <LetterCard letter={opened[envelope.id]}

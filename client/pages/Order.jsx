@@ -18,17 +18,14 @@ import { api, btime, money, privateOrder, uploadMedia, track } from '../lib/api'
 import { draftGet, draftSet, draftKey } from '../lib/drafts';
 import { cartDraftKey } from '../lib/cart';
 import { rememberPrivateOrder } from '../lib/unfinishedLetters.js';
-import { completedLetterHelpLink } from '../lib/helpLink.js';
-import RichEditor from '../components/RichEditor';
-import Recorder from '../components/Recorder';
-import VoicePlayer from '../components/VoicePlayer';
 import QrCode from '../components/QrCode';
 import CheckoutSupport from '../components/CheckoutSupport';
 import { useApp } from '../main';
 import { LetterCard } from '../components/LetterCard';
-import LetterControls from '../components/letter/LetterControls';
 import InstagramExportPanel from '../components/social/InstagramExportPanel';
 import { useLetterComposer } from '../hooks/useLetterComposer';
+import LetterComposerFields from '../components/LetterComposerFields';
+import { completedLetterWhatsAppHref } from '../lib/helpLink';
 function sameDraft(a, b) {
   return a === b;
 }
@@ -50,6 +47,8 @@ export default function Order() {
   const startedTracking=useRef(false);
   const [receiptEmail, setReceiptEmail] = useState('');
   const [receiptBusy,setReceiptBusy] = useState(false);
+  const [completion,setCompletion] = useState(null);
+  const [preview,setPreview] = useState(true);
   const reload = useCallback(async () => {
     try {
       const o = await api('/api/order', { token });
@@ -69,6 +68,7 @@ export default function Order() {
     setSaved(false);
     setError('');
     setProgress('');
+    setCompletion(null);
     setHtml('');
     setSender('');
     setAssets((previous) => {
@@ -372,118 +372,44 @@ export default function Order() {
                 <ArrowRight size={16} /> Voltar para o Pix deste pedido
               </Link>
             )}
-            <div className="form-card">
-              <label htmlFor="checkout-letter-sender">Quem assina esta cartinha? (opcional)</label>
-              <input id="checkout-letter-sender" type="text" autoComplete="name" maxLength={100}
-                disabled={ended} value={sender} onChange={(event) => {
-                  setSender(event.target.value);
-                  setComposition(previous => ({ ...previous, authorName: '' }));
-                }} />
-              <p className="muted small">O remetente pode ser alterado sem gerar outro Pix.</p>
+            <div className="step-label">SUA CARTINHA / {order.submitted ? 'HOMENAGEM ENVIADA' : 'EDITANDO RASCUNHO'}</div>
+            <div className="send-recipient">
+              {recipient?.photo_url ? <img src={recipient.photo_url} alt={'Foto de ' + order.recipient_name} /> :
+                <span className="recipient-initial">{order.recipient_name?.[0]}</span>}
+              <span>Para <strong>{order.recipient_name}</strong></span>
             </div>
-            <div className="form-card">
-              <div className="row between">
-                <h2>Escreva sua cartinha</h2>
-                <span className="micro-label">formatação livre</span>
-              </div>
-              <RichEditor
-                key={saved ? 'loaded' : 'initial'}
-                value={html}
-                onChange={(value)=>{setHtml(value);if(!startedTracking.current&&value?.trim()){
-                  startedTracking.current=true;track('letter_first_edit',{stage:paid?'paid':'pending'});}}}
-                disabled={ended}
-              />
-            </div>
-            <div className="form-card">
-              <h2>Áudios</h2>
-              {!ended && <Recorder onAdd={(f) => add(f, 'audio')} />}
-              <div className="asset-list">
-                {(order.media || [])
-                  .filter((m) => m.kind === 'audio')
-                  .map((m) => (
-                    <div className="asset-row" key={m.id}>
-                      <VoicePlayer src={m.url} title={m.filename} compact />
-                      <button
-                        className="icon-button danger"
-                        type="button"
-                        title="Excluir áudio"
-                        disabled={ended}
-                        onClick={async () => {
-                          try {
-                            await api(`/api/order/media/${m.id}/delete`, { method: 'DELETE', token });
-                            await reload();
-                          } catch (e) {
-                            setError(e.message);
-                          }
-                        }}
-                      >
-                        <Trash2 size={17} />
-                      </button>
-                    </div>
-                  ))}
-                {assets
-                  .filter((a) => a.kind === 'audio')
-                  .map((a) => (
-                    <div className="asset-row" key={a.url}>
-                      <VoicePlayer src={a.url} title="Novo áudio" />
-                      <button className="icon-button danger" onClick={() => discard(assets.indexOf(a))}>
-                        <Trash2 size={17} />
-                      </button>
-                    </div>
-                  ))}
-              </div>
-            </div>
-            <div className="form-card">
-              <h2>Fotos</h2>
-              {!ended && (
-                <label className="upload-label">
-                  <ImagePlus size={20} /> Adicionar fotos
-                  <input
-                    type="file"
-                    accept="image/*,.heic,.heif"
-                    multiple
-                    onChange={(e) => {
-                      [...e.target.files].forEach((f) => add(f, 'image'));
-                      e.target.value = '';
-                    }}
-                  />
-                </label>
-              )}
-              <div className="photos-grid">
-                {(order.media || [])
-                  .filter((m) => m.kind === 'image')
-                  .map((m) => (
-                    <div className="photo-item" key={m.id}>
-                      <img src={m.url} alt="Foto enviada" />
-                      {!ended && (
-                        <button
-                          onClick={async () => {
-                            try {
-                              await api(`/api/order/media/${m.id}/delete`, { method: 'DELETE', token });
-                              await reload();
-                            } catch (e) {
-                              setError(e.message);
-                            }
-                          }}
-                        >
-                          <Trash2 size={17} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                {assets
-                  .filter((a) => a.kind === 'image')
-                  .map((a) => (
-                    <div className="photo-item" key={a.url}>
-                      <img src={a.url} alt="Foto selecionada" />
-                      <button onClick={() => discard(assets.indexOf(a))}>
-                        <Trash2 size={17} />
-                      </button>
-                    </div>
-                  ))}
-              </div>
-            </div>
-            {!ended && <LetterControls composition={composition} onChange={setComposition} senderName={sender} />}
+            <h1>Uma cartinha para <em>{order.recipient_name}.</em></h1>
+            <p className="muted">Escreva, decore e escolha suas fotos ou áudios, do mesmo jeitinho de quando criou a cartinha.</p>
+            <LetterComposerFields
+              sender={sender}
+              onSenderChange={value => { setSender(value); setCompletion(null); }}
+              html={html}
+              onHtmlChange={value => {
+                setHtml(value);
+                setCompletion(null);
+                if (!startedTracking.current && value?.trim()) {
+                  startedTracking.current = true;
+                  track('letter_first_edit', { stage: paid ? 'paid' : 'pending' });
+                }
+              }}
+              composition={composition}
+              onCompositionChange={setComposition}
+              assets={assets}
+              onAddAsset={add}
+              onRemoveAsset={asset => discard(assets.indexOf(asset))}
+              existingMedia={order.media || []}
+              onRemoveExistingMedia={async asset => {
+                try {
+                  await api('/api/order/media/' + asset.id + '/delete', { method: 'DELETE', token });
+                  setCompletion(null);
+                  await reload();
+                } catch (cause) {
+                  setError(cause.message);
+                }
+              }}
+              disabled={ended}
+              showPrivacyNotice={false}
+            />
             <div className="notice">
               <LockKeyhole size={18} />
               Sua cartinha é privada: não aparece em uma galeria pública nem passa por leitura ou escuta da coordenação.

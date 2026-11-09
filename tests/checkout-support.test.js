@@ -23,5 +23,8 @@ test('support message keeps non-sensitive diagnostics and order code', () => {
   assert.match(message, /Maria, João/);
   assert.match(message, /Safari iPhone/);
   assert.doesNotMatch(message, /HIDDEN/);
-  assert.match(checkoutSupportHref(data), /^https:\/\/wa\.me\/5532999662604\?text=/);
+  const target=new URL(checkoutSupportHref(data));
+  assert.equal(target.origin,'https://api.whatsapp.com');
+  assert.equal(target.searchParams.get('phone'),'5532999662604');
+  assert.equal(target.searchParams.get('text'),message);
 });

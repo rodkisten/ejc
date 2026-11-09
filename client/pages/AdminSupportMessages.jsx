@@ -583,7 +583,7 @@ export default function AdminSupportMessages({ info }) {
                   Cancelar
                 </button>
               </div>
-            </div>
+            </div>}
             {(template==='rascunho_vazio'||template==='link_privado')&&<>
               <label htmlFor="support-resume-link">Link privado de continuação <small>(se o administrador já gerou um)</small></label>
               <textarea id="support-resume-link" rows={selectedOrderIds.length>1?4:2}

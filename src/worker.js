@@ -59,13 +59,15 @@ async function settings(env) {
   return Object.fromEntries(rows.results.map(({key,value})=>[key,value]));
 }
 function editable(config, order=null) {
-  // A temporary, signed recovery link can finish an existing paid draft
-  // even when the general deadline for new messages has passed.
+  // The original private bearer token may complete an existing, already paid
+  // and unsubmitted draft after the general deadline. New drafts remain closed.
+  // A recovery grant is narrower: it expires as soon as submission succeeds.
   if (order?.recovery_access) {
     if (!activeOrder(order) || order.submitted_at)
       bad('Este link de continuação não pode mais editar a cartinha.',403);
     return;
   }
+  if (order && activeOrder(order) && !order.submitted_at) return;
   if (Date.now() >= brazilTimeEnd(config.deadline))
     bad('O prazo para editar as homenagens terminou.',403);
 }

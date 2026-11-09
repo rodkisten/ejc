@@ -447,6 +447,7 @@ test('carrinho: um único Pix com preço verificado no servidor para três carti
   assert.equal(parent.data.items.length,3);
   assert.equal(parent.data.items[0].recipient_slug,list[0].slug);
   assert.equal(parent.data.items[2].recipient_slug,list[0].slug);
+  assert.ok(parent.data.items.every(item => item.submitted === false));
 
   for(const item of parent.data.items){
     const before = await call(env,'/api/order','GET',undefined,{token:item.token});
@@ -489,6 +490,7 @@ test('carrinho: um único Pix com preço verificado no servidor para três carti
   }
   const parentAfter=await call(env,'/api/checkout','GET',undefined,{token:created.data.token});
   assert.ok(parentAfter.data.items.every(i=>i.status==='paid'));
+  assert.ok(parentAfter.data.items.every(i=>i.submitted === true));
 });
 
 test('link do Pix permite editar, confirmar e sincronizar anexos antes do pagamento, sem liberar o mural',async()=>{

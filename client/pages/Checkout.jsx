@@ -5,7 +5,7 @@ import { api, money, track, uploadMedia } from '../lib/api';
 import { draftGet } from '../lib/drafts';
 import { cartDraftKey, localCheckouts, rememberCheckout } from '../lib/cart';
 import { rememberPrivateOrder } from '../lib/unfinishedLetters.js';
-import { completedLetterHelpLink } from '../lib/helpLink.js';
+import { openSecureSupport } from '../lib/secureSupport.js';
 import { useApp } from '../main';
 import QrCode from '../components/QrCode';
 import CheckoutSupport from '../components/CheckoutSupport';
@@ -19,6 +19,28 @@ export default function Checkout() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(location.state?.notice || '');
   const [error, setError] = useState('');
+  const [supportPhone,setSupportPhone] = useState('');
+  const contextOpaque=new URLSearchParams(location.search).get('c')||
+    sessionStorage.getItem('ejc-support-context')||'';
+  useEffect(()=>{
+    if(!contextOpaque)return;
+    api('/api/support/context?c='+encodeURIComponent(contextOpaque))
+      .then(data=>setSupportPhone(data.phone||''))
+      .catch(()=>{});
+  },[contextOpaque]);
+  const confirmAll=async()=>{
+    try{
+      await openSecureSupport({
+        purpose:'finished',name:order?.items?.[0]?.sender_name||'',
+        phone:supportPhone,ids:(order?.items||[]).map(item=>item.id).slice(0,20),
+        recipientSlugs:(order?.items||[]).map(item=>item.recipient_slug),
+        checkoutId:order?.id||'',token,
+        stage:'carrinho_finalizado',source:'checkout',medium:'botao',
+        campaign:'confirmacao_envio',content:'multiplas_cartinhas'
+      });
+      track('help_link_clicked',{stage:'checkout_completed',letters:order?.items?.length||0});
+    }catch(cause){setError(cause.message);}
+  };
   const [syncMessage, setSyncMessage] = useState('');
   const [syncError, setSyncError] = useState('');
 
@@ -120,7 +142,7 @@ export default function Checkout() {
       <p className="muted">{paid
         ? 'Agora você pode concluir cada cartinha e enviá-la para o mural secreto do encontrista.'
         : 'Você já pode editar e confirmar cada cartinha enquanto aguarda a conferência do Pix. O envio ao mural será liberado após a aprovação.'}</p>
-      <CheckoutSupport step={order?.status === 'claimed' ? 'Pix informado · aguardando conferência' : 'Pix do carrinho'} checkoutId={order?.id} recipientNames={order?.items?.map(item => item.recipient_name) || []} recipientSlugs={order?.items?.map(item => item.recipient_slug) || []} orderIds={order?.items?.map(item => item.id) || []} senderName={order?.items?.[0]?.sender_name || ''} checkoutToken={token} />
+      <CheckoutSupport step={order?.status === 'claimed' ? 'Pix informado · aguardando conferência' : 'Pix do carrinho'} checkoutId={order?.id} recipientNames={order?.items?.map(item => item.recipient_name) || []} recipientSlugs={order?.items?.map(item => item.recipient_slug) || []} orderIds={order?.items?.map(item => item.id) || []} senderName={order?.items?.[0]?.sender_name || ''} senderPhone={supportPhone} checkoutToken={token} />
       {error && <div className="notice error" role="alert">{error}</div>}
       {message && <div className="notice" role="status">{message}</div>}
       {!order && <button className="btn ghost" type="button" onClick={reload}>Tentar carregar <RefreshCw size={17} /></button>}
@@ -139,7 +161,8 @@ export default function Checkout() {
                 <div className="checkout-recipient" key={item.id}>
                   <span className="checkout-recipient-index">{index + 1}</span>
                   <strong>{item.recipient_name}</strong>
-                  <Link className="btn ghost" to={'/pedido/' + item.token}
+                  <Link className="btn ghost" to={'/pedido/' + item.token+
+                    (contextOpaque?'?c='+encodeURIComponent(contextOpaque):'')}
                     onClick={()=>track('checkout_edit_letter_clicked',{stage:paid?'paid':'pending'})}>
                     {paid ? 'Escrever e enviar' : 'Editar cartinha'} {paid ? <ArrowRight size={16} /> : <Pencil size={16} />}
                   </Link>
@@ -170,14 +193,9 @@ export default function Checkout() {
               <div className="notice success">
                 <strong>💌 Todas as cartinhas foram enviadas!</strong>
                 <p>Avise nossa equipe para confirmar que chegou tudo certinho.</p>
-                <a className="btn" target="_blank" rel="noopener noreferrer"
-                  href={completedLetterHelpLink({
-                    origin:window.location.origin,sender:order.items[0].sender_name||'',
-                    items:order.items
-                  })}
-                  onClick={()=>track('help_link_clicked',{stage:'checkout_completed',letters:order.items.length})}>
+                <button type="button" className="btn" onClick={confirmAll}>
                   📲 Avisar a equipe no WhatsApp
-                </a>
+                </button>
               </div>}
           </div>
 

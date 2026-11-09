@@ -6,6 +6,7 @@ import { readAdminListFilters, updateAdminListFilter } from '../lib/adminListFil
 import { publishMuralOgImage } from '../lib/og';
 import { muralInvitationMessage, whatsappShareUrl } from '../lib/recipientWhatsApp';
 import { createSecureSupportContext } from '../lib/secureSupport.js';
+import { navigateToWhatsApp, isWhatsAppConfirmationPending, setWhatsAppConfirmationPending } from '../lib/whatsappNavigation.js';
 import MiniMercadoCampaign from './MiniMercadoCampaign';
 import { CAMPAIGN_KEY, renderCampaignWhatsApp } from '../../shared/ejcCampaign.js';
 import '../styles/recipient-whatsapp.css';
@@ -53,7 +54,8 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [fallbackLink, setFallbackLink] = useState('');
-  const [confirming, setConfirming] = useState(false);
+  const confirmationKey = 'recipient:' + campaignKey + ':' + recipient.id;
+  const [confirming, setConfirming] = useState(() => isWhatsAppConfirmationPending(confirmationKey));
   const [confirmedLocal, setConfirmedLocal] = useState(false);
   const ready=Number(recipient.ready_letter_count || 0);
   const isCampaign=campaignKey===CAMPAIGN_KEY;
@@ -65,15 +67,6 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
     ready>0 && (!isCampaign || published);
 
   async function send() {
-    // Opening during the gesture is required on iOS Safari.
-    const popup=window.open('about:blank','_blank');
-    if(popup){
-      popup.opener=null;
-      try{
-        popup.document.title='Preparando convite do XX EJC';
-        popup.document.body.innerText='Preparando o WhatsApp…';
-      }catch{ /* blocked by cross-origin navigation */ }
-    }
     setBusy(true);setError('');setFallbackLink('');setConfirming(false);
     try{
       if(!recipient.mural_og_ready)await publishMuralOgImage(recipient);
@@ -107,17 +100,14 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
       }
       const href=whatsappShareUrl({phone:details.phone,message});
       track('admin_whatsapp_invite_opened',{stage:isCampaign?'campaign':'mural'});
-      if(popup && !popup.closed){
-        try{
-          popup.location.replace(href);
-          setConfirming(true);
-        }catch{
-          setFallbackLink(href);
-        }
-      }else setFallbackLink(href);
-      await onRefresh?.();
+      setFallbackLink(href);
+      setConfirming(true);
+      setWhatsAppConfirmationPending(confirmationKey, true);
+      // Refresh before leaving. The confirmation prompt is also restored from
+      // sessionStorage when the admin returns using the browser's Back button.
+      try { await onRefresh?.(); } catch { /* Navigation still works if refresh fails. */ }
+      navigateToWhatsApp(href);
     }catch(cause){
-      try{popup?.close();}catch{ /* ignore */ }
       setError(cause.message||'Não foi possível preparar o convite.');
     }finally{setBusy(false);}
   }
@@ -130,6 +120,7 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
       }});
       track('admin_whatsapp_invite_confirmed',{stage:isCampaign?'campaign':'mural'});
       setConfirmedLocal(true);setConfirming(false);
+      setWhatsAppConfirmationPending(confirmationKey, false);
       await onRefresh?.();
     }catch(cause){setError(cause.message);}
     finally{setBusy(false);}
@@ -151,8 +142,11 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
       {isCampaign&&!published&&<small className="whatsapp-action-hint">Publique a carta da campanha primeiro.</small>}
       {ready>0&&!recipient.whatsapp_phone&&<small className="whatsapp-action-hint">Salve o telefone antes de compartilhar.</small>}
       {error&&<p role="alert" className="notice error">{error}</p>}
-      {fallbackLink&&<a href={fallbackLink} target="_blank" rel="noreferrer" className="btn outline"
-        onClick={()=>setConfirming(true)}>
+      {fallbackLink&&<a href={fallbackLink} className="btn outline"
+        onClick={()=>{
+          setConfirming(true);
+          setWhatsAppConfirmationPending(confirmationKey, true);
+        }}>
         <ExternalLink size={15}/> Abrir WhatsApp
       </a>}
       {confirming&&<div className="whatsapp-send-confirm" role="group"
@@ -164,7 +158,10 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
             <Check size={16}/> Sim, enviei a imagem e a mensagem
           </button>
           <button type="button" className="btn outline" disabled={busy}
-            onClick={()=>setConfirming(false)}>Ainda não enviei</button>
+            onClick={()=>{
+              setConfirming(false);
+              setWhatsAppConfirmationPending(confirmationKey, false);
+            }}>Ainda não enviei</button>
         </div>
       </div>}
     </div>

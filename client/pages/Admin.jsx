@@ -535,7 +535,12 @@ function BrandLogo({ info, reload }) {
     {message&&<div className="notice">{message}</div>}
   </section>;
 }
-function HelpOgArtwork(){
+function HelpOgArtwork({variant='finished'}){
+  const recipient=variant==='recipient';
+  const apiPath='/api/admin/og/help-'+variant;
+  const publicPath=recipient?'/ajuda/minha-cartinha':'/ajuda/terminei-a-cartinha';
+  const imagePath=recipient?'/og-ajuda-minha-cartinha.png':'/og-ajuda-cartinhas.png';
+  const inputId='help-og-'+variant;
   const [status,setStatus]=useState(null);
   const [stats,setStats]=useState([]);
   const [file,setFile]=useState(null);
@@ -545,13 +550,13 @@ function HelpOgArtwork(){
   const reload=async()=>{
     try{
       const [og,clicks]=await Promise.all([
-        api('/api/admin/og/help-finished'),
+        api(apiPath),
         api('/api/admin/help-link/stats')
       ]);
       setStatus(og);setStats(clicks.rows||[]);
     }catch(cause){setError(cause.message);}
   };
-  useEffect(()=>{reload();},[]);
+  useEffect(()=>{reload();},[variant]);
   async function upload(event){
     event.preventDefault();
     if(!file)return;
@@ -562,7 +567,7 @@ function HelpOgArtwork(){
       const valid=image.width===1200&&image.height===630;
       image.close?.();
       if(!valid)throw Error('A arte precisa medir exatamente 1200 × 630 pixels.');
-      const res=await fetch('/api/admin/og/help-finished',{
+      const res=await fetch(apiPath,{
         method:'POST',headers:{'Content-Type':'image/png'},credentials:'same-origin',body:file
       });
       if(!res.ok)throw Error((await res.json().catch(()=>({}))).error||'Falha ao publicar a imagem.');
@@ -573,9 +578,9 @@ function HelpOgArtwork(){
   }
   return <section className="form-card">
     <span className="eyebrow">PRÉVIA DO WHATSAPP / AJUDA</span>
-    <h2>💌 OG das Cartinhas Virtuais</h2>
-    <p>Arte do link <code>/ajuda/terminei-a-cartinha</code>. A prévia precisa ser PNG em 1200 × 630 pixels.</p>
-    <p className="muted small">📊 Acessos aos links de WhatsApp: <strong>{stats.reduce((sum,row)=>sum+Number(row.clicks||0),0)}</strong>.
+    <h2>💌 {recipient?'OG: Me ajude com minha cartinha':'OG: Enviei minha cartinha, e agora?'}</h2>
+    <p>Arte do link <code>{publicPath}</code>. A prévia precisa ser PNG em 1200 × 630 pixels.</p>
+    {!recipient&&<><p className="muted small">📊 Acessos aos links de WhatsApp: <strong>{stats.reduce((sum,row)=>sum+Number(row.clicks||0),0)}</strong>.
       {' '}Contagem anônima, sem IP ou conteúdo de cartinhas.</p>
     {stats.length>0&&<div className="inline-actions">
       {[...new Set(stats.map(row=>row.campaign))].map(campaign=>
@@ -583,14 +588,15 @@ function HelpOgArtwork(){
           {' '}{stats.filter(row=>row.campaign===campaign).reduce((sum,row)=>sum+Number(row.clicks||0),0)}
         </span>)}
     </div>}
+    </>}
     {status?.ready?<p className="notice success">✅ Imagem publicada no R2. O WhatsApp receberá a prévia personalizada.</p>:
       <p className="notice warning">A arte ainda não foi publicada. A prévia padrão do EJC será usada até enviar o PNG.</p>}
-    {status?.ready&&<img src={(status.url||'/og-ajuda-cartinhas.png')+'&refresh='+version}
+    {status?.ready&&<img src={(status.url||imagePath)+'&refresh='+version}
       alt="Prévia do link de ajuda no WhatsApp"
       style={{width:'100%',maxWidth:600,aspectRatio:'1200 / 630',objectFit:'contain',borderRadius:14}} />}
     <form onSubmit={upload}>
-      <label htmlFor="help-og">Enviar ou substituir arte PNG (1200 × 630)</label>
-      <input id="help-og" type="file" accept="image/png" onChange={event=>setFile(event.target.files?.[0]||null)}/>
+      <label htmlFor={inputId}>Enviar ou substituir arte PNG (1200 × 630)</label>
+      <input id={inputId} type="file" accept="image/png" onChange={event=>setFile(event.target.files?.[0]||null)}/>
       <button type="submit" className="btn" disabled={busy||!file}>
         <ImagePlus size={17}/> {busy?'Publicando…':'Publicar OG de ajuda'}
       </button>
@@ -602,7 +608,7 @@ function Config({info,reload}){
   const [form,setForm]=useState({...info.config,open:info.config.open==='true'}),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
   const fields=[['store_title','Título do projeto','text'],['store_subtitle','Subtítulo','text'],['message_price_cents','Contribuição em centavos (R$ 10,00 = 1000)','number'],['pix_key','Chave Pix','text'],['pix_name','Titular do Pix','text'],['pix_city','Cidade do Pix (sem acentos)','text'],['deadline','Encerrar edição das cartinhas','datetime-local'],['release_at','Liberar murais dos encontristas','datetime-local'],['analytics_id','Google Analytics 4 (G-...)','text']];
   const save=async()=>{setBusy(true);try{await api('/api/admin/settings',{method:'PUT',data:{...form,message_price_cents:Number(form.message_price_cents)}});setNotice('Configurações salvas.');await reload();}catch(e){setNotice(e.message);}finally{setBusy(false);}};
-  return <><div className="section-head"><div><span className="eyebrow">CONFIGURAÇÕES</span><h1>Controle do evento</h1><p>O prazo de edição e a abertura do mural são horários independentes.</p></div></div><section className="form-card settings-form"><label className="toggle-line"><input type="checkbox" checked={!!form.open} onChange={e=>setForm(f=>({...f,open:e.target.checked}))}/> Aceitar novas cartinhas</label>{fields.map(([key,label,type])=><div className="field" key={key}><label htmlFor={key}>{label}</label><input id={key} type={type} value={form[key]||''} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}/></div>)}<button className="btn" disabled={busy} onClick={save}><Check size={17}/> Salvar configurações</button>{notice&&<div className="notice">{notice}</div>}</section><BrandLogo info={info} reload={reload}/><HelpOgArtwork/></>;
+  return <><div className="section-head"><div><span className="eyebrow">CONFIGURAÇÕES</span><h1>Controle do evento</h1><p>O prazo de edição e a abertura do mural são horários independentes.</p></div></div><section className="form-card settings-form"><label className="toggle-line"><input type="checkbox" checked={!!form.open} onChange={e=>setForm(f=>({...f,open:e.target.checked}))}/> Aceitar novas cartinhas</label>{fields.map(([key,label,type])=><div className="field" key={key}><label htmlFor={key}>{label}</label><input id={key} type={type} value={form[key]||''} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}/></div>)}<button className="btn" disabled={busy} onClick={save}><Check size={17}/> Salvar configurações</button>{notice&&<div className="notice">{notice}</div>}</section><BrandLogo info={info} reload={reload}/><HelpOgArtwork/><HelpOgArtwork variant="recipient"/></>;
 }
 function QrPrint({ info }) {
   const [person, setPerson] = useState('');

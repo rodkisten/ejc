@@ -88,12 +88,12 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
           name:details.name,url:inviteUrl,count:Math.max(0,details.count-1),
         });
         message += '\n\n🆘 *Precisa de ajuda com suas cartinhas?*\n'+recipientSupportLink({
-          name:details.name,origin:new URL(inviteUrl).origin,source:'whatsapp',
+          name:details.name,ids:details.letter_ids||[],origin:new URL(inviteUrl).origin,source:'whatsapp',
           medium:'mensagem',campaign:'pos_encontro',
           content:'suporte_encontrista',stage:'convite_campanha',
         })+'\n_É só abrir e contar para a equipe o que aconteceu._';
       }else{
-        message=muralInvitationMessage({name:details.name,url:inviteUrl,count:details.count});
+        message=muralInvitationMessage({name:details.name,url:inviteUrl,count:details.count,ids:details.letter_ids||[]});
       }
       const href=whatsappShareUrl({phone:details.phone,message});
       track('admin_whatsapp_invite_opened',{stage:isCampaign?'campaign':'mural'});

@@ -2192,7 +2192,7 @@ export default {
           '━━━━━━━━━━━━━━━━━━━━',
           '💛 *Mini Mercado · XX EJC Simonésia*'
         ];
-        const whats=new URL('https://wa.me/5533999546031');
+        const whats=new URL('https://wa.me/5532999662604');
         whats.searchParams.set('text',details.join('\n'));
         for(const [key,backup] of Object.entries({
           utm_source:source,utm_medium:medium,utm_campaign:campaign,
@@ -2265,7 +2265,7 @@ export default {
             'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'
           ).bind(new Date().toISOString().slice(0,10),campaign).run();
         }catch(error){console.warn('Help-link count unavailable',error?.message);}
-        const whats=new URL('https://wa.me/5533999546031');
+        const whats=new URL('https://wa.me/5532999662604');
         const clean=(value,max=100)=>String(value||'').replace(/[\r\n<>]/g,' ').trim().slice(0,max);
         const sender=clean(url.searchParams.get('remetente'));
         if(!sender||/^(?:remetente(?: não informado)?|sem nome|an[oô]nimo|uma pessoa especial)$/i.test(sender))

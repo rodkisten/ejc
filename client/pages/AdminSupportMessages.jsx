@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ClipboardCopy, ExternalLink, MessageCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { api, track } from '../lib/api';
 import { normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp';
+import { supportContactParams, supportContactAdminUrl } from '../lib/supportContactUrl.js';
 import { publishDraftOg } from '../lib/draftOg.js';
 import {
   SUPPORT_MESSAGE_TEMPLATES, createSupportMessage, confirmedOrders,
@@ -29,19 +30,26 @@ function WhatsAppTextPreview({ value }) {
 
 export default function AdminSupportMessages({ info }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const initial = location.state?.support || {};
+  const fromUrl = supportContactParams(location.search);
   const [letters, setLetters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [selectedRecipients, setSelectedRecipients] = useState(
-    initial.recipient_slug ? [initial.recipient_slug] : []
+    fromUrl.recipients.length ? fromUrl.recipients :
+      initial.recipient_slug ? [initial.recipient_slug] : []
   );
-  const [template, setTemplate] = useState(initial.template || 'desculpas');
-  const [contactName, setContactName] = useState(initial.contact_name || '');
-  const [contactWhatsApp, setContactWhatsApp] = useState('');
+  const [template, setTemplate] = useState(
+    SUPPORT_MESSAGE_TEMPLATES.some(item => item.id === fromUrl.template)
+      ? fromUrl.template : initial.template || 'desculpas'
+  );
+  const [contactName, setContactName] = useState(fromUrl.name || initial.contact_name || '');
+  const [contactWhatsApp, setContactWhatsApp] = useState(fromUrl.phone || initial.contact_phone || '');
   const [selectedOrderIds, setSelectedOrderIds] = useState(
-    initial.order_id ? [initial.order_id] : []
+    fromUrl.orders.length ? fromUrl.orders :
+      initial.order_id ? [initial.order_id] : []
   );
   const [resumeUrl, setResumeUrl] = useState(initial.resume_url || '');
   const [generatingResume, setGeneratingResume] = useState(false);
@@ -61,6 +69,18 @@ export default function AdminSupportMessages({ info }) {
     }
   }
   useEffect(() => { reload(); }, []);
+  // Reflect the contact and operational selection in the admin URL, so a link
+  // opened from support can prefill WhatsApp without storing a private token.
+  useEffect(() => {
+    const next = supportContactAdminUrl({
+      name: contactName, phone: contactWhatsApp,
+      recipients: selectedRecipients, orders: selectedOrderIds, template
+    });
+    if (next !== location.pathname + location.search) {
+      navigate(next, { replace: true, state: location.state });
+    }
+  }, [contactName, contactWhatsApp, selectedRecipients, selectedOrderIds, template,
+      location.pathname, location.search, location.state, navigate]);
 
   useEffect(() => {
     if (validContactName(contactName) || !initial.order_id || !letters.length) return;
@@ -270,7 +290,19 @@ export default function AdminSupportMessages({ info }) {
             <input id="support-contact-phone" type="tel" inputMode="tel" autoComplete="off"
               placeholder="(33) 99999-9999" value={contactWhatsApp}
               onChange={event => setContactWhatsApp(event.target.value.slice(0,25))}/>
-            <small>Sem telefone cadastrado, você poderá escolher a conversa ao abrir o WhatsApp. O número não é salvo no sistema.</small>
+            <small>O nome e o WhatsApp entram na URL desta aba para preencher os próximos links de atendimento. Não são gravados no banco nem enviados ao Analytics. Use apenas links internos da equipe.</small>
+            <button type="button" className="btn ghost" onClick={async () => {
+              const url=window.location.origin+supportContactAdminUrl({
+                name:contactName,phone:contactWhatsApp,
+                recipients:selectedRecipients,orders:selectedOrderIds,template
+              });
+              try {
+                await navigator.clipboard.writeText(url);
+                setNotice('✅ Link do atendimento com nome e telefone copiado!');
+              } catch {
+                window.prompt('Copie o link do atendimento:',url);
+              }
+            }}>🔗 Copiar link preenchido do atendimento</button>
           </section>
 
           <section className="form-card support-messages-card">

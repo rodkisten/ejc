@@ -2086,7 +2086,8 @@ export default {
       if(path==='/og-ajuda-minha-cartinha.png'&&
          (request.method==='GET'||request.method==='HEAD')){
         const image=await env.MEDIA.get('og/help-recipient-v1.png')||
-          await env.MEDIA.get('og/help-finished-v1.png');
+          await env.MEDIA.get('og/help-finished-v1.png')||
+          await env.MEDIA.get('og/default-v3.png');
         if(image)return new Response(request.method==='HEAD'?null:image.body,{headers:{
           'Content-Type':'image/png','Content-Length':String(image.size),
           'Cache-Control':'public, max-age=3600','X-Content-Type-Options':'nosniff'
@@ -2168,7 +2169,8 @@ export default {
         }});
       }
       if(path==='/og-ajuda-cartinhas.png'&&(request.method==='GET'||request.method==='HEAD')){
-        const image=await env.MEDIA.get('og/help-finished-v1.png');
+        const image=await env.MEDIA.get('og/help-finished-v1.png')||
+          await env.MEDIA.get('og/default-v3.png');
         if(image)return new Response(request.method==='HEAD'?null:image.body,{headers:{
           'Content-Type':'image/png','Content-Length':String(image.size),
           'Cache-Control':'public, max-age=3600','X-Content-Type-Options':'nosniff'

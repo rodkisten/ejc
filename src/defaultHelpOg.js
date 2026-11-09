@@ -37,7 +37,7 @@ const FONT={
   '?':['01110','10001','00001','00010','00100','00000','00100'],
   '!':['00100','00100','00100','00100','00100','00000','00100']
 };
-function draw(index){
+async function draw(){
   const raster=new Uint8Array(H*(W+1));
   function rect(x,y,w,h,color){
     for(let py=Math.max(0,y);py<Math.min(H,y+h);py++){

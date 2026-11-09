@@ -1788,3 +1788,68 @@ test('admin publica a arte OG de suporte do encontrista em PNG 1200x630 na R2',a
   assert.equal(image.headers.get('Content-Type'),'image/png');
   assert.deepEqual(new Uint8Array(await image.arrayBuffer()),bytes);
 });
+
+test('OG do rascunho usa nome do D1, PNG 1200x630 e não expõe token de edição',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  env.ASSETS.fetch=async()=>new Response(
+    '<html><head><title>Original</title></head><body>SPA</body></html>',
+    {headers:{'Content-Type':'text/html'}});
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:list[0].slug,sender_name:'Pessoa que enviou'
+  });
+  assert.equal(created.status,201);
+  const {id,token}=created.data;
+  const paid=await call(env,'/api/admin/orders/'+id+'/status','PATCH',{
+    status:'paid',bank_reference:'E2EDRAFTOG1234567',
+    bank_checked:true,amount_checked:true
+  },admin);
+  assert.equal(paid.status,200);
+
+  // A minimal valid PNG signature with IHDR dimensions suffices for upload
+  // validation. Client-side Canvas tests verify that the real PNG is rendered.
+  const png=new Uint8Array(24);
+  png.set([137,80,78,71,13,10,26,10]);
+  const header=new DataView(png.buffer);
+  header.setUint32(16,1200);
+  header.setUint32(20,630);
+  const upload=await worker.fetch(new Request(
+    'https://ejc.test/api/admin/og/draft?id='+id,{
+      method:'POST',
+      headers:{Origin:'https://ejc.test',Cookie:admin.cookie,'Content-Type':'image/png'},
+      body:png,
+    }
+  ),env);
+  assert.equal(upload.status,200);
+  const uploaded=await upload.json();
+  assert.equal(uploaded.ok,true);
+  assert.equal(uploaded.recipients[0],list[0].name);
+  assert.match(uploaded.og_url,/\/og-rascunho\/[a-f0-9]{64}\.png/);
+
+  const crawler=await worker.fetch(new Request(
+    'https://ejc.test/pedido/'+token+'?utm_source=whatsapp',{
+      headers:{'User-Agent':'facebookexternalhit/1.1'}
+    }
+  ),env);
+  assert.equal(crawler.status,200);
+  const html=await crawler.text();
+  assert.match(html,/Termine sua cartinha/);
+  assert.ok(html.includes(list[0].name));
+  assert.match(html,/og:image/);
+  assert.match(html,/og-rascunho\/[a-f0-9]{64}\.png/);
+  assert.ok(!html.includes(token),'OG não deve conter credencial privada');
+
+  const directImage=await worker.fetch(new Request('https://ejc.test'+
+    uploaded.og_url),env);
+  assert.equal(directImage.status,200);
+  assert.match(directImage.headers.get('Content-Type'),/image\/png/);
+  assert.equal((await directImage.arrayBuffer()).byteLength,24);
+
+  const invalid=await worker.fetch(new Request(
+    'https://ejc.test/pedido/credencial-invalida',{
+      headers:{'User-Agent':'facebookexternalhit/1.1'}
+    }
+  ),env);
+  assert.equal(invalid.status,200);
+  const invalidHtml=await invalid.text();
+  assert.ok(!invalidHtml.includes(list[0].name));
+});

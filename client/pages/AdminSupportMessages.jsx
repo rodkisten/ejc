@@ -79,11 +79,13 @@ export default function AdminSupportMessages({ info }) {
 
   const templateInfo = SUPPORT_MESSAGE_TEMPLATES.find(item => item.id === template);
   const missingName = !validContactName(contactName) && !templateInfo?.allowsMissingName;
+  const missingRecipients = people.length === 0 && template !== 'pedir_nome';
   const readyToConfirm = confirmedOrders(selectedOrders);
-  const emptyDraftsSelected = selectedOrders.some(letter => !letter.submitted && !letter.has_content);
+  const emptyDraftsSelected = selectedOrders.length > 0 &&
+    selectedOrders.every(letter => !letter.submitted && !letter.has_content);
   const invalidConfirm = templateInfo?.requiresSubmitted && !readyToConfirm;
   const invalidEmpty = template === 'rascunho_vazio' && !emptyDraftsSelected;
-  const blocked = missingName || invalidConfirm || invalidEmpty;
+  const blocked = missingName || missingRecipients || invalidConfirm || invalidEmpty;
   const validOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://ejc.migos.club';
 
   const generated = useMemo(() => {
@@ -96,7 +98,8 @@ export default function AdminSupportMessages({ info }) {
     } catch {
       return '';
     }
-  }, [template, contactName, selectedRecipients.join('|'), selectedOrderIds.join('|'), letters, resumeUrl, validOrigin, blocked]);
+  }, [template, contactName, selectedRecipients.join('|'), selectedOrderIds.join('|'),
+      names.join('|'), letters, resumeUrl, validOrigin, blocked]);
   useEffect(() => { setText(generated); setEdited(false); }, [generated]);
 
   function addRecipient(slug) {
@@ -268,9 +271,11 @@ export default function AdminSupportMessages({ info }) {
             {blocked ? <div className="notice warning" role="alert">
               {missingName
                 ? 'Informe o nome da pessoa para gerar a resposta. Se ainda não souber, escolha o modelo “Qual é seu nome?”.'
-                : invalidConfirm
-                  ? 'Não é possível confirmar recebimento antes do pagamento e envio finalizado dos pedidos selecionados.'
-                  : 'Selecione uma cartinha que realmente esteja sem conteúdo para usar este aviso.'}
+                : missingRecipients
+                  ? 'Selecione pelo menos um encontrista antes de preparar a mensagem personalizada.'
+                  : invalidConfirm
+                    ? 'Não é possível confirmar recebimento antes do pagamento e envio finalizado dos pedidos selecionados.'
+                    : 'Selecione somente as cartinhas que ainda estejam sem conteúdo e com envio pendente para usar este aviso.'}
             </div> : <>
               <label htmlFor="support-editor">Texto editável, com a formatação original do WhatsApp</label>
               <textarea id="support-editor" className="support-textarea" value={text} rows={18}

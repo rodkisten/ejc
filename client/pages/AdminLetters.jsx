@@ -19,6 +19,7 @@ function createdAt(value) {
   });
 }
 function statusText(letter) {
+  if (letter.gift) return '💛 Presente do Mini Mercado · enviada';
   if (letter.status === 'cancelled') return 'Pedido cancelado';
   if (paid(letter.status)) return letter.submitted ? 'Pago · enviada' : 'Pago · rascunho';
   return letter.submitted ? 'Pix pendente · enviada' : 'Pix pendente · rascunho';
@@ -166,6 +167,7 @@ export default function AdminLetters() {
     if (filter === 'pending' && paid(letter.status)) return false;
     if (filter === 'paid' && !paid(letter.status)) return false;
     if (filter === 'draft' && letter.submitted) return false;
+    if (filter === 'paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift)) return false;
     if (filter === 'sent' && !letter.submitted) return false;
     const query = search.trim().toLocaleLowerCase('pt-BR');
     return !query || [letter.recipient_name, letter.sender_name, letter.id]
@@ -283,6 +285,13 @@ export default function AdminLetters() {
         </section>
       )}
       <div className="notice admin-letters-privacy">
+        <LockKeyhole size={18}/>
+        Para revisar uma cartinha paga que ficou como rascunho: abra esta página com
+        ?secret=000000, informe a credencial técnica separada, filtre “Pagos que ainda são rascunhos”,
+        abra a prévia completa e escolha “Revisei o conteúdo · aprovar e enviar”.
+        A coordenação comum não recebe textos ou anexos.
+      </div>
+      <div className="notice admin-letters-privacy">
         <ShieldCheck size={20} />
         {technicalMode && technicalPassword
           ? 'A lista administrativa continua protegida. Apenas uma prévia técnica aberta com autorização específica carrega seu conteúdo, sem alterar a privacidade para a coordenação.'
@@ -302,6 +311,7 @@ export default function AdminLetters() {
           <option value="paid">Pagas</option>
           <option value="sent">Enviadas</option>
           <option value="draft">Rascunhos</option>
+          <option value="paid-draft">Pagos que ainda são rascunhos</option>
         </select>
         <strong aria-live="polite">{rows.length} cartinha(s)</strong>
       </div>
@@ -335,7 +345,9 @@ export default function AdminLetters() {
               </div>
             </div>
             {expanded[letter.id] && (technicalMode && technicalPassword
-              ? <TechnicalLetterPreview orderId={letter.id} password={technicalPassword} />
+              ? <TechnicalLetterPreview orderId={letter.id} password={technicalPassword}
+                  allowFinalize={paid(letter.status) && !letter.submitted && !letter.gift}
+                  onFinalized={()=>Promise.all([refresh(),updateFinalizeSummary()])} />
               : <SecretLetterPreview letter={letter} />)}
           </article>
         ))}

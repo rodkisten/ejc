@@ -58,3 +58,16 @@
 .people-list .person-row-phone-share {flex:1 1 100%;max-width:none;grid-template-columns:minmax(0,1fr) minmax(170px,.6fr);align-items:end;}
 .people-list .person-admin-actions {flex:1 1 100%;}
 @media(max-width:650px){.people-list .person-row-phone-share{grid-template-columns:1fr;}}
+
+.whatsapp-send-confirm{display:grid;gap:10px;max-width:480px;padding:13px;border:1px solid #90cba4;border-radius:14px;background:#f1fff5;color:#1b4e34;width:100%}
+.whatsapp-send-confirm strong{line-height:1.45;font-size:.92rem}
+.whatsapp-send-confirm p{font-size:.83rem;line-height:1.5;margin:0;color:#3c624b}
+.whatsapp-send-confirm>div{display:flex;flex-wrap:wrap;gap:8px}
+.whatsapp-send-confirm .btn{min-height:44px;white-space:normal;text-align:center}
+.whatsapp-action-hint.is-sent{color:#176842}
+.whatsapp-batch-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 15px}
+.whatsapp-batch-actions>.btn{min-height:44px}
+.whatsapp-batch-actions>span{font-size:.83rem;color:#68596b}
+.whatsapp-summary{grid-template-columns:repeat(5,minmax(0,1fr))}
+@media(max-width:780px){.whatsapp-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:500px){.whatsapp-send-confirm>div{display:grid;grid-template-columns:1fr}.whatsapp-send-confirm .btn{width:100%}}

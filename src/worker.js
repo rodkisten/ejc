@@ -2,6 +2,7 @@ import { generatePix } from './pix.js';
 import { normalizePaymentLookup, likeTerm, maskedStatus } from './paymentSearch.js';
 import { isSquareRecipientJpeg } from './photo.js';
 import { normalizeComposition, STICKERS_BY_ID, plainLetter } from '../shared/letter.js';
+import { draftOgCaption, draftOgTitle, draftOgIds } from '../shared/draftOg.js';
 import { CAMPAIGN_KEY, CAMPAIGN_SENDER, DEFAULT_CAMPAIGN, letterMarkdownToHtml } from '../shared/ejcCampaign.js';
 import { enqueue, enableReceipt, disableReceipt, confirmReceipt, markRead, queueRelease, dispatch, validateEmail, emailsReady } from './notify.js';
 
@@ -507,6 +508,34 @@ function socialImage(recipient, defaultOg=null, kind='enviar') {
   return {
     path: DEFAULT_OG_PATH + '?v=' + encodeURIComponent(fallbackVersion),
     version: fallbackVersion, width: defaultOg?.ready?1200:600, height:defaultOg?.ready?630:315,
+  };
+}
+async function draftOgDetails(env,rows,origin){
+  const drafts=rows.filter(row=>activeOrder(row)&&!row.submitted_at&&!row.campaign_key);
+  const ids=draftOgIds(drafts.map(row=>row.id));
+  if(!ids.length)return null;
+  const people=[...new Set(drafts.map(row=>row.recipient_name).filter(Boolean))];
+  const key=await digest(ids.join('|'));
+  const object=await env.MEDIA.head('og/draft/v1/'+key+'.png');
+  const image=object
+    ? origin+'/og-rascunho/'+key+'.png?v='+encodeURIComponent(object.uploaded?.getTime()||'v1')
+    : origin+'/og-ejc-default.png';
+  const title=draftOgTitle(people);
+  const description='Cartinha em rascunho. '+draftOgCaption(people)+' Mini Mercado · XX EJC Simonésia.';
+  const meta={
+    'og:type':'website','og:locale':'pt_BR','og:site_name':'Cartinhas Virtuais · Mini Mercado',
+    'og:title':title,'og:description':description,'og:url':origin+'/ajuda/terminar-cartinha',
+    'og:image':image,'og:image:secure_url':image,'og:image:type':'image/png',
+    'og:image:width':object?'1200':'600','og:image:height':object?'630':'315',
+    'og:image:alt':'Termine sua cartinha. '+draftOgCaption(people)
+  };
+  const tags=Object.entries(meta).map(([key,value])=>
+    '<meta property="'+escapeMeta(key)+'" content="'+escapeMeta(value)+'" />').join('');
+  return {
+    title,description,tags:tags+
+      '<meta name="twitter:card" content="summary_large_image">'+
+      '<meta name="twitter:title" content="'+escapeMeta(title)+'">'+
+      '<meta name="twitter:image" content="'+escapeMeta(image)+'">'
   };
 }
 function buildSocialMeta(origin, recipient, kind = 'enviar', defaultOg=null) {
@@ -1448,6 +1477,36 @@ async function adminRoute(req,env,path) {
   }
 
   // Publish the supplied OG artwork in R2, without changing other site images.
+  // Authenticated, automatic PNG publishing. Names are derived from the D1 records
+  // and never accepted from arbitrary URLs or public requests.
+  if(path==='/api/admin/og/draft'&&req.method==='POST'){
+    const requestUrl=new URL(req.url);
+    const raw=requestUrl.searchParams.getAll('id');
+    const ids=draftOgIds(raw);
+    if(!ids.length||ids.length!==raw.length||ids.length>20)
+      bad('Selecione de 1 a 20 cartinhas válidas, sem IDs repetidos.',400);
+    const rows=await env.DB.prepare(
+      'SELECT o.id,o.status,o.submitted_at,o.campaign_key,r.name AS recipient_name '+
+      'FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.id IN ('+
+      ids.map(()=>'?').join(',')+')'
+    ).bind(...ids).all();
+    if(rows.results.length!==ids.length||
+       rows.results.some(row=>!activeOrder(row)||row.submitted_at||row.campaign_key))
+      bad('A prévia só pode ser publicada para cartinhas pagas ainda em rascunho.',409);
+    const image=await receiveSafeImage(req,2*1024*1024);
+    if(image.type!=='image/png')bad('A prévia deve ser PNG.',415);
+    const view=new DataView(image.bytes.buffer,image.bytes.byteOffset,image.bytes.byteLength);
+    if(image.bytes.byteLength<24||view.getUint32(16)!==1200||view.getUint32(20)!==630)
+      bad('A arte OG deve medir 1200 × 630 pixels.',400);
+    const hash=await digest(ids.join('|'));
+    await env.MEDIA.put('og/draft/v1/'+hash+'.png',image.bytes,
+      {httpMetadata:{contentType:'image/png'}});
+    return result({
+      ok:true,og_url:'/og-rascunho/'+hash+'.png?v='+Date.now(),
+      recipients:[...new Set(rows.results.map(row=>row.recipient_name))],
+      title:draftOgTitle(rows.results.map(row=>row.recipient_name))
+    });
+  }
   if(path==='/api/admin/og/help-finished'&&req.method==='GET'){
     const image=await env.MEDIA.head('og/help-finished-v1.png');
     return result({ready:!!image,
@@ -2244,6 +2303,18 @@ export default {
           &&ctx?.waitUntil)ctx.waitUntil(dispatch(env));
         return response;
       }
+      // PNG was rendered automatically when an admin prepared a recovery link.
+      // Immutable URL contains only a SHA-256 of sorted operational order IDs.
+      const draftPng=path.match(/^\/og-rascunho\/([a-f0-9]{64})\.png$/);
+      if(draftPng&&(request.method==='GET'||request.method==='HEAD')){
+        const image=await env.MEDIA.get('og/draft/v1/'+draftPng[1]+'.png');
+        if(!image)return new Response(null,{status:404,headers:{'Cache-Control':'no-store'}});
+        return new Response(request.method==='HEAD'?null:image.body,{headers:{
+          'Content-Type':'image/png','Content-Length':String(image.size),
+          'Cache-Control':'public, max-age=3600','X-Content-Type-Options':'nosniff',
+          'X-Robots-Tag':'noindex, nofollow'
+        }});
+      }
       // Count recipient invitation landings, without recording a slug, IP or mural access grant.
       if(request.method==='GET'&&/^\/mural\/[a-z0-9-]+$/.test(path)){
         const campaign=url.searchParams.get('utm_campaign');
@@ -2271,7 +2342,34 @@ export default {
           'Cache-Control':'public, max-age=300','X-Content-Type-Options':'nosniff'
         }});
       }
-      const sharePage=!!social || path==='/' || path==='/abrir';
+      const draftPrivate=path.match(/^\/(pedido|checkout)\/([A-Za-z0-9_-]{40,100})$/);
+      let draftMeta=null;
+      const ua=request.headers.get('User-Agent')||'';
+      const previewBot=/whatsapp|facebookexternalhit|facebot|twitterbot|telegrambot|slackbot|discordbot|linkedinbot/i.test(ua) &&
+        request.headers.get('Sec-Fetch-Mode')!=='navigate' &&
+        request.headers.get('Sec-Fetch-Dest')!=='document';
+      if(draftPrivate&&previewBot&&(request.method==='GET'||request.method==='HEAD')){
+        try{
+          const headers=new Headers(request.headers);
+          headers.set('Authorization','Bearer '+draftPrivate[2]);
+          const privateRequest=new Request(request,{headers});
+          let rows=[];
+          if(draftPrivate[1]==='pedido'){
+            const order=await buyer(privateRequest,env);
+            rows=[order];
+          }else{
+            const {checkout}=await checkoutBuyer(privateRequest,env);
+            rows=(await env.DB.prepare(
+              'SELECT o.id,o.status,o.submitted_at,o.campaign_key,r.name AS recipient_name '+
+              'FROM orders o JOIN recipients r ON r.id=o.recipient_id WHERE o.checkout_id=?'
+            ).bind(checkout.id).all()).results;
+          }
+          draftMeta=await draftOgDetails(env,rows,new URL(env.PUBLIC_ORIGIN||url.origin).origin);
+        }catch{
+          // Expired, invalid or revoked access: never expose names or private data.
+        }
+      }
+      const sharePage=!!social || !!draftMeta || path==='/' || path==='/abrir';
       const assetRequest=sharePage && path!=='/'
         ?new Request(new URL('/',url.origin),request)
         :request;
@@ -2291,7 +2389,7 @@ export default {
       if(sharePage && response.ok && (headers.get('Content-Type')||'').includes('text/html')){
         const publicOrigin=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
         const ogDefault=await env.MEDIA.head('og/default-v3.png');
-        const meta=buildSocialMeta(publicOrigin,socialRecipient,social?.[1]||'enviar',
+        const meta=draftMeta||buildSocialMeta(publicOrigin,socialRecipient,social?.[1]||'enviar',
           ogDefault?{ready:true,version:String(ogDefault.uploaded?.getTime()||'v3')} : null);
         const html=(await response.text())
           .replace(/<!-- EJC-OG-START:[\s\S]*?<!-- EJC-OG-END -->/i,'')

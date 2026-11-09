@@ -1,3 +1,5 @@
+import { whatsappMessageUrl } from '../../shared/whatsappText.js';
+
 export const SUPPORT_WHATSAPP = '5532999662604';
 
 // Never send edit credentials, access tokens, hashes, or a full Pix BR Code
@@ -51,6 +53,5 @@ export function checkoutSupportMessage({
 }
 
 export function checkoutSupportHref(details) {
-  return 'https://wa.me/' + SUPPORT_WHATSAPP +
-    '?text=' + encodeURIComponent(checkoutSupportMessage(details));
+  return whatsappMessageUrl({ phone: SUPPORT_WHATSAPP, message: checkoutSupportMessage(details) });
 }

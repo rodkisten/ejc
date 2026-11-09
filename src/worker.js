@@ -207,7 +207,8 @@ async function orderInfo(env,o) {
     pix_receiver:config.pix_name||'',pix_city:config.pix_city||'',
     rich_html:writableLetter(o)?o.rich_html:'',
     composition:writableLetter(o)?normalizeComposition(JSON.parse(o.composition_json||'{}')):null,
-    submitted:!!o.submitted_at,read_notification:{enabled:!!receipt,verified:!!receipt?.verified_at,notified:!!receipt?.notified_at},
+    submitted:!!o.submitted_at,resume_access:!!o.recovery_access && !o.submitted_at,
+    read_notification:{enabled:!!receipt,verified:!!receipt?.verified_at,notified:!!receipt?.notified_at},
     payment_claimed_at:o.payment_claimed_at,created_at:o.created_at,media:visible};
 }
 async function getMedia(env,id) {

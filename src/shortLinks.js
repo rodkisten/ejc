@@ -53,7 +53,12 @@ export function validateShortDestination(destination,origin){
     target.origin!==base.origin||target.username||target.password||
     /^\/(?:s|api)\//.test(target.pathname))
     throw new Error('O destino deve ser uma página segura no próprio EJC.');
-  return target.toString();
+  const normalized=target.toString();
+  // Avoid issuing short links whose encrypted payload cannot be decoded due
+  // to the bounded ciphertext size (also guards D1 write amplification).
+  if(encoder.encode(normalized).byteLength>10000)
+    throw new Error('URL de destino excede o limite seguro.');
+  return normalized;
 }
 export async function createShortLink(env,destination,{
   origin,kind='support',ttlSeconds=DEFAULT_TTL

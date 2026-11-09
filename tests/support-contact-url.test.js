@@ -1,43 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { supportContactAdminUrl, supportContactParams } from '../client/lib/supportContactUrl.js';
-import { normalizeBrazilianWhatsApp } from '../client/lib/recipientWhatsApp.js';
 
-test('link interno preenche nome, telefone, encontristas e IDs da aba de suporte', () => {
-  const path=supportContactAdminUrl({
-    name:'Mariana Pimentel',phone:'(33) 99954-6031',
-    recipients:['maria-eduarda','joao-pedro'],
-    orders:['EJC-123456789ABC','EJC-123456789ABD'],
-    template:'rascunho_vazio'
+const opaque='ec1_'+('A'.repeat(70));
+
+test('only opaque authenticated context is present in admin URLs',()=>{
+  const href=supportContactAdminUrl({
+    opaque,name:'Mariana Pimentel',phone:'33999546031',
+    orders:['EJC-123456789ABC'],recipients:['maria-eduarda']
   });
-  assert.equal(new URL(path,'https://ejc.migos.club').pathname,'/admin/mensagens');
-  const params=supportContactParams(new URL(path,'https://ejc.migos.club').search);
-  assert.equal(params.name,'Mariana Pimentel');
-  assert.equal(params.phone,'5533999546031');
-  assert.deepEqual(params.recipients,['maria-eduarda','joao-pedro']);
-  assert.deepEqual(params.orders,['EJC-123456789ABC','EJC-123456789ABD']);
-  assert.equal(params.template,'rascunho_vazio');
-  assert.equal(normalizeBrazilianWhatsApp(params.phone),'5533999546031');
+  assert.equal(href,'/admin/mensagens?c='+opaque);
+  const parsed=supportContactParams(new URL(href,'https://ejc.migos.club').search);
+  assert.deepEqual(parsed,{opaque});
+  for(const secret of ['Mariana','33999546031','EJC-123456789ABC','maria-eduarda'])
+    assert.equal(href.includes(secret),false);
 });
 
-test('não inclui tokens privados ou telefones inválidos em links de atendimento', () => {
-  const url=supportContactAdminUrl({
-    name:'Ana \n Maria <script>',phone:'123',
-    recipients:['maria','../pedido/token-privado'],
-    orders:['EJC-123456789ABC','token-privado'],
-    template:'rascunho_vazio'
-  });
-  const parsed=new URL(url,'https://ejc.migos.club');
-  assert.equal(parsed.searchParams.has('telefone'),false);
-  assert.equal(parsed.searchParams.get('nome'),'Ana Maria script');
-  assert.deepEqual(parsed.searchParams.getAll('encontrista'),['maria']);
-  assert.deepEqual(parsed.searchParams.getAll('id'),['EJC-123456789ABC']);
-  assert.ok(!url.includes('token-privado'));
-  assert.ok(!url.includes('script%3E'));
+test('invalid/legacy cleartext parameters are deliberately ignored',()=>{
+  const unsafe='?nome=Mariana&telefone=33999546031&id=EJC-123456789ABC'+
+    '&utm_campaign=recuperacao_cartinhas&c=bad';
+  assert.deepEqual(supportContactParams(unsafe),{opaque:''});
+  assert.equal(supportContactAdminUrl({name:'Mariana',phone:'33999546031'}),'/admin/mensagens');
 });
 
-test('aceita URL direta simples nome e telefone sem estado de navegação', () => {
-  const params=supportContactParams('?nome=Joaquim+Silva&telefone=33999546031');
-  assert.equal(params.name,'Joaquim Silva');
-  assert.equal(params.phone,'5533999546031');
+test('refuses arbitrary strings as encrypted context',()=>{
+  assert.deepEqual(supportContactParams('?c=ec1_X'),{opaque:''});
+  assert.deepEqual(supportContactParams('?c=../../pedido/privado'),{opaque:''});
 });

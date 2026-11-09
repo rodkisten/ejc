@@ -92,7 +92,7 @@ export default function MuralGallery({ data, opened = {}, openBusy = '', error =
               </button>}
             </>
           )}
-          {!technical && onSupportClick && <div className="form-card">
+          {!technical && onSupportClick && <div className="form-card" style={{marginTop: "2rem"}}>
             <h3>🆘 Podemos ajudar!</h3>
             <p>Se alguma cartinha não abrir, aparecer vazia ou você tiver qualquer dúvida,
               fale com a equipe do Mini Mercado. Seu link de acesso permanece privado.</p>

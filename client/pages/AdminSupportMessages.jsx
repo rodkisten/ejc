@@ -214,9 +214,9 @@ export default function AdminSupportMessages({ info }) {
         contactName, recipientNames:names, recipients:people, orders:selectedOrders,
         origin:validOrigin, resumeUrl, secureLinks:links
       };
-      return customSource
+      return normalizeWhatsAppText(customSource
         ? renderCustomSupportTemplate(customSource, context)
-        : createSupportMessage(template, { ...context, preview:true });
+        : createSupportMessage(template, { ...context, preview:true }));
     } catch (cause) {
       return 'Não foi possível gerar o modelo. Escolha outro ou restaure o original.';
     }
@@ -232,7 +232,7 @@ export default function AdminSupportMessages({ info }) {
 
   function beginCustomization() {
     try {
-      setTemplateDraft(customSource || customSupportTemplateSeed(template));
+      setTemplateDraft(normalizeWhatsAppText(customSource || customSupportTemplateSeed(template)));
       setCustomizing(true);
       setError('');
     } catch (cause) { setError(cause.message); }
@@ -240,7 +240,7 @@ export default function AdminSupportMessages({ info }) {
   async function saveTemplate() {
     setSavingTemplate(true);
     try {
-      const clean = validateCustomSupportTemplate(templateDraft);
+      const clean = validateCustomSupportTemplate(normalizeWhatsAppText(templateDraft));
       const next = { ...customTemplates, [template]: clean };
       await api('/api/admin/support-templates', { method:'PUT', data:{ templates:next } });
       try { saveCustomSupportTemplates(window.localStorage, next); } catch { /* Cache optional. */ }

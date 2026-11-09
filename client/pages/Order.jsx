@@ -109,7 +109,7 @@ export default function Order() {
       .catch(() => {});
   }, [order?.status, token]);
   const paid = order && ['paid', 'preparing', 'delivered'].includes(order.status),
-    ended = !order?.resume_access && order?.deadline &&
+    ended = !order?.resume_access && !(paid && !order?.submitted) && order?.deadline &&
       Date.now() >= new Date(`${order.deadline}:00-03:00`).getTime();
   const add = (file, kind) => {
     if(!file)return;
@@ -365,7 +365,9 @@ export default function Order() {
                 'Seu Pix já foi gerado. Edite, salve e confirme suas alterações agora, mesmo antes de pagar'}
               {' '}{order.resume_access
                 ? 'Este link privado de continuação permite terminar o rascunho pago.'
-                : ended ? 'O prazo de edição terminou.' : `até ${btime(order.deadline)}.`}
+                : paid && !order.submitted
+                  ? 'Seu rascunho pago pode ser finalizado com este link privado, mesmo após o prazo geral.'
+                  : ended ? 'O prazo de edição terminou.' : `até ${btime(order.deadline)}.`}
               {!paid && <span> O envio ao mural será liberado após a conferência bancária.</span>}
             </div>
             {order.checkout_id && localStorage.getItem('ejc-checkout-' + order.checkout_id) && (

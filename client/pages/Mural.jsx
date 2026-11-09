@@ -79,7 +79,7 @@ export default function Mural() {
       const grant=muralToken();
       await openSecureSupport({
         purpose:'support',name:data?.recipient?.name||'',
-        ids:grant?(id?[id]:(data?.cards||[]).map(card=>card.id)):[],
+        ids:grant?(id?[id]:(data?.cards||[]).slice(0,20).map(card=>card.id)):[],
         recipientSlugs:[slug],muralSlug:slug,token:grant||undefined,
         stage:id?'cartinha_aberta':'mural',source:'mural',medium:'botao',
         campaign:'suporte_encontrista',content:id?'leitura':'mural'

@@ -15,7 +15,7 @@ async function visit(path,method='GET') {
 }
 
 test('link curto abre o WhatsApp com mensagem pronta e UTMs da divulgação',async()=>{
-  const response=await visit('/ajuda/terminei-a-cartinha?utm_source=whatsapp&utm_medium=mensagem&utm_campaign=recuperacao_cartinhas');
+  const response=await visit('/ajuda/terminei-a-cartinha?remetente=Ana&utm_source=whatsapp&utm_medium=mensagem&utm_campaign=recuperacao_cartinhas');
   assert.equal(response.status,302);
   const target=new URL(response.headers.get('Location'));
   assert.equal(target.origin,'https://wa.me');
@@ -29,11 +29,22 @@ test('link curto abre o WhatsApp com mensagem pronta e UTMs da divulgação',asy
   assert.equal(response.headers.get('X-Robots-Tag'),'noindex, nofollow, noarchive');
 });
 
-test('link sem parâmetros e com barra final também funciona',async()=>{
-  for(const path of ['/ajuda/terminei-a-cartinha','/ajuda/terminei-a-cartinha/']){
-    const response=await visit(path);
-    assert.equal(response.status,302);
-    const target=new URL(response.headers.get('Location'));
+test('link sem remetente pede o nome e preserva UTMs e IDs sem vazar token',async()=>{
+  const response=await visit('/ajuda/terminei-a-cartinha?utm_campaign=suporte_cartinhas&id=EJC-123456789ABC&para=Maria&token=segredo');
+  assert.equal(response.status,200);
+  const html=await response.text();
+  assert.match(html,/Qual é seu nome|Como podemos te chamar/);
+  assert.match(html,/name="remetente"/);
+  assert.match(html,/name="id" value="EJC-123456789ABC"/);
+  assert.match(html,/name="para" value="Maria"/);
+  assert.match(html,/name="utm_campaign" value="suporte_cartinhas"/);
+  assert.doesNotMatch(html,/segredo|name="token"/);
+  for(const path of ['/ajuda/terminei-a-cartinha?remetente=Ana',
+    '/ajuda/terminei-a-cartinha/?remetente=Ana']){
+    const sent=await visit(path);
+    assert.equal(sent.status,302);
+    const target=new URL(sent.headers.get('Location'));
+    assert.match(target.searchParams.get('text'),/Olá, eu sou Ana/);
     assert.equal(target.searchParams.get('utm_source'),'whatsapp');
     assert.equal(target.searchParams.get('utm_medium'),'mensagem');
     assert.equal(target.searchParams.get('utm_campaign'),'recuperacao_cartinhas');
@@ -42,7 +53,7 @@ test('link sem parâmetros e com barra final também funciona',async()=>{
 
 test('link curto só permite GET/HEAD e não intercepta outras rotas',async()=>{
   const head=await visit('/ajuda/terminei-a-cartinha','HEAD');
-  assert.equal(head.status,302);
+  assert.equal(head.status,200);
   assert.equal(await head.text(),'');
   const post=await visit('/ajuda/terminei-a-cartinha','POST');
   assert.equal(post.status,405);
@@ -129,14 +140,18 @@ test('link de suporte do encontrista oferece metadados OG ao WhatsApp, sem expor
   assert.doesNotMatch(html,/Maria|EJC-123456789ABC|wa\.me/);
 });
 
-test('suporte abre com mensagem genérica quando o link não traz dados, e não aceita POST',async()=>{
-  const response=await visit('/ajuda/minha-cartinha');
-  assert.equal(response.status,302);
-  assert.match(new URL(response.headers.get('Location')).searchParams.get('text'),
-    /encontrista \*encontrista\*/);
+test('suporte do encontrista pede identificação ausente antes de abrir o WhatsApp',async()=>{
+  const response=await visit('/ajuda/minha-cartinha?utm_campaign=suporte_encontrista');
+  assert.equal(response.status,200);
+  const html=await response.text();
+  assert.match(html,/name="encontrista"/);
+  assert.match(html,/name="utm_campaign" value="suporte_encontrista"/);
   const head=await visit('/ajuda/minha-cartinha','HEAD');
-  assert.equal(head.status,302);
+  assert.equal(head.status,200);
   assert.equal(await head.text(),'');
+  const withName=await visit('/ajuda/minha-cartinha?encontrista=Maria');
+  assert.equal(withName.status,302);
+  assert.match(new URL(withName.headers.get('Location')).searchParams.get('text'),/encontrista \*Maria\*/);
   const post=await visit('/ajuda/minha-cartinha','POST');
   assert.equal(post.status,405);
   assert.equal(post.headers.get('Allow'),'GET, HEAD');

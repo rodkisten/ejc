@@ -41,3 +41,30 @@ foram mantidos a pedido do responsável. Alguns afirmam que a coordenação não
 ler ou ouvir cartinhas; com esta funcionalidade de administração, essa afirmação
 deixa de ser literalmente verdadeira. A comunicação de privacidade precisa ser
 alinhada quando houver autorização para revisá-la.
+
+## Aviso de rascunhos na página inicial (visão do remetente)
+
+Ao abrir a página principal, o navegador procura cartinhas inacabadas em:
+
+- histórico de checkouts e links privados do `localStorage` (incluindo os links
+  de pedidos individuais anteriormente abertos neste aparelho);
+- índice do carrinho e rascunhos do IndexedDB `ejc-cartinhas-offline`;
+- informações privadas de status obtidas por `/api/checkout` e `/api/order`,
+  **somente quando há um token privado válido**.
+
+A interface destaca **Pix confirmado · cartinha em rascunho** apenas após
+confirmar o estado de pagamento no servidor. Para uma compra ainda pendente,
+mostra **Pix ainda não confirmado**. Para rascunhos exclusivamente locais, mostra
+**Rascunho salvo neste aparelho**, sem supor que já tenham sido pagos.
+
+Cada item tem um botão para continuar no pedido existente (`/pedido/:token`)
+ou no editor local (`/enviar/:slug`). O sistema não cria novos pagamentos e
+remove do aviso cartas já enviadas. A revisão também ocorre ao voltar ao Safari
+no iPhone, com prevenção de respostas desatualizadas.
+
+Os tokens dos pedidos individuais passam a ser lembrados neste aparelho quando
+o remetente abre um link válido, permitindo retornar à edição pela home.
+Isso não cria um índice público e não recupera pedidos de outro navegador sem
+seu link privado. Nunca são guardados textos ou anexos no histórico de links.
+
+O aviso mantém intactas as mensagens e políticas de privacidade existentes.

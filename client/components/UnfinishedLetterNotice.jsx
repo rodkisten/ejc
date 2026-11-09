@@ -29,13 +29,13 @@ export default function UnfinishedLetterNotice({ senderName, onRefresh }) {
       {author ? (
         <p className="unfinished-letter-note-sender">
           Se você conhece <strong>{author}</strong>, pode pedir com carinho que essa pessoa
-          entre em <a href="https://ejc.migos.club/" target="_blank" rel="noopener noreferrer">
+          entre em <a href="https://ejc.migos.club/?utm_source=mural_cartinha_rascunho" target="_blank" rel="noopener noreferrer">
             ejc.migos.club
           </a>, retome seu rascunho pelo link privado e finalize o envio da cartinha.
         </p>
       ) : (
         <p className="unfinished-letter-note-sender">
-          Quem começou esta cartinha pode voltar a <a href="https://ejc.migos.club/"
+          Quem começou esta cartinha pode voltar a <a href="https://ejc.migos.club/?utm_source=mural_cartinha_rascunho"
             target="_blank" rel="noopener noreferrer">ejc.migos.club</a>,
           abrir seu rascunho pelo link privado e finalizar o envio.
         </p>

@@ -573,3 +573,18 @@ Na rota `/admin/encontristas`, cada cadastro tem **Editar nome** e **Excluir**, 
 **Exclusão segura:** sem pedidos vinculados, o cadastro é removido definitivamente do D1 e as imagens associadas são limpas do R2. Se houver pedidos ou cartinhas, **Excluir** arquiva o encontrista (`active = 0`), retirando-o da lista pública e impedindo novas compras, mas preservando pagamentos e a leitura das cartas antigas pelo código privado. O filtro **Mostrar arquivados** permite restaurar o cadastro; os arquivos não são apagados nesse caso. Todas as ações exigem login administrativo e a exclusão pede confirmação.
 
 A busca administrativa de pagamentos usa `LIKE ... COLLATE NOCASE` sem aplicar `UPPER` à cadeia com acentos, corrigindo a pesquisa por valores como “Conferência”. O teste antigo que exigia a remoção do rascunho ao gerar o Pix foi atualizado: agora o carrinho ativo é esvaziado, mas o conteúdo e os anexos locais continuam preservados, com a versão canônica no servidor.
+
+
+## Suporte das cartinhas pelo WhatsApp
+
+Existem dois links públicos curtos:
+
+- `/ajuda/terminei-a-cartinha`: o remetente confirma o envio e informa nome, destinatários e IDs de seus pedidos para a coordenação.
+- `/ajuda/minha-cartinha`: o encontrista pede ajuda para abrir ou visualizar suas cartinhas. Os convites, a carta recuperada e o mural constroem URLs personalizadas com nome, IDs operacionais e parâmetros UTM. No mural, o link inclui dados não secretos do navegador (user agent, tamanho da tela, idioma, conexão e horário). A mensagem pré-preenchida termina com uma linha divisória para descrever o problema.
+
+As duas rotas fazem `302` para `https://wa.me/5533999546031` ao receber uma visita comum. Robôs de WhatsApp/Meta recebem HTML com `og:title`, `og:description` e imagem 1200 × 630, sem nomes, IDs nem links privados no HTML. Nunca incluir `#token`, URLs de edição, fotos ou conteúdo das cartas no link público de suporte.
+
+**Publicação das imagens:** depois de `bash scripts/deploy.sh` (que executa testes, build e migrações D1), entre em **Admin → Configurações**, nas duas caixas *OG: Enviei minha cartinha, e agora?* e *OG: Me ajude com minha cartinha*. Envie em cada uma o PNG correspondente, **1200 × 630 e até 2 MB**. O endpoint autenticado grava no R2, respectivamente, `og/help-finished-v1.png` e `og/help-recipient-v1.png`; o Worker os serve em `/og-ajuda-cartinhas.png` e `/og-ajuda-minha-cartinha.png`. Até publicar, o Worker mostra uma arte OG de fallback. Os arquivos de design não são enviados automaticamente pelo deploy.
+
+Os cliques em links curtos são contados em `help_link_counts` por dia/campanha, sem IP, texto ou token. Os eventos GA4 do site são enviados apenas após consentimento, com URLs privadas normalizadas. A recuperação de rascunhos pagos vazios é registrada em `draft_recovery` e a equipe só pode confirmar o aviso no WhatsApp depois que a cartinha recuperada tiver conteúdo e estiver enviada. Abrir o WhatsApp não marca a mensagem como enviada.
+

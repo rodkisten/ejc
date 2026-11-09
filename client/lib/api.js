@@ -85,7 +85,7 @@ export function safeAnalyticsLocation(href) {
   return safe.toString();
 }
 export const track = (name, params = {}) => {
-  if (!window.gtag || localStorage.getItem('ejc-consent') !== 'yes' ||
+  if (localStorage.getItem('ejc-consent') !== 'yes' ||
       !/^[a-z][a-z0-9_]{1,39}$/.test(name))return;
   const allowed=new Set(['page_path','letters','kind','stage','method','source','status',
     'is_recovered','count','success','format','locked','has_content']);
@@ -97,10 +97,16 @@ export const track = (name, params = {}) => {
     else if(typeof value==='boolean')safe[key]=value;
     else if(typeof value==='string'&&/^[a-z0-9_:-]{1,40}$/i.test(value))safe[key]=value;
   }
-  window.gtag('event',name,{
+  const event={
     ...safe,page_location:safeAnalyticsLocation(location.href),
     page_referrer:location.origin+'/'
-  });
+  };
+  if(!window.gtag){
+    const pending=window.__ejcPendingEvents||(window.__ejcPendingEvents=[]);
+    if(pending.length<40)pending.push([name,event]);
+    return;
+  }
+  window.gtag('event',name,event);
 };
 export function enableAnalytics(id) {
   if (
@@ -117,6 +123,8 @@ export function enableAnalytics(id) {
   window.gtag('js', new Date());
   window.gtag('config', id, { send_page_view: false, anonymize_ip: true,
     page_location: safeAnalyticsLocation(location.href), page_referrer:location.origin+'/' });
+  for(const [name,payload] of window.__ejcPendingEvents||[])window.gtag('event',name,payload);
+  window.__ejcPendingEvents=[];
   const script = document.createElement('script');
   script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(id)}`;
   script.async = true;

@@ -75,6 +75,31 @@ function writableLetter(order) {
 async function event(env, id, type, detail='') {
   await env.DB.prepare('INSERT INTO order_events(id,order_id,type,detail) VALUES(?,?,?,?)').bind(newId(),id,type,detail).run();
 }
+// Operational markers never contain letter text, photos, audio or editing tokens.
+async function markEmptyPaidDraft(env,id){
+  const o=await env.DB.prepare("SELECT status,submitted_at,campaign_key,rich_html FROM orders WHERE id=?").bind(id).first();
+  if(!o||!activeOrder(o)||o.submitted_at||o.campaign_key||visibleDraftText(o.rich_html))return;
+  const m=await env.DB.prepare("SELECT COUNT(*) AS n FROM media WHERE order_id=? AND status='ready'").bind(id).first();
+  if(Number(m?.n||0))return;
+  await env.DB.prepare("INSERT OR IGNORE INTO draft_recovery(order_id,empty_seen_at) VALUES(?,?)").bind(id,now()).run();
+}
+async function markRecoveredDraft(env,id){
+  const observed=await env.DB.prepare("SELECT recovered_at FROM draft_recovery WHERE order_id=?").bind(id).first();
+  if(!observed||observed.recovered_at)return false;
+  const o=await env.DB.prepare("SELECT status,rich_html FROM orders WHERE id=?").bind(id).first();
+  if(!o||!activeOrder(o))return false;
+  let valid=visibleDraftText(o.rich_html);
+  if(!valid){
+    const m=await env.DB.prepare("SELECT COUNT(*) AS n FROM media WHERE order_id=? AND status='ready'").bind(id).first();
+    valid=Number(m?.n||0)>0;
+  }
+  if(!valid)return false;
+  const updated=await env.DB.prepare(
+    "UPDATE draft_recovery SET recovered_at=? WHERE order_id=? AND recovered_at IS NULL"
+  ).bind(now(),id).run();
+  if(updated.meta.changes)await event(env,id,'empty_draft_recovered');
+  return !!updated.meta.changes;
+}
 function allowOrigin(request) {
   if (!WRITE_METHODS.has(request.method)) return;
   const origin=request.headers.get('Origin');
@@ -317,7 +342,8 @@ async function mediaWrite(req,env,o,params,path) {
     if (!object) object=await env.MEDIA.resumeMultipartUpload(media.object_key,media.upload_id).complete(rows.map(r=>({partNumber:r.part_number,etag:r.etag})));
     await env.DB.prepare('UPDATE media SET status=?,bytes=? WHERE id=?').bind('ready',object.size,media.id).run();
     await event(env,o.id,'media_uploaded',media.kind);
-    return result({ok:true,id:media.id,bytes:object.size});
+    const repaired=await markRecoveredDraft(env,o.id);
+    return result({ok:true,id:media.id,bytes:object.size,repaired});
   }
   if (match[3]==='delete' && req.method==='DELETE') {
     if (media.status==='ready') await env.MEDIA.delete(media.object_key);
@@ -800,7 +826,9 @@ async function publicRoute(req,env,path) {
       const saved=await env.DB.prepare("UPDATE orders SET sender_name=?,rich_html=?,composition_json=?,public_message=0,updated_at=? WHERE id=? AND status IN ('pending','claimed','paid','preparing','delivered')")
         .bind(sender,html,composition,now(),o.id).run();
       if(!saved.meta.changes)bad('Pedido alterado ou cancelado. Atualize a página.',409);
-      await event(env,o.id,'message_saved');return result({ok:true});
+      await event(env,o.id,'message_saved');
+      const repaired=await markRecoveredDraft(env,o.id);
+      return result({ok:true,repaired});
     }
     if(path==='/api/order/submit'&&req.method==='POST') {
       if(!activeOrder(o))bad('Pagamento não confirmado.',403);
@@ -1588,6 +1616,7 @@ async function adminRoute(req,env,path) {
     if(results[0].meta.changes!==1)bad('Compra alterada por outro administrador.',409);
     const children=(await env.DB.prepare('SELECT id FROM orders WHERE checkout_id=?').bind(order.id).all()).results;
     for(const row of children){
+      await markEmptyPaidDraft(env,row.id);
       await event(env,row.id,'payment_confirmed',reference||'manual_batch_no_reference');
       await enqueue(env,row.id,'payment_confirmed');
     }
@@ -1762,6 +1791,7 @@ async function adminRoute(req,env,path) {
       const changed=await env.DB.prepare("UPDATE orders SET status='paid',bank_reference=?,confirmed_at=?,updated_at=? WHERE id=? AND status IN ('pending','claimed')").bind(ref||null,now(),now(),order.id).run();
       if(changed.meta.changes!==1)bad('Pedido alterado por outro administrador.',409);
     }catch(e){if(String(e).includes('UNIQUE constraint'))bad('Transação já utilizada.',409);throw e;}
+    await markEmptyPaidDraft(env,order.id);
     await event(env,order.id,'payment_confirmed',ref||'manual_batch_no_reference');await enqueue(env,order.id,'payment_confirmed');return result({ok:true,status:'paid'});
   }
   if(path==='/api/admin/demo/seed'&&req.method==='POST')return seedDemo(env);

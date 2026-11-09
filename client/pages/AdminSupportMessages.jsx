@@ -6,6 +6,10 @@ import { normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp';
 import { supportContactParams, supportContactAdminUrl } from '../lib/supportContactUrl.js';
 import { publishDraftOg } from '../lib/draftOg.js';
 import {
+  SUPPORT_TEMPLATE_FIELDS, loadCustomSupportTemplates, saveCustomSupportTemplates,
+  validateCustomSupportTemplate, customSupportTemplateSeed, renderCustomSupportTemplate,
+} from '../lib/supportTemplateCustomization.js';
+import {
   SUPPORT_MESSAGE_TEMPLATES, createSupportMessage, confirmedOrders,
   validContactName, supportRecipientNames,
 } from '../lib/supportMessages';
@@ -55,6 +59,10 @@ export default function AdminSupportMessages({ info }) {
   const [generatingResume, setGeneratingResume] = useState(false);
   const [text, setText] = useState('');
   const [edited, setEdited] = useState(false);
+  const [customTemplates, setCustomTemplates] = useState(() =>
+    loadCustomSupportTemplates(typeof window === 'undefined' ? null : window.localStorage));
+  const [customizing, setCustomizing] = useState(false);
+  const [templateDraft, setTemplateDraft] = useState('');
 
   async function reload() {
     setLoading(true);
@@ -107,22 +115,69 @@ export default function AdminSupportMessages({ info }) {
     selectedOrders.every(letter => !letter.submitted && !letter.has_content);
   const invalidConfirm = templateInfo?.requiresSubmitted && !readyToConfirm;
   const invalidEmpty = template === 'rascunho_vazio' && !emptyDraftsSelected;
-  const blocked = missingName || missingRecipients || invalidConfirm || invalidEmpty;
+  // A response may be previewed and edited before contact details are supplied.
+  // Only statements about paid/sent or empty drafts require verified order selection.
+  const blocked = invalidConfirm || invalidEmpty;
+  const canSend = !blocked && !!text.trim();
   const validOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://ejc.migos.club';
+  const customSource = customTemplates[template];
 
   const generated = useMemo(() => {
-    if (blocked) return '';
     try {
-      return createSupportMessage(template, {
+      const context = {
         contactName, recipientNames: names, recipients: people,
         orders: selectedOrders, origin: validOrigin, resumeUrl,
-      });
-    } catch {
-      return '';
+      };
+      return customSource
+        ? renderCustomSupportTemplate(customSource, context)
+        : createSupportMessage(template, { ...context, preview: true });
+    } catch (cause) {
+      return 'Não foi possível gerar este modelo. Selecione outro ou restaure o original.';
     }
-  }, [template, contactName, selectedRecipients.join('|'), selectedOrderIds.join('|'),
-      names.join('|'), letters, resumeUrl, validOrigin, blocked]);
-  useEffect(() => { setText(generated); setEdited(false); }, [generated]);
+  }, [template, customSource, contactName, selectedRecipients.join('|'),
+    selectedOrderIds.join('|'), names.join('|'), letters, resumeUrl, validOrigin]);
+  // Never overwrite a manual edit on a background reload or contact change.
+  useEffect(() => {
+    if (!edited) setText(generated);
+  }, [generated, edited]);
+
+  function beginCustomization() {
+    try {
+      setTemplateDraft(customSource || customSupportTemplateSeed(template));
+      setCustomizing(true);
+      setError('');
+    } catch (cause) {
+      setError(cause.message);
+    }
+  }
+  function saveTemplate() {
+    try {
+      const cleaned = validateCustomSupportTemplate(templateDraft);
+      const next = { ...customTemplates, [template]: cleaned };
+      saveCustomSupportTemplates(window.localStorage, next);
+      setCustomTemplates(next);
+      setEdited(false);
+      setCustomizing(false);
+      setNotice('✅ Modelo personalizado salvo neste navegador. Os campos são preenchidos automaticamente na mensagem.');
+      setError('');
+    } catch (cause) {
+      setError(cause.message);
+    }
+  }
+  function restoreTemplate() {
+    try {
+      const next = { ...customTemplates };
+      delete next[template];
+      saveCustomSupportTemplates(window.localStorage, next);
+      setCustomTemplates(next);
+      setEdited(false);
+      setCustomizing(false);
+      setNotice('Modelo original restaurado.');
+      setError('');
+    } catch (cause) {
+      setError(cause.message);
+    }
+  }
 
   function addRecipient(slug) {
     if (!slug || selectedRecipients.includes(slug)) return;
@@ -179,7 +234,7 @@ export default function AdminSupportMessages({ info }) {
   }
 
   async function copyMessage() {
-    if (blocked || !text.trim()) return;
+    if (!canSend) return;
     try {
       // Clipboard needs the user gesture, particularly on iPhone Safari.
       // Publish the image only after successfully capturing the copied text.
@@ -198,53 +253,30 @@ export default function AdminSupportMessages({ info }) {
       window.prompt('Copie a mensagem:', text);
     }
   }
-  async function openWhatsApp() {
-    if (blocked || !text.trim()) return;
+  function openWhatsApp() {
+    if (!canSend) return;
     const phone = contactWhatsApp.trim();
     const number = phone ? normalizeBrazilianWhatsApp(phone) : '';
     if (phone && !number) {
-      setError('Informe um WhatsApp válido com DDD ou deixe o campo vazio para escolher o contato no aplicativo.');
+      setError('Informe um WhatsApp válido com DDD ou deixe o campo vazio para escolher a conversa no aplicativo.');
       return;
     }
-    // Safari requires the new tab to be opened in the user's tap gesture.
-    const popup=window.open('about:blank','_blank');
-    try {
-      popup?.document?.write(`
-      <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Popup Window</title>
-      <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; }
-        button { padding: 10px; background: #007bff; color: white; border: none; cursor: pointer; }
-      </style>
-    </head>
-    <body>
-      <h2>Aguarde...</h2>
-      <p>Preparando sua mensagem para o WhatsApp…</p>
-    </body>
-    </html>`);
-      
-      const generated=await ensurePersonalizedDraftOg();
-      const url=number
-        ? 'https://wa.me/' + number + '?text=' + encodeURIComponent(text)
-        : 'https://api.whatsapp.com/send?text=' + encodeURIComponent(text);
-      setError('');
-      setNotice('WhatsApp aberto. Confira a conversa e envie manualmente. '+
-        (generated?'A prévia personalizada foi publicada automaticamente.':''));
-      track('admin_support_template_whatsapp_opened',{stage:template});
-      if(popup&&!popup.closed)popup.location.replace(url);
-      else window.location.assign(url);
-    } catch (cause) {
-      // An image failure must not block the actual support message.
-      const url=number
-        ? 'https://wa.me/' + number + '?text=' + encodeURIComponent(text)
-        : 'https://api.whatsapp.com/send?text=' + encodeURIComponent(text);
-      setNotice('O WhatsApp será aberto, mas a prévia personalizada não pôde ser gerada.');
-      setError(cause.message);
-      if(popup&&!popup.closed)popup.location.replace(url);
-      else window.location.assign(url);
-    }
+    const url = number
+      ? 'https://wa.me/' + number + '?text=' + encodeURIComponent(text)
+      : 'https://api.whatsapp.com/send?text=' + encodeURIComponent(text);
+    // Open during the tap, before any asynchronous OG publishing. This matters
+    // on Safari iPhone, which blocks popups opened after an awaited promise.
+    const opened = window.open(url, '_blank');
+    if (opened) opened.opener = null;
+    else window.location.assign(url);
+    setError('');
+    setNotice('WhatsApp aberto para revisão. Confira a conversa e envie manualmente.');
+    track('admin_support_template_whatsapp_opened', { stage: template });
+    ensurePersonalizedDraftOg().then(image => {
+      if (image) setNotice('WhatsApp aberto. A arte personalizada dos rascunhos foi atualizada.');
+    }).catch(cause => {
+      setNotice('WhatsApp aberto. A arte personalizada não pôde ser atualizada: ' + cause.message);
+    });
   }
 
   return (
@@ -275,7 +307,7 @@ export default function AdminSupportMessages({ info }) {
             {!validContactName(contactName) &&
               <div className="notice warning support-message-inline-warning">
                 <span>⚠️ Não temos o nome de quem entrou em contato. Peça a identificação antes de enviar uma resposta personalizada.</span>
-                <button className="btn ghost" type="button" onClick={() => setTemplate('pedir_nome')}>
+                <button className="btn ghost" type="button" onClick={() => {setTemplate('pedir_nome');setEdited(false);setCustomizing(false);}}>
                   Usar mensagem para pedir o nome
                 </button>
               </div>}
@@ -356,7 +388,7 @@ export default function AdminSupportMessages({ info }) {
             <h2>3. Escolha a resposta</h2>
             <label htmlFor="support-template-select">Modelo de mensagem</label>
             <select id="support-template-select" value={template}
-              onChange={event => {setTemplate(event.target.value);setNotice('');}}>
+              onChange={event => {setTemplate(event.target.value);setEdited(false);setCustomizing(false);setNotice('');}}>
               {[...new Set(SUPPORT_MESSAGE_TEMPLATES.map(item => item.group))].map(group =>
                 <optgroup label={group} key={group}>
                   {SUPPORT_MESSAGE_TEMPLATES.filter(item => item.group===group).map(item =>
@@ -364,6 +396,38 @@ export default function AdminSupportMessages({ info }) {
                 </optgroup>)}
             </select>
             <p className="muted small">{templateInfo?.summary}</p>
+            <div className="support-template-custom-actions">
+              <button type="button" className="btn outline" onClick={beginCustomization}>
+                {customSource ? '✏️ Editar modelo personalizado' : '✏️ Personalizar este modelo'}
+              </button>
+              {customSource && <button type="button" className="btn ghost" onClick={restoreTemplate}>
+                Restaurar modelo original
+              </button>}
+            </div>
+            {customizing && <div className="support-template-customizer">
+              <label htmlFor="support-template-source">Seu modelo, reutilizável para outros atendimentos</label>
+              <p className="muted small">
+                Use as variáveis abaixo para preencher automaticamente nomes, IDs e links. O modelo fica salvo somente neste navegador.
+                Não escreva tokens nem links privados diretamente no modelo.
+              </p>
+              <div className="support-template-variables">
+                {SUPPORT_TEMPLATE_FIELDS.map(field => <button key={field} type="button"
+                  onClick={() => setTemplateDraft(previous => previous + (previous ? ' ' : '') + field)}>
+                  {field}
+                </button>)}
+              </div>
+              <textarea id="support-template-source" className="support-template-source"
+                value={templateDraft} rows={12} spellCheck
+                onChange={event => setTemplateDraft(event.target.value)} />
+              <div className="support-template-custom-actions">
+                <button type="button" className="btn" onClick={saveTemplate}>
+                  Salvar meu modelo
+                </button>
+                <button type="button" className="btn ghost" onClick={() => setCustomizing(false)}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
             {(template==='rascunho_vazio'||template==='link_privado')&&<>
               <label htmlFor="support-resume-link">Link privado de continuação <small>(se o administrador já gerou um)</small></label>
               <input id="support-resume-link" type="url" autoComplete="off" spellCheck={false}
@@ -391,36 +455,42 @@ export default function AdminSupportMessages({ info }) {
               </div>
               <span className="muted small">{text.length} caracteres</span>
             </div>
-            {blocked ? <div className="notice warning" role="alert">
-              {missingName
-                ? 'Informe o nome da pessoa para gerar a resposta. Se ainda não souber, escolha o modelo “Qual é seu nome?”.'
-                : missingRecipients
-                  ? 'Selecione pelo menos um encontrista antes de preparar a mensagem personalizada.'
-                  : invalidConfirm
-                    ? 'Não é possível confirmar recebimento antes do pagamento e envio finalizado dos pedidos selecionados.'
-                    : 'Selecione somente as cartinhas que ainda estejam sem conteúdo e com envio pendente para usar este aviso.'}
-            </div> : <>
-              <label htmlFor="support-editor">Texto editável, com a formatação original do WhatsApp</label>
-              <textarea id="support-editor" className="support-textarea" value={text} rows={18}
-                onChange={event => {setText(event.target.value);setEdited(true);}}/>
+            {missingName && template !== 'pedir_nome' && <div className="notice warning">
+              O nome ainda não foi informado. A mensagem usa uma saudação genérica até você preenchê-lo.
+              Você também pode usar o modelo “Qual é seu nome?”.
+            </div>}
+            {missingRecipients && template !== 'pedir_nome' && <p className="muted small">
+              Selecione encontristas acima para acrescentar os nomes e IDs. Você já pode revisar a mensagem abaixo.
+            </p>}
+            {blocked && <div className="notice warning" role="alert">
+              {invalidConfirm
+                ? 'Para confirmar recebimento, selecione cartinha(s) com Pix confirmado e envio finalizado. A prévia pode ser editada, mas o envio permanece bloqueado.'
+                : 'Selecione cartinhas realmente vazias e não finalizadas para usar este aviso. A prévia pode ser editada.'}
+            </div>}
+            <label htmlFor="support-editor">Mensagem editável para WhatsApp</label>
+            <textarea id="support-editor" className="support-textarea" value={text} rows={18}
+              placeholder="A mensagem aparece aqui. Você pode escrever, adaptar ou usar um modelo personalizado."
+              onChange={event => {setText(event.target.value);setEdited(true);}}/>
+            <div className="support-message-editor-tools">
+              <span className="muted small">Use *negrito*, _itálico_ e emojis. As alterações aparecem na prévia.</span>
               {edited && <button type="button" className="text-button"
                 onClick={() => {setText(generated);setEdited(false);}}>
-                Restaurar modelo com os nomes e links atuais
+                Restaurar mensagem gerada
               </button>}
-              <div className="support-message-actions">
-                <button type="button" className="btn" disabled={!text.trim()} onClick={copyMessage}>
-                  <ClipboardCopy size={17}/> Copiar formatada
-                </button>
-                <button type="button" className="btn outline" disabled={!text.trim()}
-                  onClick={openWhatsApp}>
-                  <MessageCircle size={17}/> Abrir WhatsApp
-                </button>
-              </div>
-            </>}
+            </div>
+            <div className="support-message-actions">
+              <button type="button" className="btn" disabled={!canSend} onClick={copyMessage}>
+                <ClipboardCopy size={17}/> Copiar mensagem
+              </button>
+              <button type="button" className="btn outline" disabled={!canSend}
+                onClick={openWhatsApp}>
+                <MessageCircle size={17}/> Abrir WhatsApp
+              </button>
+            </div>
             {notice && <p className="notice success" role="status">{notice}</p>}
             <details className="support-preview-details" open>
               <summary>Prévia com negrito e itálico</summary>
-              <WhatsAppTextPreview value={text} />
+              {text.trim() ? <WhatsAppTextPreview value={text} /> : <p className="support-message-preview">Nenhuma mensagem digitada.</p>}
             </details>
             <p className="muted small">O WhatsApp abre para revisão. <strong>O sistema não envia automaticamente.</strong> Confira o destinatário e toque em Enviar no aplicativo.</p>
           </section>

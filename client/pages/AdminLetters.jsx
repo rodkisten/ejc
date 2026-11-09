@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { CheckCheck, Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, Sparkles } from 'lucide-react';
 import { api, track } from '../lib/api';
 import { readyLetterWhatsAppMessage } from '../lib/helpLink.js';
+import { readAdminListFilters, updateAdminListFilter, isReadyForSending } from '../lib/adminListFilters.js';
 import { publishDraftOg } from '../lib/draftOg.js';
 import { createSecureSupportContext } from '../lib/secureSupport.js';
 import { whatsappShareUrl, normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp.js';
@@ -16,6 +17,8 @@ import '../styles/admin-bulk-finalize.css';
 import { THEMES } from '../../shared/letter.js';
 
 const paid = (status) => ['paid', 'preparing', 'delivered'].includes(status);
+const LETTER_FILTERS = ['all', 'pending', 'paid', 'ready', 'sent', 'recovered',
+  'ready-notify', 'draft', 'paid-draft', 'empty-paid-draft'];
 function createdAt(value) {
   const raw = String(value || '').trim().replace(' ', 'T');
   const normalized = /(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(raw) ? raw : raw + 'Z';
@@ -268,6 +271,12 @@ function RecoveredLetterNotice({letter,onUpdated}){
 export default function AdminLetters() {
   const { slug } = useParams();
   const location = useLocation();
+  const [listParams, setListParams] = useSearchParams();
+  const { search, filter } = readAdminListFilters(listParams, LETTER_FILTERS);
+  const setSearch = value => setListParams(current => updateAdminListFilter(current, 'busca', value),
+    { replace: true, preventScrollReset: true });
+  const setFilter = value => setListParams(current => updateAdminListFilter(current, 'situacao', value),
+    { preventScrollReset: true });
   const params = new URLSearchParams(location.search);
   const technicalMode = params.get('secret') === '000000';
   const encryptedContext=params.get('c')||'';
@@ -284,7 +293,6 @@ export default function AdminLetters() {
         setExpanded(previous=>({...previous,
           ...Object.fromEntries(ids.map(id=>[id,true]))
         }));
-        setSearch('');setFilter('all');
         setContextError('');
       })
       .catch(cause=>{if(alive)setContextError(cause.message);});
@@ -308,8 +316,6 @@ export default function AdminLetters() {
   const [letters, setLetters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('all');
   const [expanded, setExpanded] = useState({});
   const [finalizeSummary, setFinalizeSummary] = useState(null);
   const [finalizeBusy, setFinalizeBusy] = useState(false);
@@ -386,6 +392,7 @@ export default function AdminLetters() {
     if(contextOrderIds.length&&!contextOrderIds.includes(letter.id))return false;
     if (filter === 'pending' && paid(letter.status)) return false;
     if (filter === 'paid' && !paid(letter.status)) return false;
+    if (filter === 'ready' && !isReadyForSending(letter)) return false;
     if (filter === 'draft' && letter.submitted) return false;
     if (filter === 'paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift)) return false;
     if (filter === 'empty-paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift || letter.has_content)) return false;
@@ -532,6 +539,7 @@ export default function AdminLetters() {
           <option value="all">Todas as situações</option>
           <option value="pending">Pix pendente</option>
           <option value="paid">Pagas</option>
+          <option value="ready">💌 Prontas para envio</option>
           <option value="sent">Enviadas</option>
           <option value="recovered">✅ Cartinhas vazias recuperadas</option>
           <option value="ready-notify">📲 Recuperadas prontas para avisar</option>

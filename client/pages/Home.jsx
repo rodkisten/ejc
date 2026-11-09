@@ -44,10 +44,16 @@ export default function Home() {
   useEffect(() => {
     if (!cart.ready) return;
     let alive = true;
+    let refreshId = 0;
     const refresh = () => {
+      const requestId = ++refreshId;
       findUnfinishedLetters({ cartItems: cart.items, checkouts: localCheckouts() })
-        .then((entries) => { if (alive) setUnfinished(entries); })
-        .catch(() => { if (alive) setUnfinished([]); });
+        .then((entries) => {
+          if (alive && requestId === refreshId) setUnfinished(entries);
+        })
+        .catch(() => {
+          if (alive && requestId === refreshId) setUnfinished([]);
+        });
     };
     refresh();
     // Safari on iPhone may restore the tab without remounting the route.

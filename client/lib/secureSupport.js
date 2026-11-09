@@ -12,23 +12,13 @@ export async function createSecureSupportContext({
   });
 }
 
-// On iPhone Safari the blank window must open synchronously with the click.
-// Never reveal a user's private token or the names/phone/UTMs in the URL.
-export async function openSecureSupport(options={}){
-  const popup=window.open('about:blank','_blank');
-  if(popup){
-    try{popup.opener=null;popup.document.body.textContent='Abrindo suporte do Mini Mercado…';}
-    catch{/* Cross-origin windows do not allow document updates. */}
-  }
-  try{
-    const result=await createSecureSupportContext(options);
-    if(popup&&!popup.closed)popup.location.replace(result.link);
-    else window.location.assign(result.link);
-    return result;
-  }catch(error){
-    try{popup?.close();}catch{}
-    throw error;
-  }
+// Navigate through the encrypted support link in the same tab. The Worker
+// redirects to WhatsApp; no about:blank window remains in Safari afterwards.
+// A failed API request leaves the current page open so its error is visible.
+export async function openSecureSupport(options={}) {
+  const result = await createSecureSupportContext(options);
+  window.location.assign(result.link);
+  return result;
 }
 
 export function secureContextToken(url){

@@ -5,6 +5,7 @@ import { api, track } from '../lib/api';
 import { readAdminListFilters, updateAdminListFilter, isReadyForSending,
   matchesSupportOrder } from '../lib/adminListFilters.js';
 import { normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp';
+import { navigateToWhatsApp } from '../lib/whatsappNavigation.js';
 import { supportContactParams } from '../lib/supportContactUrl.js';
 import { createSecureSupportContext } from '../lib/secureSupport.js';
 import { publishDraftOg } from '../lib/draftOg.js';
@@ -365,10 +366,8 @@ export default function AdminSupportMessages({ info }) {
     const url = number
       ? 'https://wa.me/' + number + '?text=' + encodeURIComponent(text)
       : 'https://api.whatsapp.com/send?text=' + encodeURIComponent(text);
-    // All links are already securely generated. Open directly on the iPhone tap.
-    const opened = window.open(url,'_blank');
-    if (opened) opened.opener = null;
-    else window.location.assign(url);
+    // Same-tab navigation avoids leaving an orphan tab after the native app opens.
+    navigateToWhatsApp(url);
     setError('');
     setNotice('WhatsApp aberto. Confira a conversa e envie manualmente.');
     track('admin_support_template_whatsapp_opened',{stage:template});

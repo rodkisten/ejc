@@ -7,6 +7,7 @@ import { readAdminListFilters, updateAdminListFilter, isReadyForSending } from '
 import { publishDraftOg } from '../lib/draftOg.js';
 import { createSecureSupportContext } from '../lib/secureSupport.js';
 import { whatsappShareUrl, normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp.js';
+import { navigateToWhatsApp, isWhatsAppConfirmationPending, setWhatsAppConfirmationPending } from '../lib/whatsappNavigation.js';
 import { supportContactParams, supportContactAdminUrl } from '../lib/supportContactUrl.js';
 import { validContactName, createSupportMessage } from '../lib/supportMessages.js';
 import StickerLayer from '../components/letter/StickerLayer';
@@ -183,8 +184,7 @@ function ResumeDraftLink({ letter }) {
             <button type="button" className="btn" onClick={copyMessage} disabled={!shareText}>
               {copied ? '✓ Mensagem copiada' : 'Copiar mensagem e link'}
             </button>
-            {shareText && contactNumber && <a className="btn outline" target="_blank"
-              rel="noopener noreferrer"
+            {shareText && contactNumber && <a className="btn outline"
               href={whatsappShareUrl({phone:contactNumber,message:shareText})}
               onClick={()=>track('admin_draft_recovery_whatsapp_opened',{stage:'recovery'})}>
               📲 Enviar WhatsApp para {contactName.split(' ')[0]}
@@ -210,11 +210,9 @@ function RecoveredLetterNotice({letter,onUpdated}){
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [whatsApp,setWhatsApp]=useState('');
-  const [confirming,setConfirming]=useState(false);
+  const confirmationKey='recovered:'+letter.id;
+  const [confirming,setConfirming]=useState(()=>isWhatsAppConfirmationPending(confirmationKey));
   async function prepare(){
-    // Keep a tab open through the async API call on mobile Safari.
-    const popup=window.open('about:blank','_blank');
-    if(popup){try{popup.opener=null;popup.document.body.textContent='Preparando WhatsApp…';}catch{}}
     setBusy(true);setError('');setWhatsApp('');
     try{
       const data=await api('/api/admin/cartinhas/'+encodeURIComponent(letter.id)+'/ready-whatsapp',
@@ -224,9 +222,9 @@ function RecoveredLetterNotice({letter,onUpdated}){
       track('admin_recovered_notice_opened',{stage:'whatsapp'});
       setWhatsApp(url);
       setConfirming(true);
-      if(popup&&!popup.closed)popup.location.replace(url);
+      setWhatsAppConfirmationPending(confirmationKey,true);
+      navigateToWhatsApp(url);
     }catch(cause){
-      try{popup?.close();}catch{}
       setError(cause.message||'Não foi possível gerar o convite.');
     }finally{setBusy(false);}
   }
@@ -237,6 +235,7 @@ function RecoveredLetterNotice({letter,onUpdated}){
         {method:'POST',data:{}});
       track('admin_recovered_notice_confirmed',{stage:'whatsapp'});
       setConfirming(false);
+      setWhatsAppConfirmationPending(confirmationKey,false);
       await onUpdated();
     }catch(cause){setError(cause.message||'Não foi possível salvar a confirmação.');}
     finally{setBusy(false);}
@@ -249,8 +248,12 @@ function RecoveredLetterNotice({letter,onUpdated}){
       <button type="button" className="btn" disabled={busy} onClick={prepare}>
         {busy?'Preparando…':letter.recipient_notified_at?'📲 Aviso enviado · reenviar':'📲 Avisar encontrista no WhatsApp'}
       </button>
-      {whatsApp&&<a href={whatsApp} target="_blank" rel="noopener noreferrer"
-        onClick={()=>track('admin_recovered_notice_link_clicked',{stage:'whatsapp'})}
+      {whatsApp&&<a href={whatsApp}
+        onClick={()=>{
+          setConfirming(true);
+          setWhatsAppConfirmationPending(confirmationKey,true);
+          track('admin_recovered_notice_link_clicked',{stage:'whatsapp'});
+        }}
         className="btn outline">Abrir link do WhatsApp</a>}
     </div>}
     {confirming&&<div className="notice">
@@ -258,7 +261,10 @@ function RecoveredLetterNotice({letter,onUpdated}){
       <p>Abrir a conversa não significa que a mensagem foi enviada.</p>
       <div className="inline-actions">
         <button type="button" className="btn" disabled={busy} onClick={confirmSent}>Sim, enviei</button>
-        <button type="button" className="btn ghost" onClick={()=>setConfirming(false)}>Ainda não</button>
+        <button type="button" className="btn ghost" onClick={()=>{
+          setConfirming(false);
+          setWhatsAppConfirmationPending(confirmationKey,false);
+        }}>Ainda não</button>
       </div>
     </div>}
     {letter.recipient_notified_at&&<small>✅ Envio confirmado manualmente em {createdAt(letter.recipient_notified_at)}</small>}

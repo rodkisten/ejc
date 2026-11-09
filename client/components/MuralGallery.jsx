@@ -47,8 +47,10 @@ export default function MuralGallery({ data, opened = {}, openBusy = '', error =
                 {data.cards.map((envelope, index) => (
                   <div key={envelope.id} className="mural-envelope">
                     {technical && !envelope.visible_to_recipient && <p className="notice warning small">Somente prévia técnica: {envelope.status === "pending" || envelope.status === "claimed" ? "Pix não confirmado" : envelope.status === "cancelled" ? "Cancelada" : !envelope.submitted ? "Ainda em rascunho" : "Mural ainda não liberado"}</p>}
-                    {!technical && (envelope.draft_pending || envelope.empty_content) ? (
-                      <UnfinishedLetterNotice senderName={envelope.sender_name} onRefresh={onRefresh} />
+                    {(!technical || !technicalAll) && (envelope.draft_pending || envelope.empty_content) ? (
+                      <UnfinishedLetterNotice
+                        senderName={envelope.composition?.anonymous ? '' : envelope.sender_name}
+                        onRefresh={onRefresh} />
                     ) : opened[envelope.id] ? (
                       <LetterCard letter={opened[envelope.id]} recipient={data.recipient.name} actions={!technical} />
                     ) : (

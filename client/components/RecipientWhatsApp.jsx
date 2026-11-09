@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Check, Copy, ExternalLink, ImagePlus, MessageCircle, Phone, RefreshCw } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, track } from '../lib/api';
 import { publishMuralOgImage } from '../lib/og';
 import { muralInvitationMessage, whatsappShareUrl } from '../lib/recipientWhatsApp';
 import MiniMercadoCampaign from './MiniMercadoCampaign';
@@ -87,6 +87,7 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
         message=muralInvitationMessage({name:details.name,url:details.url,count:details.count});
       }
       const href=whatsappShareUrl({phone:details.phone,message});
+      track('admin_whatsapp_invite_opened',{stage:isCampaign?'campaign':'mural'});
       if(popup && !popup.closed){
         try{
           popup.location.replace(href);
@@ -108,6 +109,7 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
       await api('/api/admin/whatsapp/deliveries',{method:'POST',data:{
         recipient_id:recipient.id,campaign_key:campaignKey,image_sent:true,
       }});
+      track('admin_whatsapp_invite_confirmed',{stage:isCampaign?'campaign':'mural'});
       setConfirmedLocal(true);setConfirming(false);
       await onRefresh?.();
     }catch(cause){setError(cause.message);}

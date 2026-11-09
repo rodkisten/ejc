@@ -156,3 +156,17 @@ test('suporte do encontrista pede identificação ausente antes de abrir o Whats
   assert.equal(post.status,405);
   assert.equal(post.headers.get('Allow'),'GET, HEAD');
 });
+
+test('redirecionamento de suporte mantém emojis UTF-8 sem sequências Unicode literais ou dupla codificação',async()=>{
+  const query=new URLSearchParams({remetente:'Ana 💌',utm_campaign:'suporte_cartinhas'});
+  const response=await visit('/ajuda/terminei-a-cartinha?'+query);
+  assert.equal(response.status,302);
+  const location=response.headers.get('Location');
+  const url=new URL(location);
+  const message=url.searchParams.get('text');
+  assert.match(message,/Ana 💌/);
+  assert.match(message,/💌/);
+  assert.doesNotMatch(message,/%F0%9F|\\uD83D|ðŸ/);
+  assert.match(location,/%F0%9F%92%8C/);
+  assert.doesNotMatch(location,/%25F0%259F/);
+});

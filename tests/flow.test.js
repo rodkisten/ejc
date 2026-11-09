@@ -1498,3 +1498,110 @@ test('publicação em massa percorre todos os encontristas sem duplicar em novas
   assert.equal(new Set(rows.map(row=>row.recipient_id)).size,53);
   assert.equal((await call(env,url,'POST',{cursor:''},admin)).data.created,0);
 });
+
+
+test('admin autenticado confere texto, foto e áudio e aprova apenas rascunho pago com conteúdo', async () => {
+  const env=fixture(),{admin,list}=await setup(env);
+  const draft=await call(env,'/api/orders','POST',{
+    recipient_slug:list[0].slug,sender_name:'Amiga do encontro',
+  });
+  const id=draft.data.id, access=draft.data.token;
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Jesus caminha com você.</p>',
+  },{token:access})).status,200);
+  const mediaId=(await call(env,'/api/order/media/init','POST',{
+    kind:'image',filename:'foto.png',content_type:'image/png',
+  },{token:access})).data.id;
+  assert.equal((await call(env,'/api/order/media/'+mediaId+'/part/1','PUT',
+    new Uint8Array([137,80,78,71,5,6]),{token:access,raw:true})).status,200);
+  assert.equal((await call(env,'/api/order/media/'+mediaId+'/complete','POST',{}, {token:access})).status,200);
+
+  const previewUrl='/api/admin/cartinhas/'+id+'/preview';
+  const mediaUrl=previewUrl+'/media/'+mediaId;
+  assert.equal((await call(env,previewUrl)).status,401);
+  assert.equal((await call(env,previewUrl,'GET',undefined,{token:access})).status,401);
+  assert.equal((await call(env,mediaUrl)).status,401);
+  assert.equal((await call(env,previewUrl,'POST',{},admin)).status,404);
+
+  const preview=await call(env,previewUrl,'GET',undefined,admin);
+  assert.equal(preview.status,200);
+  assert.equal(preview.headers.get('Cache-Control'),'no-store');
+  assert.match(preview.data.rich_html,/Jesus caminha com você/);
+  assert.equal(preview.data.media.length,1);
+  assert.equal(preview.data.media[0].filename,'foto.png');
+  assert.equal('token_hash' in preview.data,false);
+  const media=await call(env,mediaUrl,'GET',undefined,{...admin,binary:true});
+  assert.equal(media.status,200);
+  assert.equal(media.headers.get('Content-Type'),'image/png');
+  assert.deepEqual([...media.data],[137,80,78,71,5,6]);
+
+  const listing=(await call(env,'/api/admin/cartinhas','GET',undefined,admin)).data;
+  assert.equal(listing.letters.find(x=>x.id===id).has_content,true);
+  assert.ok(!JSON.stringify(listing).includes('Jesus caminha com você'));
+  assert.equal((await call(env,'/api/admin/cartinhas/'+id+'/finalize','POST',{})).status,401);
+  assert.equal((await call(env,'/api/admin/cartinhas/'+id+'/finalize','POST',{},admin)).status,409);
+
+  assert.equal((await call(env,'/api/admin/orders/'+id+'/status','PATCH',{
+    status:'paid',bank_reference:'ADMINREVIEWMEDIA2026',
+    bank_checked:true,amount_checked:true,
+  },admin)).status,200);
+  const finalized=await call(env,'/api/admin/cartinhas/'+id+'/finalize','POST',{},admin);
+  assert.equal(finalized.status,200);
+  assert.equal(finalized.data.submitted,true);
+  assert.equal((await call(env,'/api/admin/cartinhas/'+id+'/finalize','POST',{},admin)).status,409);
+  const order=await env.DB.prepare('SELECT moderation,submitted_at,rich_html FROM orders WHERE id=?').bind(id).first();
+  assert.equal(order.moderation,'approved');
+  assert.ok(order.submitted_at);
+  assert.match(order.rich_html,/Jesus caminha com você/);
+});
+
+test('link temporário permite ao remetente concluir rascunho pago vazio sem invalidar token original',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:list[0].slug,sender_name:'Rafa',
+  });
+  const id=created.data.id,originalToken=created.data.token;
+  assert.equal((await call(env,'/api/admin/orders/'+id+'/status','PATCH',{
+    status:'paid',bank_reference:'ADMINRESUMELINK2026',
+    bank_checked:true,amount_checked:true,
+  },admin)).status,200);
+  const route='/api/admin/cartinhas/'+id+'/resume-link';
+  const approve='/api/admin/cartinhas/'+id+'/finalize';
+  assert.equal((await call(env,approve,'POST',{},admin)).status,409);
+  assert.equal((await call(env,route,'POST',{})).status,401);
+  assert.equal((await call(env,route,'POST',{}, {token:originalToken})).status,401);
+
+  const generated=await call(env,route,'POST',{},admin);
+  assert.equal(generated.status,200);
+  assert.equal(generated.data.sender_name,'Rafa');
+  assert.ok(generated.data.resume_url.startsWith('https://ejc.test/pedido/r1_'));
+  const resumeToken=new URL(generated.data.resume_url).pathname.split('/').pop();
+  assert.match(resumeToken,/^r1_[A-F0-9]{12}_[0-9a-f]{8}_[A-Za-z0-9_-]{43}$/);
+  assert.equal((await call(env,'/api/order','GET',undefined,{token:resumeToken})).status,200);
+  assert.equal((await call(env,'/api/order','GET',undefined,{token:originalToken})).status,200);
+  const tampered=resumeToken.slice(0,-1)+(resumeToken.endsWith('X')?'Y':'X');
+  assert.equal((await call(env,'/api/order','GET',undefined,{token:tampered})).status,404);
+  const listing=(await call(env,'/api/admin/cartinhas','GET',undefined,admin)).data;
+  assert.equal(listing.letters.find(x=>x.id===id).has_content,false);
+  assert.ok(!JSON.stringify(listing).includes(resumeToken));
+
+  // The general submission deadline has ended; only this recovery grant may
+  // finish the already-paid draft. Other original-token permissions stay intact.
+  assert.equal((await call(env,'/api/admin/settings','PUT',{
+    deadline:'2020-11-08T18:00',
+  },admin)).status,200);
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Original após o prazo</p>',
+  },{token:originalToken})).status,403);
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Persevere na fé! 💛</p>',sender_name:'Rafa',
+  },{token:resumeToken})).status,200);
+  assert.equal((await call(env,'/api/order/submit','POST',{}, {token:resumeToken})).status,200);
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Não deve editar novamente</p>',
+  },{token:resumeToken})).status,403);
+  assert.equal((await call(env,approve,'POST',{},admin)).status,409);
+  const saved=await env.DB.prepare('SELECT submitted_at,rich_html FROM orders WHERE id=?').bind(id).first();
+  assert.ok(saved.submitted_at);
+  assert.match(saved.rich_html,/Persevere na fé/);
+});

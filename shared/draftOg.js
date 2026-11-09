@@ -16,7 +16,7 @@ export function draftOgCaption(names=[]){
     ' e mais '+plural+' '+(plural===1?'encontrista':'encontristas')+' felizes?';
 }
 export function draftOgTitle(names=[]){
-  return 'Termine sua cartinha 💌 | '+draftOgCaption(names);
+  return 'Finalize sua cartinha 💌 | '+draftOgCaption(names);
 }
 export function draftOgIds(ids=[]){
   return [...new Set((Array.isArray(ids)?ids:[])

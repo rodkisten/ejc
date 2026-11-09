@@ -1,0 +1,71 @@
+
+{
+  "name": "iPhone Optimized Codespace",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22-bookworm",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "window.zoomLevel": 0,
+        "window.commandCenter": true,
+
+        "workbench.sideBar.location": "left",
+        "workbench.activityBar.location": "top",
+        "workbench.editor.showTabs": "single",
+        "workbench.layoutControl.enabled": false,
+        "workbench.statusBar.visible": false,
+        "breadcrumbs.enabled": false,
+
+        "editor.fontSize": 15,
+        "editor.lineHeight": 23,
+        "editor.wordWrap": "on",
+        "editor.wrappingIndent": "none",
+        "editor.minimap.enabled": false,
+        "editor.stickyScroll.enabled": false,
+        "editor.lineNumbers": "off",
+        "editor.scrollBeyondLastLine": false,
+        "editor.hover.enabled": false,
+        "editor.scrollbar.verticalScrollbarSize": 14,
+        "editor.scrollbar.horizontalScrollbarSize": 8,
+        "editor.stablePeek": false,
+
+        "diffEditor.renderSideBySide": false,
+
+        "terminal.integrated.fontSize": 14,
+        "terminal.integrated.lineHeight": 1.2,
+        "terminal.integrated.scrollback": 2000,
+        "terminal.integrated.tabs.enabled": false,
+
+        "explorer.compactFolders": true,
+        "workbench.tree.indent": 12,
+
+        "files.autoSave": "afterDelay",
+        "files.autoSaveDelay": 1200
+      }
+    }
+  },
+  "forwardPorts": [
+    3000,
+    5173,
+    8000,
+    8080,
+    9001
+  ],
+  "portsAttributes": {
+    "3000": {
+      "label": "Web App"
+    },
+    "5173": {
+      "label": "Vite"
+    },
+    "8000": {
+      "label": "Backend API"
+    },
+    "9001": {
+      "label": "Worker"
+    }
+  }
+}

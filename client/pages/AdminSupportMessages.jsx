@@ -138,11 +138,15 @@ export default function AdminSupportMessages({ info }) {
         link.searchParams.set('utm_content','rascunho_pago');
         created.push({name:letter.recipient_name,url:link.toString()});
       }
-      await publishDraftOg(drafts);
       setResumeUrl(created.length===1?created[0].url:
         created.map(item=>'• '+item.name+': '+item.url).join('\n'));
-      setNotice('✅ '+created.length+' link(s) privado(s) de continuação gerado(s). '+
-        'A arte personalizada foi publicada com os nomes selecionados.');
+      try{
+        await publishDraftOg(drafts);
+        setNotice('✅ '+created.length+' link(s) privado(s) e OG personalizada gerados com os nomes selecionados.');
+      }catch(ogError){
+        setNotice('✅ '+created.length+' link(s) privado(s) gerados. A OG personalizada não pôde ser publicada: '+
+          ogError.message);
+      }
     }catch(cause){setError(cause.message||'Não foi possível preparar os links de continuação.');}
     finally{setGeneratingResume(false);}
   }

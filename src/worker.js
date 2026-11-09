@@ -796,14 +796,14 @@ async function shortLinkPreview(env,request,destination,kind,shortUrl){
   }
   const tag=(property,value)=>'<meta property="'+escapeMeta(property)+
     '" content="'+escapeMeta(value)+'">';
-  const tags=readyMeta?.tags||[
+  const tags=(readyMeta?.tags||[
     tag('og:type','website'),tag('og:locale','pt_BR'),
     tag('og:site_name','Cartinhas Virtuais · Mini Mercado'),
     tag('og:title',title),tag('og:description',description),
     tag('og:image',image),tag('og:image:secure_url',image),
     tag('og:image:type','image/png'),tag('og:image:width','1200'),
     tag('og:image:height','630'),tag('og:image:alt',alt)
-  ].join('');
+  ].join('')).replace(/<meta property="og:url" content="[^"]*"\s*\/?>/g,'');
   title=readyMeta?.title||title;
   description=readyMeta?.description||description;
   const html='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'+

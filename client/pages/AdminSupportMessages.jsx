@@ -44,6 +44,7 @@ export default function AdminSupportMessages({ info }) {
     initial.order_id ? [initial.order_id] : []
   );
   const [resumeUrl, setResumeUrl] = useState(initial.resume_url || '');
+  const [generatingResume, setGeneratingResume] = useState(false);
   const [text, setText] = useState('');
   const [edited, setEdited] = useState(false);
 
@@ -117,6 +118,35 @@ export default function AdminSupportMessages({ info }) {
 
   // The chosen recipients come from the admin's D1-backed orders, never a
   // hardcoded name. PNGs are cached per exact set of selected draft IDs.
+  async function createResumeLinks(){
+    const drafts=selectedOrders.filter(order=>
+      !order.submitted&&['paid','preparing','delivered'].includes(order.status));
+    if(!drafts.length){
+      setError('Selecione uma ou mais cartinhas pagas ainda em rascunho.');
+      return;
+    }
+    setGeneratingResume(true);setError('');
+    try{
+      const created=[];
+      for(const letter of drafts){
+        const response=await api('/api/admin/cartinhas/'+encodeURIComponent(letter.id)+
+          '/resume-link',{method:'POST',data:{}});
+        const link=new URL(response.resume_url);
+        link.searchParams.set('utm_source','whatsapp');
+        link.searchParams.set('utm_medium','mensagem');
+        link.searchParams.set('utm_campaign','recuperacao_cartinha');
+        link.searchParams.set('utm_content','rascunho_pago');
+        created.push({name:letter.recipient_name,url:link.toString()});
+      }
+      await publishDraftOg(drafts);
+      setResumeUrl(created.length===1?created[0].url:
+        created.map(item=>'• '+item.name+': '+item.url).join('\n'));
+      setNotice('✅ '+created.length+' link(s) privado(s) de continuação gerado(s). '+
+        'A arte personalizada foi publicada com os nomes selecionados.');
+    }catch(cause){setError(cause.message||'Não foi possível preparar os links de continuação.');}
+    finally{setGeneratingResume(false);}
+  }
+
   async function ensurePersonalizedDraftOg() {
     const drafts=selectedOrders.filter(order=>
       !order.submitted&&['paid','preparing','delivered'].includes(order.status));
@@ -304,7 +334,12 @@ export default function AdminSupportMessages({ info }) {
               <input id="support-resume-link" type="url" autoComplete="off" spellCheck={false}
                 value={resumeUrl} onChange={event => setResumeUrl(event.target.value)}
                 placeholder="https://ejc.migos.club/pedido/…" />
-              <small>Esse link é pessoal. Só inclua se tiver certeza de que a conversa é com a pessoa que enviou a cartinha. Ele não vai para o Analytics.</small>
+              <button type="button" className="btn outline" disabled={generatingResume}
+                onClick={createResumeLinks}>
+                {generatingResume?'Preparando links e arte…':'💌 Gerar automaticamente link(s) e OG com os nomes'}
+              </button>
+              <small>Os nomes são obtidos dos pedidos selecionados. Os links são pessoais:
+                só envie à pessoa que escreveu as cartinhas. Não são enviados ao Analytics.</small>
             </>}
             {invalidConfirm && <p className="notice warning">Para afirmar que a cartinha foi recebida, selecione pelo menos um pedido com <strong>Pix confirmado e envio finalizado</strong>.</p>}
             {invalidEmpty && <p className="notice warning">Para avisar sobre uma cartinha vazia, selecione uma que esteja realmente sem conteúdo e sem envio finalizado.</p>}

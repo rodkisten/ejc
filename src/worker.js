@@ -682,6 +682,13 @@ async function encryptedSupportLink(req,env,url,finished=false){
     req.headers.get('Sec-Fetch-Mode')!=='navigate'&&
     req.headers.get('Sec-Fetch-Dest')!=='document';
   if(robot)return null; // Existing OG HTML handles the preview.
+  if(req.method==='GET')try {
+    await env.DB.prepare(
+      'INSERT INTO help_link_counts(day,campaign,clicks) VALUES(?,?,1) '+
+      'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'
+    ).bind(new Date().toISOString().slice(0,10),
+      'encrypted:'+context.campaign).run();
+  }catch(error){console.warn('Encrypted support aggregate unavailable',error?.message);}
   const origin=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
   const admin=origin+'/admin/mensagens?c='+encodeURIComponent(url.searchParams.get('c'));
   const overview=origin+'/admin/cartinhas?c='+encodeURIComponent(url.searchParams.get('c'));

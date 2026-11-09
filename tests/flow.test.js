@@ -1685,14 +1685,14 @@ test('link temporário permite ao remetente concluir rascunho pago vazio sem inv
   assert.equal(listing.letters.find(x=>x.id===id).has_content,false);
   assert.ok(!JSON.stringify(listing).includes(resumeToken));
 
-  // The general submission deadline has ended; only this recovery grant may
-  // finish the already-paid draft. Other original-token permissions stay intact.
+  // After the deadline, the original bearer token may still complete an
+  // already-paid unsubmitted draft. The signed recovery grant remains valid too.
   assert.equal((await call(env,'/api/admin/settings','PUT',{
     deadline:'2020-11-08T18:00',
   },admin)).status,200);
   assert.equal((await call(env,'/api/order/message','PUT',{
     rich_html:'<p>Original após o prazo</p>',
-  },{token:originalToken})).status,403);
+  },{token:originalToken})).status,200);
   assert.equal((await call(env,'/api/order/message','PUT',{
     rich_html:'<p>Persevere na fé! 💛</p>',sender_name:'Rafa',
   },{token:resumeToken})).status,200);

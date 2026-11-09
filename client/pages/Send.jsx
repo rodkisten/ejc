@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowRight, Info, ShoppingBag, Share2, CheckCircle2 } from 'lucide-react';
 import { useApp } from '../main';
-import { money, track } from '../lib/api';
+import { api, money, track } from '../lib/api';
+import { createSecureSupportContext } from '../lib/secureSupport.js';
 import { draftGet, draftSet, draftRemove, draftKey } from '../lib/drafts';
 import { useCart, cartDraftKey, checkoutForDraft } from '../lib/cart';
 import { LetterCard } from '../components/LetterCard';
@@ -20,6 +21,22 @@ export default function Send() {
   const found = recipients.find((r) => r.slug === slug);
   const { composition, setComposition } = useLetterComposer();
   const [sender, setSender] = useState('');
+  const [contactPhone,setContactPhone] = useState('');
+  const [invitation,setInvitation] = useState(null);
+  const contextOpaque=new URLSearchParams(location.search).get('c')||
+    sessionStorage.getItem('ejc-support-context')||'';
+  useEffect(()=>{
+    if(!contextOpaque)return;
+    let active=true;
+    api('/api/support/context?c='+encodeURIComponent(contextOpaque))
+      .then(data=>{
+        if(!active)return;
+        setInvitation(data);
+        setContactPhone(data.phone||'');
+        sessionStorage.setItem('ejc-support-context',contextOpaque);
+      }).catch(()=>{});
+    return()=>{active=false;};
+  },[contextOpaque]);
   const [html, setHtml] = useState('');
   const [assets, setAssets] = useState([]);
   const [notifyOnRead, setNotifyOnRead] = useState(false);
@@ -39,7 +56,7 @@ export default function Send() {
     setReady(false);
     draftGet(key).then((draft) => {
       if (!active) return;
-      setSender(draft?.sender || '');
+      setSender(draft?.sender || invitation?.name || '');
       setHtml(draft?.html || '');
       setComposition(draft?.composition);
       setNotifyOnRead(!!draft?.notifyOnRead);
@@ -51,7 +68,7 @@ export default function Send() {
       if (active) setError('Não foi possível recuperar o rascunho anterior.');
     }).finally(() => { if (active) setReady(true); });
     return () => { active = false; };
-  }, [key, setComposition]);
+  }, [key, setComposition, invitation?.name]);
 
   useEffect(() => {
     if (!ready) return;
@@ -101,8 +118,17 @@ export default function Send() {
         assets: assets.map(({ file, kind }) => ({ file, kind })),
       });
       if (!editId) await draftRemove(draftKey(slug));
+      // Preserve contact information as authenticated ciphertext, never as
+      // plaintext URL parameters or a localStorage profile.
+      const secured=await createSecureSupportContext({
+        purpose:'send',name:sender.trim(),phone:contactPhone,
+        recipientSlugs:[slug],stage:'envio_cartinha',source:'editor',
+        medium:'navegacao',campaign:'envio_cartinhas',content:'remetente'
+      });
+      const opaque=new URL(secured.link).searchParams.get('c');
+      sessionStorage.setItem('ejc-support-context',opaque);
       track('letter_added_to_cart',{stage:editId?'updated':'new',letters:cart.items.length+1});
-      navigate('/carrinho');
+      navigate('/carrinho?c='+encodeURIComponent(sessionStorage.getItem('ejc-support-context')));
     } catch (cause) {
       setError(cause.message || 'Não foi possível salvar a cartinha.');
     } finally {
@@ -112,16 +138,22 @@ export default function Send() {
 
   async function sharePage() {
     if (!found) return;
-    const url = new URL('/enviar/' + encodeURIComponent(slug), window.location.origin).toString();
     try {
-      if (navigator.share) await navigator.share({
-        title: 'Uma cartinha para ' + found.name + ' · XX EJC Simonésia',
-        text: 'Envie uma homenagem especial para ' + found.name + '.',
-        url,
+      const context=await createSecureSupportContext({
+        purpose:'send',name:sender.trim(),phone:contactPhone,
+        recipientSlugs:[slug],stage:'link_envio',
+        source:'whatsapp',medium:'compartilhamento',
+        campaign:'convite_escrever',content:'cartinha'
       });
-      else { await navigator.clipboard.writeText(url); setError('Link de envio copiado!'); }
-    } catch (cause) {
-      if (cause?.name !== 'AbortError') setError('Não foi possível compartilhar o link.');
+      const url=context.send_urls[0];
+      if(!url)throw new Error('Não foi possível gerar o link de envio.');
+      if (navigator.share) await navigator.share({
+        title:'Uma cartinha para '+found.name+' · XX EJC Simonésia',
+        text:'Envie uma homenagem especial para '+found.name+'.',url
+      });
+      else {await navigator.clipboard.writeText(url);setError('Link protegido de envio copiado!');}
+    }catch(cause){
+      if(cause?.name!=='AbortError')setError(cause.message||'Não foi possível compartilhar o link.');
     }
   }
 
@@ -157,6 +189,13 @@ export default function Send() {
         </div>
         <p className="muted">Escreva, decore e escolha suas fotos ou áudios. Você pode fazer uma cartinha diferente para cada pessoa ou duplicar a mesma no carrinho.</p>
 
+        <section className="form-card">
+          <label htmlFor="sender-phone">📲 Seu WhatsApp para suporte (opcional)</label>
+          <input id="sender-phone" type="tel" inputMode="tel" autoComplete="tel"
+            placeholder="(33) 99999-9999" value={contactPhone}
+            onChange={event=>setContactPhone(event.target.value.slice(0,25))}/>
+          <small>Nome e telefone são preservados somente em um link com contexto criptografado, para que você possa retomá-los no próximo passo.</small>
+        </section>
         <LetterComposerFields
           sender={sender}
           onSenderChange={setSender}

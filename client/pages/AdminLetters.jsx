@@ -3,6 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { CheckCheck, Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, Sparkles } from 'lucide-react';
 import { api, track } from '../lib/api';
 import { readyLetterWhatsAppMessage } from '../lib/helpLink.js';
+import { publishDraftOg } from '../lib/draftOg.js';
 import { whatsappShareUrl } from '../lib/recipientWhatsApp.js';
 import { validContactName, createSupportMessage } from '../lib/supportMessages.js';
 import StickerLayer from '../components/letter/StickerLayer';
@@ -94,7 +95,21 @@ function ResumeDraftLink({ letter }) {
       const response = await api('/api/admin/cartinhas/' + encodeURIComponent(letter.id) + '/resume-link', {
         method: 'POST', data: {},
       });
-      setRecovery(response);
+      // PNG is rendered with the real recipient name and published automatically
+      // before a recoverable link is copied or shared. No manual image editing.
+      let ogWarning='';
+      try {
+        await publishDraftOg([{id:letter.id,recipient_name:letter.recipient_name}]);
+      } catch (cause) {
+        ogWarning='O link funciona, mas a prévia personalizada não pôde ser gerada: '+cause.message;
+      }
+      const tracked=new URL(response.resume_url);
+      tracked.searchParams.set('utm_source','whatsapp');
+      tracked.searchParams.set('utm_medium','mensagem');
+      tracked.searchParams.set('utm_campaign','recuperacao_cartinha');
+      tracked.searchParams.set('utm_content','rascunho_pago');
+      setRecovery({...response,resume_url:tracked.toString()});
+      if(ogWarning)setError(ogWarning);
     } catch (cause) {
       setError(cause.message || 'Não foi possível criar o link.');
     } finally {

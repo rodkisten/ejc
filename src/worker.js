@@ -672,6 +672,51 @@ async function createCheckout(req,env,config) {
   },201);
 }
 
+async function encryptedSupportLink(req,env,url,finished=false){
+  let context;
+  try{context=await decryptSupportContext(env.SESSION_SECRET,url.searchParams.get('c')||'');}
+  catch{bad('Seu link de atendimento expirou ou é inválido. Peça um novo à equipe.',410);}
+  const agent=req.headers.get('User-Agent')||'';
+  const robot=/whatsapp|facebookexternalhit|facebot|twitterbot|telegrambot|slackbot|discordbot|linkedinbot|pinterest/i.test(agent)&&
+    req.headers.get('Sec-Fetch-Mode')!=='navigate'&&
+    req.headers.get('Sec-Fetch-Dest')!=='document';
+  if(robot)return null; // Existing OG HTML handles the preview.
+  const origin=new URL(env.PUBLIC_ORIGIN||url.origin).origin;
+  const admin=origin+'/admin/mensagens?c='+encodeURIComponent(url.searchParams.get('c'));
+  const overview=origin+'/admin/cartinhas?c='+encodeURIComponent(url.searchParams.get('c'));
+  const role=context.purpose==='invite'?'encontrista':context.purpose==='support'?'pessoa':'remetente';
+  const intro=context.name
+    ?'Olá! Eu sou '+context.name+' e estou precisando de ajuda com minhas cartinhas. 💌'
+    :'Olá! Estou precisando de ajuda com minhas cartinhas. 💌';
+  const lines=[
+    '💌 *SUPORTE · CARTINHAS VIRTUAIS · MINI MERCADO*','',
+    finished
+      ?'✅ Finalizei minha cartinha e gostaria de confirmar o recebimento.'
+      :intro,
+    ...(context.name?['*Nome:* '+context.name]:[]),
+    ...(context.phone?['*Meu WhatsApp:* '+context.phone]:[]),
+    '*Etapa:* '+(context.stage||'suporte'),
+    '',
+    '🔐 *Atendimento protegido para a equipe:*',
+    admin,
+    '👁 *Conferir pedidos e cartinhas (admin):*',
+    overview,
+    '',
+    'IDs, UTMs, telefone e identificação estão criptografados nos links acima.',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '✍️ *O que está acontecendo?*',
+    '_Descreva aqui o que precisa de ajuda._',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '🌹 *Mini Mercado · XX EJC Simonésia*'
+  ];
+  const whatsapp=new URL('https://wa.me/5533999546031');
+  whatsapp.searchParams.set('text',lines.join('\n'));
+  return new Response(req.method==='HEAD'?null:null,{status:302,headers:{
+    Location:whatsapp.toString(),'Cache-Control':'no-store',
+    'Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow, noarchive'
+  }});
+}
 async function supportContextMint(req,env){
   const input=await jsonBody(req,5000);
   if(!input||typeof input!=='object'||Array.isArray(input))bad('Contexto inválido.');
@@ -2198,6 +2243,10 @@ export default {
       if(path==='/ajuda/minha-cartinha'||path==='/ajuda/minha-cartinha/'){
         if(request.method!=='GET'&&request.method!=='HEAD')
           return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
+        if(url.searchParams.has('c')){
+          const encrypted=await encryptedSupportLink(request,env,url,false);
+          if(encrypted)return encrypted;
+        }
         const ua=request.headers.get('User-Agent')||'';
         const navigate=request.headers.get('Sec-Fetch-Mode')==='navigate'||
           request.headers.get('Sec-Fetch-Dest')==='document';
@@ -2208,7 +2257,7 @@ export default {
           const image=await env.MEDIA.head('og/help-recipient-v1.png');
           const version=image?.uploaded?.getTime()||'fallback';
           const og=base+'/og-ajuda-minha-cartinha.png?v='+encodeURIComponent(version);
-          const title='Me ajude com a minha cartinha! | Cartinhas Virtuais';
+          const title='Preciso de ajuda com minha cartinha! | Cartinhas Virtuais';
           const description='Suporte do Mini Mercado · XX EJC Simonésia. Estamos aqui para ajudar você!';
           const properties={
             'og:type':'website','og:locale':'pt_BR',
@@ -2217,7 +2266,7 @@ export default {
             'og:url':base+'/ajuda/minha-cartinha',
             'og:image':og,'og:image:secure_url':og,
             'og:image:type':'image/png','og:image:width':'1200','og:image:height':'630',
-            'og:image:alt':'Me ajude com a minha cartinha. Mini Mercado XX EJC Simonésia.'
+            'og:image:alt':'Preciso de ajuda com minha cartinha. Mini Mercado XX EJC Simonésia.'
           };
           const meta=Object.entries(properties).map(([key,value])=>
             '<meta property="'+escapeMeta(key)+'" content="'+escapeMeta(value)+'" />').join('');
@@ -2283,7 +2332,7 @@ export default {
           '━━━━━━━━━━━━━━━━━━━━',
           '💛 *Mini Mercado · XX EJC Simonésia*'
         ];
-        const whats=new URL('https://wa.me/5532999662604');
+        const whats=new URL('https://wa.me/5533999546031');
         whats.searchParams.set('text',details.join('\n'));
         for(const [key,backup] of Object.entries({
           utm_source:source,utm_medium:medium,utm_campaign:campaign,
@@ -2310,6 +2359,10 @@ export default {
       if (path==='/ajuda/terminei-a-cartinha'||path==='/ajuda/terminei-a-cartinha/') {
         if(request.method!=='GET'&&request.method!=='HEAD')
           return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
+        if(url.searchParams.has('c')){
+          const encrypted=await encryptedSupportLink(request,env,url,true);
+          if(encrypted)return encrypted;
+        }
         const agent=request.headers.get('User-Agent')||'';
         const navigation=request.headers.get('Sec-Fetch-Mode')==='navigate'||
           request.headers.get('Sec-Fetch-Dest')==='document';

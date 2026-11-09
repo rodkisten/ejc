@@ -1,6 +1,7 @@
 import React from 'react';
 import { LifeBuoy } from 'lucide-react';
 import { checkoutSupportHref } from '../lib/checkoutSupport';
+import { track } from '../lib/api';
 import '../styles/checkout-support.css';
 
 export default function CheckoutSupport({
@@ -25,6 +26,7 @@ export default function CheckoutSupport({
         timeZone: 'America/Sao_Paulo',
       }),
     });
+    track('support_whatsapp_clicked',{stage:step?.includes('Pix')?'payment':'editor'});
     window.open(href, '_blank', 'noopener,noreferrer');
   };
 

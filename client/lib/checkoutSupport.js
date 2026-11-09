@@ -1,4 +1,4 @@
-export const SUPPORT_WHATSAPP = '5533999546031';
+export const SUPPORT_WHATSAPP = '5532999662604';
 
 // Never send edit credentials, access tokens, hashes, or a full Pix BR Code
 // to WhatsApp. Those would allow someone else to edit a private letter.

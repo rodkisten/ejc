@@ -6,7 +6,7 @@ import { readAdminListFilters, updateAdminListFilter } from '../lib/adminListFil
 import { publishMuralOgImage } from '../lib/og';
 import { muralInvitationMessage, whatsappShareUrl } from '../lib/recipientWhatsApp';
 import { createSecureSupportContext } from '../lib/secureSupport.js';
-import { navigateToWhatsApp, isWhatsAppConfirmationPending, setWhatsAppConfirmationPending } from '../lib/whatsappNavigation.js';
+import { navigateToWhatsApp, prepareWhatsAppPopup, closeWhatsAppPopup, isWhatsAppConfirmationPending, setWhatsAppConfirmationPending } from '../lib/whatsappNavigation.js';
 import MiniMercadoCampaign from './MiniMercadoCampaign';
 import { CAMPAIGN_KEY, renderCampaignWhatsApp } from '../../shared/ejcCampaign.js';
 import '../styles/recipient-whatsapp.css';
@@ -67,6 +67,8 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
     ready>0 && (!isCampaign || published);
 
   async function send() {
+    // A popup created before awaiting API requests avoids Chrome iOS blocking it.
+    const popup=prepareWhatsAppPopup('Preparando convite do XX EJC…');
     setBusy(true);setError('');setFallbackLink('');setConfirming(false);
     try{
       if(!recipient.mural_og_ready)await publishMuralOgImage(recipient);
@@ -106,8 +108,9 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
       // Refresh before leaving. The confirmation prompt is also restored from
       // sessionStorage when the admin returns using the browser's Back button.
       try { await onRefresh?.(); } catch { /* Navigation still works if refresh fails. */ }
-      navigateToWhatsApp(href);
+      navigateToWhatsApp(href, popup);
     }catch(cause){
+      closeWhatsAppPopup(popup);
       setError(cause.message||'Não foi possível preparar o convite.');
     }finally{setBusy(false);}
   }
@@ -142,7 +145,7 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
       {isCampaign&&!published&&<small className="whatsapp-action-hint">Publique a carta da campanha primeiro.</small>}
       {ready>0&&!recipient.whatsapp_phone&&<small className="whatsapp-action-hint">Salve o telefone antes de compartilhar.</small>}
       {error&&<p role="alert" className="notice error">{error}</p>}
-      {fallbackLink&&<a href={fallbackLink} className="btn outline"
+      {fallbackLink&&<a href={fallbackLink} target="_blank" rel="noopener noreferrer" className="btn outline"
         onClick={()=>{
           setConfirming(true);
           setWhatsAppConfirmationPending(confirmationKey, true);

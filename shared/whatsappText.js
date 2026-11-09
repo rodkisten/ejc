@@ -45,6 +45,21 @@ export function normalizeWhatsAppText(value) {
         const point = hex ? codePoint(hex) : codePoint(Number(decimal).toString(16));
         return point && emoji.test(point) ? point : sequence;
       })
+    // Some saved messages have been encoded twice (%25F0%259F%2592%258C).
+    .replace(/(?:%25[0-9a-fA-F]{2}){3,}/g, sequence => {
+      try {
+        const decoded = decodeURIComponent(sequence.replace(/%25/gi, '%'));
+        return emoji.test(decoded) ? decoded : sequence;
+      } catch {
+        return sequence;
+      }
+    })
+    // Deprecated JS escape() produces %uD83D%uDC8C.
+    .replace(/%u([dD][89aAbB][0-9a-fA-F]{2})%u([dD][c-fC-F][0-9a-fA-F]{2})/gi,
+      (sequence, high, low) => String.fromCodePoint(
+        0x10000 + ((Number.parseInt(high, 16) - 0xD800) << 10) +
+        (Number.parseInt(low, 16) - 0xDC00)
+      ))
     // A previously percent-encoded emoji must not be percent-encoded twice.
     // Leave ordinary URL escapes and encrypted query strings unchanged.
     .replace(/(?:%[0-9a-fA-F]{2}){3,}/g, sequence => {

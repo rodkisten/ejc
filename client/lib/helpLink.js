@@ -27,7 +27,15 @@ export function readyLetterWhatsAppMessage({recipient_name,order_id,url,released
     '_Com carinho, equipe do Mini Mercado · XX EJC Simonésia_',
     '_Referência para suporte: '+order_id+'_',
     '',
-    '🔒 _Esse link é pessoal. Não o compartilhe._',
+    '🆘 *Precisa de ajuda para abrir ou visualizar sua cartinha?*',
+    recipientSupportLink({
+      origin:new URL(url).origin,name:recipient_name,ids:[order_id],
+      source:'whatsapp',medium:'mensagem',campaign:'cartinha_recuperada',
+      content:'suporte_encontrista',stage:'convite_recuperada'
+    }),
+    '_O link de ajuda abre nosso WhatsApp com uma mensagem pronta. É só explicar o que aconteceu!_',
+    '',
+    '🔒 _O acesso ao mural é pessoal. Não o compartilhe._',
   ].join('\n');
 }
 

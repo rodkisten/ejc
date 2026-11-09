@@ -13,7 +13,7 @@ export function draftOgCaption(names=[]){
   if(people.length===2)return 'Vamos finalizar e deixar '+people[0]+' e '+people[1]+' felizes?';
   const plural=people.length-2;
   return 'Vamos finalizar e deixar '+people[0]+', '+people[1]+
-    ' e mais '+plural+' encontristas felizes?';
+    ' e mais '+plural+' '+(plural===1?'encontrista':'encontristas')+' felizes?';
 }
 export function draftOgTitle(names=[]){
   return 'Termine sua cartinha 💌 | '+draftOgCaption(names);

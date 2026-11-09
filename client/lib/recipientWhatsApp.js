@@ -8,7 +8,7 @@ export function normalizeBrazilianWhatsApp(value) {
   return /^55[1-9][0-9][0-9]{8,9}$/.test(canonical)?canonical:'';
 }
 
-export function muralInvitationMessage({ name, url, count=1 }) {
+export function muralInvitationMessage({ name, url, count=1, ids=[] }) {
   const first=String(name||'').trim().split(/\s+/)[0]||'encontrista';
   const amount=Number(count)||1;
   return [
@@ -32,7 +32,7 @@ export function muralInvitationMessage({ name, url, count=1 }) {
     '',
     '🆘 *Precisa de ajuda com suas cartinhas?*',
     recipientSupportLink({
-      name,origin:new URL(url).origin,source:'whatsapp',medium:'mensagem',
+      name,ids,origin:new URL(url).origin,source:'whatsapp',medium:'mensagem',
       campaign:'convite_mural',content:'suporte_encontrista',stage:'convite_mural'
     }),
     '_O link abre o WhatsApp da equipe com uma mensagem pronta._',

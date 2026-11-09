@@ -12,6 +12,7 @@ import { enqueue, enableReceipt, disableReceipt, confirmReceipt, markRead, queue
 const PART_SIZE = 8 * 1024 * 1024;
 const MIN_PART = 5 * 1024 * 1024;
 const WRITE_METHODS = new Set(['POST','PUT','PATCH','DELETE']);
+const SUPPORT_WHATSAPP = '5532999662604';
 const BASE_HEADERS = {
   'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY',
@@ -717,7 +718,7 @@ async function encryptedSupportLink(req,env,url,finished=false){
     '━━━━━━━━━━━━━━━━━━━━',
     '🌹 *Mini Mercado · XX EJC Simonésia*'
   ];
-  const whatsapp=new URL('https://wa.me/5533999546031');
+  const whatsapp=new URL('https://wa.me/' + SUPPORT_WHATSAPP);
   whatsapp.searchParams.set('text',lines.join('\n'));
   return new Response(req.method==='HEAD'?null:null,{status:302,headers:{
     Location:whatsapp.toString(),'Cache-Control':'no-store',
@@ -2394,7 +2395,7 @@ export default {
           '━━━━━━━━━━━━━━━━━━━━',
           '💛 *Mini Mercado · XX EJC Simonésia*'
         ];
-        const whats=new URL('https://wa.me/5533999546031');
+        const whats=new URL('https://wa.me/' + SUPPORT_WHATSAPP);
         whats.searchParams.set('text',details.join('\n'));
         for(const [key,backup] of Object.entries({
           utm_source:source,utm_medium:medium,utm_campaign:campaign,
@@ -2477,7 +2478,7 @@ export default {
             'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'
           ).bind(new Date().toISOString().slice(0,10),campaign).run();
         }catch(error){console.warn('Help-link count unavailable',error?.message);}
-        const whats=new URL('https://wa.me/5532999662604');
+        const whats=new URL('https://wa.me/' + SUPPORT_WHATSAPP);
         const clean=(value,max=100)=>String(value||'').replace(/[\r\n<>]/g,' ').trim().slice(0,max);
         const sender=clean(url.searchParams.get('remetente'));
         if(!sender||/^(?:remetente(?: não informado)?|sem nome|an[oô]nimo|uma pessoa especial)$/i.test(sender))

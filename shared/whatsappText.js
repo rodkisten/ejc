@@ -81,8 +81,10 @@ export function setWhatsAppText(url, message) {
 }
 
 export function whatsappMessageUrl({ phone = '', message = '' } = {}) {
-  const url = phone
-    ? new URL('https://wa.me/' + phone)
-    : new URL('https://api.whatsapp.com/send');
+  // Do NOT send emoji through wa.me's redirect. Its intermediary has been
+  // observed replacing valid UTF-8 emojis with U+FFFD in Chrome/iOS.
+  // api.whatsapp.com/send accepts phone + text directly and keeps the bytes.
+  const url = new URL('https://api.whatsapp.com/send');
+  if (phone) url.searchParams.set('phone', String(phone));
   return setWhatsAppText(url, message).toString();
 }

@@ -1,0 +1,57 @@
+.ejc-composer-controls-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.ejc-composer-controls-fieldset:disabled {
+  opacity: 0.72;
+}
+.ejc-letter-completion {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 12px;
+  padding: clamp(20px, 4vw, 32px);
+  margin: 20px 0;
+  background: linear-gradient(145deg, #ebf9f3, #ffffff 72%);
+  border: 2px solid #96d5ba;
+  border-radius: 24px;
+  color: #165b43;
+  box-shadow: 0 12px 34px rgba(31, 108, 74, 0.08);
+}
+.ejc-letter-completion-icon {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: #d4f1e4;
+  color: #19744e;
+}
+.ejc-letter-completion .eyebrow { color: #277352; font-weight: 900; letter-spacing: .12em; }
+.ejc-letter-completion h2 {
+  color: #174f3e;
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  line-height: 1.14;
+  margin: 0;
+}
+.ejc-letter-completion p { margin: 0; color: #316351; font-size: .94rem; line-height: 1.5; }
+.ejc-letter-completion-reference {
+  padding: 13px 16px;
+  border: 1px solid #b5e1cd;
+  background: #fff;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.ejc-letter-completion-reference code { font-size: .86em; word-break: break-all; }
+.ejc-letter-completion-whatsapp {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+@media (max-width: 640px) {
+  .ejc-letter-completion { padding: 20px 17px; border-radius: 19px; }
+  .ejc-letter-completion-whatsapp { width: 100%; justify-content: center; text-align: center; }
+}

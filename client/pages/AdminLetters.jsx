@@ -4,7 +4,8 @@ import { CheckCheck, Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, S
 import { api, track } from '../lib/api';
 import { readyLetterWhatsAppMessage } from '../lib/helpLink.js';
 import { publishDraftOg } from '../lib/draftOg.js';
-import { whatsappShareUrl } from '../lib/recipientWhatsApp.js';
+import { whatsappShareUrl, normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp.js';
+import { supportContactParams, supportContactAdminUrl } from '../lib/supportContactUrl.js';
 import { validContactName, createSupportMessage } from '../lib/supportMessages.js';
 import StickerLayer from '../components/letter/StickerLayer';
 import TechnicalLetterPreview from '../components/TechnicalLetterPreview';
@@ -72,12 +73,19 @@ function SecretLetterPreview({ letter }) {
 }
 
 function ResumeDraftLink({ letter }) {
+  const route = useLocation();
+  const fromUrl = supportContactParams(route.search);
   const [recovery, setRecovery] = useState(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const recipient = letter.sender_name || 'remetente';
-  const [contactName, setContactName] = useState(validContactName(letter.sender_name) ? letter.sender_name : '');
+  const [contactName, setContactName] = useState(
+    validContactName(fromUrl.name) ? fromUrl.name :
+      validContactName(letter.sender_name) ? letter.sender_name : ''
+  );
+  const [contactPhone, setContactPhone] = useState(fromUrl.phone || '');
+  const contactNumber = normalizeBrazilianWhatsApp(contactPhone);
   const shareText = recovery && validContactName(contactName)
     ? createSupportMessage('rascunho_vazio', {
       contactName, recipientNames: [letter.recipient_name],
@@ -140,6 +148,14 @@ function ResumeDraftLink({ letter }) {
           onChange={event => setContactName(event.target.value)} placeholder="Nome da pessoa" />
         <small>O nome não foi informado no rascunho. Peça-o antes de responder.</small>
       </div>}
+      <div className="field">
+        <label htmlFor={'draft-whatsapp-'+letter.id}>WhatsApp de quem enviou (opcional)</label>
+        <input id={'draft-whatsapp-'+letter.id} type="tel" inputMode="tel"
+          autoComplete="off" maxLength={25} value={contactPhone}
+          placeholder="(33) 99999-9999"
+          onChange={event => setContactPhone(event.target.value)}/>
+        <small>Preenche automaticamente o WhatsApp quando você abrir a conversa. Não é o telefone do encontrista.</small>
+      </div>
       {!recovery ? (
         <button type="button" className="btn outline" disabled={busy} onClick={createLink}>
           <LockKeyhole size={16} /> {busy ? 'Criando link…' : 'Criar link para ' + recipient + ' continuar'}
@@ -155,15 +171,24 @@ function ResumeDraftLink({ letter }) {
             <button type="button" className="btn" onClick={copyMessage} disabled={!shareText}>
               {copied ? '✓ Mensagem copiada' : 'Copiar mensagem e link'}
             </button>
+            {shareText && contactNumber && <a className="btn outline" target="_blank"
+              rel="noopener noreferrer"
+              href={whatsappShareUrl({phone:contactNumber,message:shareText})}
+              onClick={()=>track('admin_draft_recovery_whatsapp_opened',{stage:'recovery'})}>
+              📲 Enviar WhatsApp para {contactName.split(' ')[0]}
+            </a>}
             <button type="button" className="btn ghost" onClick={createLink} disabled={busy}>
               <RefreshCw size={15} /> Renovar validade
             </button>
           </div>
         </div>
       )}
-      <Link className="btn outline" to="/admin/mensagens" state={{ support: {
+      <Link className="btn outline" to={supportContactAdminUrl({
+        name:contactName,phone:contactPhone,recipients:[letter.recipient_slug],
+        orders:[letter.id],template:'rascunho_vazio'
+      })} state={{ support: {
         template:'rascunho_vazio',recipient_slug:letter.recipient_slug,
-        order_id:letter.id,contact_name:contactName,
+        order_id:letter.id,contact_name:contactName,contact_phone:contactPhone,
         resume_url:recovery?.resume_url||''
       }}}>💌 Personalizar no editor de mensagens</Link>
       {error && <p className="notice error" role="alert">{error}</p>}
@@ -514,7 +539,11 @@ export default function AdminLetters() {
                 <span className={'admin-letter-status ' + (paid(letter.status) ? 'is-paid' : 'is-pending')}>
                   {statusText(letter)}
                 </span>
-                <Link className="btn ghost" to="/admin/mensagens" state={{support:{
+                <Link className="btn ghost" to={supportContactAdminUrl({
+                  name:validContactName(letter.sender_name)?letter.sender_name:'',
+                  recipients:[letter.recipient_slug],orders:[letter.id],
+                  template:letter.submitted?'recebida':!letter.has_content?'rascunho_vazio':'aguardando'
+                })} state={{support:{
                   template:letter.submitted?'recebida':!letter.has_content?'rascunho_vazio':'aguardando',
                   recipient_slug:letter.recipient_slug, order_id:letter.id,
                   contact_name:validContactName(letter.sender_name)?letter.sender_name:''

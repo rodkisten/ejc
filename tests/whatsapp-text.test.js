@@ -10,7 +10,9 @@ test('emojis, accents, formatting and multi-line messages survive exactly one UR
   const url = whatsappMessageUrl({ phone: '5532999662604', message: original });
   const parsed = new URL(url);
   assert.equal(parsed.searchParams.get('text'), original);
-  assert.equal(parsed.pathname, '/5532999662604');
+  assert.equal(parsed.origin, 'https://api.whatsapp.com');
+  assert.equal(parsed.pathname, '/send');
+  assert.equal(parsed.searchParams.get('phone'), '5532999662604');
   assert.match(parsed.search, /%F0%9F%92%8C/);
   assert.doesNotMatch(parsed.search, /%25F0%259F/);
   assert.equal(whatsappShareUrl({ phone: '(32) 99966-2604', message: original }), url);

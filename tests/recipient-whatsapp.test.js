@@ -26,8 +26,9 @@ test('message preserves exact recipient link and Catholic format with full Mini 
   assert.equal(message.split(url).length,2);
   const wa=whatsappShareUrl({phone:'(32) 99966-2604',message});
   const parsed=new URL(wa);
-  assert.equal(parsed.hostname,'wa.me');
-  assert.equal(parsed.pathname,'/5532999662604');
+  assert.equal(parsed.hostname,'api.whatsapp.com');
+  assert.equal(parsed.pathname,'/send');
+  assert.equal(parsed.searchParams.get('phone'),'5532999662604');
   assert.equal(parsed.searchParams.get('text'),message);
 });
 
@@ -36,7 +37,7 @@ test('no contact numbers or signed mural tokens are baked into public pages',()=
   const worker=fs.readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
   assert.match(admin,/RecipientPhoneEditor/);
   assert.match(admin,/WhatsAppAdmin/);
-  assert.match(admin,/window\.open\('about:blank','_blank'\)/);
+  assert.match(admin,/prepareWhatsAppPopup\(/);
   assert.match(worker,/await muralGrant\(env,person\)/);
   assert.match(worker,/address\.hash='token='/);
   assert.match(worker,/ready_letter_count/);

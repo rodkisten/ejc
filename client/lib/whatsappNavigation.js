@@ -1,10 +1,40 @@
-// Use the current browser tab instead of creating a blank popup. Safari iOS
-// cannot reliably close a cross-origin WhatsApp tab after opening the native app.
-export function navigateToWhatsApp(url, destination = typeof window !== 'undefined' ? window.location : null) {
+// Chrome on iOS uses its own UI when opening an external app. Open a blank
+// window synchronously during the tap so async API requests cannot be blocked.
+// We cannot close a cross-origin browser tab after WhatsApp takes over.
+export function prepareWhatsAppPopup(label = 'Preparando WhatsApp…', browser = typeof window !== 'undefined' ? window : null) {
+  if (!browser?.open) return null;
+  const popup = browser.open('about:blank', '_blank');
+  if (!popup) return null;
+  try {
+    popup.opener = null;
+    popup.document.title = 'XX EJC · WhatsApp';
+    popup.document.body.textContent = label;
+  } catch { /* The browser can isolate a popup immediately. */ }
+  return popup;
+}
+
+export function closeWhatsAppPopup(popup) {
+  try { if (popup && !popup.closed) popup.close(); }
+  catch { /* A browser can forbid closing a window it did not open. */ }
+}
+
+export function navigateToWhatsApp(
+  url,
+  popup = null,
+  destination = typeof window !== 'undefined' ? window.location : null
+) {
   const parsed = new URL(url);
   if (parsed.protocol !== 'https:' ||
       !['wa.me', 'api.whatsapp.com', 'web.whatsapp.com'].includes(parsed.hostname)) {
     throw new Error('Link do WhatsApp inválido.');
+  }
+  if (popup && !popup.closed) {
+    try {
+      popup.location.replace(parsed.toString());
+      return;
+    } catch {
+      closeWhatsAppPopup(popup);
+    }
   }
   if (!destination || typeof destination.assign !== 'function') {
     throw new Error('Não foi possível abrir o WhatsApp neste navegador.');

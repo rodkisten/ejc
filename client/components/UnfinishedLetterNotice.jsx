@@ -47,7 +47,7 @@ export default function UnfinishedLetterNotice({ senderName, onRefresh, onSuppor
           ? <button type="button" className="btn ghost" onClick={onSupportClick}>
               <LifeBuoy size={17}/> Precisa de ajuda? Fale com o suporte
             </button>
-          : <a className="btn ghost" href="/ajuda/minha-cartinha">
+          : <a className="btn ghost" href="/ajuda/minha-cartinha" target="_blank" rel="noopener noreferrer">
               <LifeBuoy size={17}/> Precisa de ajuda? Fale com o suporte
             </a>}
       </div>

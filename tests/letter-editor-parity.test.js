@@ -24,8 +24,9 @@ test('aviso opcional ao WhatsApp usa somente o telefone correto com nome e ID', 
     ]
   });
   const url = new URL(href);
-  assert.equal(url.origin, 'https://wa.me');
-  assert.equal(url.pathname, '/5532999662604');
+  assert.equal(url.origin, 'https://api.whatsapp.com');
+  assert.equal(url.pathname, '/send');
+  assert.equal(url.searchParams.get('phone'), '5532999662604');
   const message = url.searchParams.get('text');
   assert.match(message, /Ana/);
   assert.match(message, /Maria Eduarda.*EJC-123456789ABC/);

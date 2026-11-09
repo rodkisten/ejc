@@ -13,6 +13,7 @@ test('texto da OG usa nomes reais no singular e plural, sem Fulano',()=>{
   assert.deepEqual(draftOgNames(['  Maria  Eduarda ','Maria Eduarda','João']),['Maria Eduarda','João']);
   assert.deepEqual(draftOgIds(['EJC-123456789ABC','EJC-123456789ABC','invalid']),
     ['EJC-123456789ABC']);
+  assert.match(draftOgTitle(['Maria']),/^Finalize sua cartinha 💌/);
   assert.match(draftOgTitle(['Maria']),/Maria/);
 });
 
@@ -40,7 +41,7 @@ test('Canvas renderiza PNG de WhatsApp com os nomes selecionados',async()=>{
     assert.equal(blob.type,'image/png');
     assert.equal(mock.canvas.width,DRAFT_OG_WIDTH);
     assert.equal(mock.canvas.height,DRAFT_OG_HEIGHT);
-    assert.ok(mock.drawn.some(text=>text.includes('TERMINE SUA')));
+    assert.ok(mock.drawn.some(text=>text.includes('FINALIZE SUA')));
     assert.ok(mock.drawn.some(text=>text.includes('CARTINHA')));
     assert.ok(mock.drawn.some(text=>text.includes('Maria Eduarda')));
     assert.ok(mock.drawn.some(text=>text.includes('João Pedro')));

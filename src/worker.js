@@ -859,6 +859,24 @@ async function supportContextMint(req,env){
   if(Array.isArray(input.ids)&&input.ids.length!==data.ids.length)
     bad('IDs de cartinhas inválidos ou repetidos.',400);
   const admin=await isAdmin(req,env);
+  // Prevent anonymous callers from using the link service to flood D1.
+  // The fingerprint is one-way hashed and never stored with link contents.
+  if(!admin){
+    const seconds=Math.floor(Date.now()/1000);
+    const fingerprint=await digest((req.headers.get('CF-Connecting-IP')||'local')+
+      ':short-links:'+env.SESSION_SECRET);
+    const previous=await env.DB.prepare(
+      'SELECT attempts,window_start FROM order_rate WHERE fingerprint=?'
+    ).bind(fingerprint).first();
+    if(previous&&previous.window_start>seconds-3600&&previous.attempts>=30)
+      bad('Muitas solicitações de links. Tente novamente mais tarde.',429);
+    const inside=!!(previous&&previous.window_start>seconds-3600);
+    await env.DB.prepare(
+      'INSERT INTO order_rate(fingerprint,attempts,window_start) VALUES(?,?,?) '+
+      'ON CONFLICT(fingerprint) DO UPDATE SET attempts=excluded.attempts,'+
+      'window_start=excluded.window_start'
+    ).bind(fingerprint,inside?previous.attempts+1:1,inside?previous.window_start:seconds).run();
+  }
   // In the private mural, only a verified recipient grant may recover their
   // registered WhatsApp number. It stays inside the encrypted support context.
   if(!admin&&typeof input.muralSlug==='string'&&
@@ -2449,6 +2467,15 @@ async function clearDemo(env){
 export default {
   async scheduled(_event,env,ctx) {
     await queueRelease(env,(await settings(env)).release_at);
+    // The existing five-minute cron removes expired links four times daily.
+    // No recipient, phone, token or UTM values are used in this cleanup.
+    const tick=new Date();
+    if(tick.getUTCMinutes()===0&&tick.getUTCHours()%6===0){
+      try{
+        await env.DB.prepare('DELETE FROM short_links WHERE expires_at < ?')
+          .bind(Math.floor(Date.now()/1000)).run();
+      }catch(error){console.warn('Short-link cleanup unavailable',error?.message);}
+    }
     const pending=dispatch(env);
     if(ctx?.waitUntil)ctx.waitUntil(pending);
     else await pending;
@@ -2476,6 +2503,12 @@ export default {
         if(isShortPreviewBot(request))return shortLinkPreview(
           env,request,resolved.destination,resolved.kind,url.origin+path
         );
+        if(request.method==='GET')try{
+          await env.DB.prepare(
+            'INSERT INTO help_link_counts(day,campaign,clicks) VALUES(?,?,1) '+
+            'ON CONFLICT(day,campaign) DO UPDATE SET clicks=clicks+1'
+          ).bind(new Date().toISOString().slice(0,10),'link_curto:'+resolved.kind).run();
+        }catch(error){console.warn('Short-link aggregate unavailable',error?.message);}
         return new Response(null,{status:302,headers:{
           Location:resolved.destination,
           'Cache-Control':'private, no-store',

@@ -1322,13 +1322,18 @@ async function adminRoute(req,env,path) {
   if(readyMessage&&req.method==='POST'){
     const confirm=path.endsWith('/confirm');
     const row=await env.DB.prepare(
-      "SELECT o.id,o.submitted_at,o.status,r.id AS recipient_id,r.name AS recipient_name,"+
+      "SELECT o.id,o.submitted_at,o.status,o.rich_html,r.id AS recipient_id,r.name AS recipient_name,"+
       "r.slug,r.active,r.whatsapp_phone,r.mural_code,d.recovered_at,d.recipient_notified_at "+
       "FROM orders o JOIN recipients r ON r.id=o.recipient_id "+
       "JOIN draft_recovery d ON d.order_id=o.id WHERE o.id=?"
     ).bind(readyMessage[1]).first();
     if(!row||!row.recovered_at||!row.submitted_at||!activeOrder(row)||!row.active)
       bad('Esta cartinha recuperada ainda não está pronta para avisar.',409);
+    const media=await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM media WHERE order_id=? AND status='ready'"
+    ).bind(row.id).first();
+    if(!visibleDraftText(row.rich_html)&&!Number(media?.n||0))
+      bad('Esta cartinha voltou a ficar vazia. Revise antes de avisar.',409);
     if(!row.whatsapp_phone)bad('Cadastre o WhatsApp do encontrista primeiro.',409);
     if(confirm){
       await env.DB.prepare("UPDATE draft_recovery SET recipient_notified_at=? WHERE order_id=?")

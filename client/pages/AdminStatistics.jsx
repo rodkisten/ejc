@@ -172,8 +172,8 @@ export default function AdminStatistics() {
   }, [filter, refresh]);
   const p = report?.payments || {}, l = report?.letters || {}, r = report?.recipients || {};
   const people = r.ranking || [];
-  const covered = people.filter(person => person.received > 0).length;
-  const withPaid = people.filter(person => person.paid > 0).length;
+  const covered = people.filter(person => person.active && person.received > 0).length;
+  const withPaid = people.filter(person => person.active && person.paid > 0).length;
   const showReport = !!report && !loading && !error;
 
   return <div className="ejc-stat-report">

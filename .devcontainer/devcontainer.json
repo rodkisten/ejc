@@ -5,6 +5,7 @@
   "customizations": {
     "vscode": {
       "extensions": [
+        "luth.touch-terminal",
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode"
       ],
@@ -12,11 +13,13 @@
         "window.zoomLevel": 0,
         "window.commandCenter": true,
 
-        "workbench.sideBar.location": "left",
         "workbench.activityBar.location": "top",
+        "workbench.sideBar.location": "left",
         "workbench.editor.showTabs": "single",
         "workbench.layoutControl.enabled": false,
         "workbench.statusBar.visible": false,
+        "workbench.tree.indent": 12,
+        "explorer.compactFolders": true,
         "breadcrumbs.enabled": false,
 
         "editor.fontSize": 15,
@@ -29,8 +32,6 @@
         "editor.scrollBeyondLastLine": false,
         "editor.hover.enabled": false,
         "editor.scrollbar.verticalScrollbarSize": 14,
-        "editor.scrollbar.horizontalScrollbarSize": 8,
-        "editor.stablePeek": false,
 
         "diffEditor.renderSideBySide": false,
 
@@ -38,9 +39,7 @@
         "terminal.integrated.lineHeight": 1.2,
         "terminal.integrated.scrollback": 2000,
         "terminal.integrated.tabs.enabled": false,
-
-        "explorer.compactFolders": true,
-        "workbench.tree.indent": 12,
+        "terminal.integrated.cursorBlinking": true,
 
         "files.autoSave": "afterDelay",
         "files.autoSaveDelay": 1200
@@ -56,13 +55,16 @@
   ],
   "portsAttributes": {
     "3000": {
-      "label": "Web App"
+      "label": "Next.js"
     },
     "5173": {
       "label": "Vite"
     },
     "8000": {
       "label": "Backend API"
+    },
+    "8080": {
+      "label": "Web Service"
     },
     "9001": {
       "label": "Worker"

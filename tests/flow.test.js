@@ -19,6 +19,7 @@ function fixture(){
   sql.exec(fs.readFileSync(new URL('../migrations/0011_recipient_whatsapp.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0012_mini_mercado_campaign.sql',import.meta.url),'utf8'));
   sql.exec(fs.readFileSync(new URL('../migrations/0013_draft_recovery_tracking.sql',import.meta.url),'utf8'));
+  sql.exec(fs.readFileSync(new URL('../migrations/0014_short_links.sql',import.meta.url),'utf8'));
 
   const DB={
     prepare(query){const stmt=(...values)=>({first:async()=>sql.prepare(query).get(...values)||null,all:async()=>({results:sql.prepare(query).all(...values)}),run:async()=>({meta:sql.prepare(query).run(...values)})});return {...stmt(),bind:stmt};},
@@ -1832,7 +1833,7 @@ test('OG do rascunho usa nome do D1, PNG 1200x630 e não expõe token de ediçã
   ),env);
   assert.equal(crawler.status,200);
   const html=await crawler.text();
-  assert.match(html,/Termine sua cartinha/);
+  assert.match(html,/Finalize sua cartinha/);
   assert.ok(html.includes(list[0].name));
   assert.match(html,/og:image/);
   assert.match(html,/og-rascunho\/[a-f0-9]{64}\.png/);
@@ -1873,14 +1874,16 @@ test('suporte criptografado recupera nome telefone IDs e UTMs só no admin',asyn
 
   const encrypted=await call(env,'/api/support/context','POST',input,admin);
   assert.equal(encrypted.status,201);
-  assert.ok(encrypted.data.link.startsWith('https://ejc.test/ajuda/minha-cartinha?c=ec1_'));
+  assert.match(encrypted.data.link,/^https:\/\/ejc\.test\/s\/[A-Za-z0-9_-]{14}$/);
+  assert.equal(encrypted.data.link.length,33);
+  assert.match(encrypted.data.context_token,/^ec1_/);
   for(const value of ['33999546031','Maria','suporte_encontrista',id]){
     assert.equal(encrypted.data.link.includes(value),false);
     assert.equal(encrypted.data.admin_url.includes(value),false);
   }
   const parsed=new URL(encrypted.data.link);
-  assert.equal(parsed.searchParams.size,1,'only encrypted c is visible');
-  const c=parsed.searchParams.get('c');
+  assert.equal(parsed.searchParams.size,0,'no PII or token in the short URL');
+  const c=encrypted.data.context_token;
 
   const publicRead=await call(env,'/api/support/context?c='+encodeURIComponent(c));
   assert.equal(publicRead.status,403,'support context cannot be publicly decrypted');
@@ -1898,14 +1901,20 @@ test('suporte criptografado recupera nome telefone IDs e UTMs só no admin',asyn
     headers:{'User-Agent':'Mozilla/5.0'}
   }),env);
   assert.equal(redirected.status,302);
-  const wa=new URL(redirected.headers.get('Location'));
+  const destination=redirected.headers.get('Location');
+  assert.match(destination,/\/ajuda\/minha-cartinha\?c=ec1_/);
+  const whatsappRedirect=await worker.fetch(new Request(destination,{
+    headers:{'User-Agent':'Mozilla/5.0'}
+  }),env);
+  assert.equal(whatsappRedirect.status,302);
+  const wa=new URL(whatsappRedirect.headers.get('Location'));
   assert.equal(wa.origin,'https://api.whatsapp.com');
   assert.equal(wa.pathname,'/send');
   assert.equal(wa.searchParams.get('phone'),'5532999662604');
   const msg=wa.searchParams.get('text');
   assert.match(msg,/Maria da Costa/);
-  assert.match(msg,/admin\/cartinhas\?c=ec1_/);
-  assert.match(msg,/admin\/mensagens\?c=ec1_/);
+  assert.match(msg,/https:\/\/ejc\.test\/admin\/cartinhas\?c=ec1_/);
+  assert.match(msg,/https:\/\/ejc\.test\/admin\/mensagens\?c=ec1_/);
   assert.ok(!msg.includes(id),'no raw order IDs in prefilled WhatsApp URL');
   assert.ok(!msg.includes('5533999546031'),'contact number remains inside encrypted context');
   assert.ok(!wa.searchParams.has('utm_campaign'));
@@ -1938,10 +1947,13 @@ test('nome e telefone podem ser retomados por um link criptografado de envio',as
   assert.equal(created.status,201);
   assert.equal(created.data.send_urls.length,1);
   const sent=new URL(created.data.send_urls[0]);
-  assert.equal(sent.pathname,'/enviar/'+person.slug);
-  assert.equal(sent.searchParams.size,1);
-  const c=sent.searchParams.get('c');
+  assert.match(sent.pathname,/^\/s\/[A-Za-z0-9_-]{14}$/);
+  assert.equal(sent.searchParams.size,0);
+  const c=created.data.context_token;
   assert.match(c,/^ec1_/);
+  const expanded=await worker.fetch(new Request(sent.href),env);
+  assert.equal(expanded.status,302);
+  assert.equal(new URL(expanded.headers.get('Location')).pathname,'/enviar/'+person.slug);
   assert.ok(!sent.href.includes('33999546031'));
   const restored=await call(env,'/api/support/context?c='+encodeURIComponent(c));
   assert.equal(restored.status,200);
@@ -1974,7 +1986,7 @@ test('o código de mural válido recupera WhatsApp do encontrista só dentro do 
   },{token:redeemed.data.grant});
   assert.equal(minted.status,201);
   assert.ok(!minted.data.link.includes('33999546031'));
-  const encrypted=new URL(minted.data.link).searchParams.get('c');
+  const encrypted=minted.data.context_token;
   const inspected=await call(env,'/api/admin/support/context?c='+encrypted,
     'GET',undefined,admin);
   assert.equal(inspected.status,200);

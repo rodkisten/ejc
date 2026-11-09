@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { ClipboardCopy, ExternalLink, MessageCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { api, track } from '../lib/api';
 import { normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp';
+import { publishDraftOg } from '../lib/draftOg.js';
 import {
   SUPPORT_MESSAGE_TEMPLATES, createSupportMessage, confirmedOrders,
   validContactName, supportRecipientNames,
@@ -114,17 +115,33 @@ export default function AdminSupportMessages({ info }) {
     setNotice('');
   }
 
+  // The chosen recipients come from the admin's D1-backed orders, never a
+  // hardcoded name. PNGs are cached per exact set of selected draft IDs.
+  async function ensurePersonalizedDraftOg() {
+    const drafts=selectedOrders.filter(order=>
+      !order.submitted&&['paid','preparing','delivered'].includes(order.status));
+    if(!drafts.length)return null;
+    return publishDraftOg(drafts);
+  }
+
   async function copyMessage() {
     if (blocked || !text.trim()) return;
     try {
+      let ogNote='';
+      try {
+        const generated=await ensurePersonalizedDraftOg();
+        if(generated)ogNote=' OG personalizada de '+generated.recipients.join(', ')+' publicada.';
+      } catch (cause) {
+        ogNote=' Não foi possível publicar a OG personalizada: '+cause.message;
+      }
       await navigator.clipboard.writeText(text);
-      setNotice('✅ Mensagem copiada com a formatação do WhatsApp!');
+      setNotice('✅ Mensagem copiada com a formatação do WhatsApp!'+ogNote);
       track('admin_support_template_copied', { stage: template });
     } catch {
       window.prompt('Copie a mensagem:', text);
     }
   }
-  function openWhatsApp() {
+  async function openWhatsApp() {
     if (blocked || !text.trim()) return;
     const phone = contactWhatsApp.trim();
     const number = phone ? normalizeBrazilianWhatsApp(phone) : '';
@@ -132,13 +149,30 @@ export default function AdminSupportMessages({ info }) {
       setError('Informe um WhatsApp válido com DDD ou deixe o campo vazio para escolher o contato no aplicativo.');
       return;
     }
-    const url = number
-      ? 'https://wa.me/' + number + '?text=' + encodeURIComponent(text)
-      : 'https://api.whatsapp.com/send?text=' + encodeURIComponent(text);
-    setError('');
-    setNotice('WhatsApp aberto. Confira a conversa e envie a mensagem manualmente.');
-    track('admin_support_template_whatsapp_opened', { stage: template });
-    window.open(url, '_blank', 'noopener,noreferrer');
+    // Safari requires the new tab to be opened in the user's tap gesture.
+    const popup=window.open('about:blank','_blank');
+    try {
+      popup?.document?.write('<p>Preparando sua mensagem para o WhatsApp…</p>');
+      const generated=await ensurePersonalizedDraftOg();
+      const url=number
+        ? 'https://wa.me/' + number + '?text=' + encodeURIComponent(text)
+        : 'https://api.whatsapp.com/send?text=' + encodeURIComponent(text);
+      setError('');
+      setNotice('WhatsApp aberto. Confira a conversa e envie manualmente. '+
+        (generated?'A prévia personalizada foi publicada automaticamente.':''));
+      track('admin_support_template_whatsapp_opened',{stage:template});
+      if(popup&&!popup.closed)popup.location.replace(url);
+      else window.location.assign(url);
+    } catch (cause) {
+      // An image failure must not block the actual support message.
+      const url=number
+        ? 'https://wa.me/' + number + '?text=' + encodeURIComponent(text)
+        : 'https://api.whatsapp.com/send?text=' + encodeURIComponent(text);
+      setNotice('O WhatsApp será aberto, mas a prévia personalizada não pôde ser gerada.');
+      setError(cause.message);
+      if(popup&&!popup.closed)popup.location.replace(url);
+      else window.location.assign(url);
+    }
   }
 
   return (

@@ -1855,6 +1855,27 @@ export default {
   async fetch(request,env,ctx) {
     try {
       const url=new URL(request.url), path=url.pathname;
+      // Short help link to confirm a completed letter with the Mini Mercado team.
+      if (path==='/ajuda/terminei-a-cartinha'||path==='/ajuda/terminei-a-cartinha/') {
+        if(request.method!=='GET'&&request.method!=='HEAD')
+          return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
+        const whatsapp=new URL('https://wa.me/5533999546031');
+        whatsapp.searchParams.set('text',
+          'Olá! 💌 Estou entrando em contato sobre minha cartinha do XX EJC Simonésia. Já finalizei o envio e gostaria de confirmar o recebimento e saber qual é o próximo passo.');
+        const campaign={
+          utm_source:'whatsapp',
+          utm_medium:'mensagem',
+          utm_campaign:'recuperacao_cartinhas'
+        };
+        for(const [key,fallback] of Object.entries(campaign))
+          whatsapp.searchParams.set(key,(url.searchParams.get(key)||fallback).slice(0,100));
+        return new Response(null,{status:302,headers:{
+          Location:whatsapp.toString(),
+          'Cache-Control':'no-store',
+          'Referrer-Policy':'no-referrer',
+          'X-Robots-Tag':'noindex, nofollow, noarchive'
+        }});
+      }
       if (path.startsWith('/api/')) {
         allowOrigin(request);
         if (path.startsWith('/api/admin/')) {

@@ -120,7 +120,7 @@ export default function Checkout() {
       <p className="muted">{paid
         ? 'Agora você pode concluir cada cartinha e enviá-la para o mural secreto do encontrista.'
         : 'Você já pode editar e confirmar cada cartinha enquanto aguarda a conferência do Pix. O envio ao mural será liberado após a aprovação.'}</p>
-      <CheckoutSupport step={order?.status === 'claimed' ? 'Pix informado · aguardando conferência' : 'Pix do carrinho'} checkoutId={order?.id} recipientNames={order?.items?.map(item => item.recipient_name) || []} />
+      <CheckoutSupport step={order?.status === 'claimed' ? 'Pix informado · aguardando conferência' : 'Pix do carrinho'} checkoutId={order?.id} recipientNames={order?.items?.map(item => item.recipient_name) || []} recipientSlugs={order?.items?.map(item => item.recipient_slug) || []} orderIds={order?.items?.map(item => item.id) || []} senderName={order?.items?.[0]?.sender_name || ''} checkoutToken={token} />
       {error && <div className="notice error" role="alert">{error}</div>}
       {message && <div className="notice" role="status">{message}</div>}
       {!order && <button className="btn ghost" type="button" onClick={reload}>Tentar carregar <RefreshCw size={17} /></button>}

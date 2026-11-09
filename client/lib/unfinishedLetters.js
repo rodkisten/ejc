@@ -109,34 +109,34 @@ export async function findUnfinishedLetters({ cartItems = [], checkouts = [] } =
     ...local.checkouts,
   ]);
   const found = new Map();
-  const paidDraftIds = new Set();
   const serverSlugs = new Set();
+  const verifiedCheckoutTokens = new Set();
 
   await Promise.all([...checkoutTokens].slice(0, 80).map(async (token) => {
     try {
       const checkout = await api('/api/checkout', { token });
       for (const item of checkoutUnfinished(checkout)) {
         found.set(item.id, item);
-        serverSlugs.add(item.recipient_slug);
-        if (item.kind === 'paid') paidDraftIds.add(item.id);
       }
       // Include the private links of checkout items, even if older history
       // lacks the original local cart index.
       for (const item of checkout.items || []) {
-        if (ORDER_TOKEN.test(item.token || '')) local.orders.add(item.token);
+        serverSlugs.add(item.recipient_slug);
+        if (ORDER_TOKEN.test(item.token || '')) verifiedCheckoutTokens.add(item.token);
       }
     } catch { /* Invalid or inaccessible checkout: don't claim it's paid. */ }
   }));
 
-  await Promise.all([...local.orders].slice(0, 120).map(async (token) => {
+  await Promise.all([...local.orders].filter((token) => !verifiedCheckoutTokens.has(token))
+    .slice(0, 120).map(async (token) => {
     try {
       const order = await api('/api/order', { token });
+      serverSlugs.add(order.recipient_slug);
       if (found.has(order.id)) return;
       const item = fromOrder(order, token);
       if (item) {
         found.set(item.id, item);
         serverSlugs.add(item.recipient_slug);
-        if (item.kind === 'paid') paidDraftIds.add(item.id);
       }
     } catch { /* No valid private link. Do not expose server records. */ }
   }));

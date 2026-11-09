@@ -3,7 +3,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ClipboardCopy, ExternalLink, MessageCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { api, track } from '../lib/api';
 import { normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp';
-import { supportContactParams, supportContactAdminUrl } from '../lib/supportContactUrl.js';
+import { supportContactParams } from '../lib/supportContactUrl.js';
+import { createSecureSupportContext } from '../lib/secureSupport.js';
 import { publishDraftOg } from '../lib/draftOg.js';
 import {
   SUPPORT_MESSAGE_TEMPLATES, createSupportMessage, confirmedOrders,
@@ -30,7 +31,6 @@ function WhatsAppTextPreview({ value }) {
 
 export default function AdminSupportMessages({ info }) {
   const location = useLocation();
-  const navigate = useNavigate();
   const initial = location.state?.support || {};
   const fromUrl = supportContactParams(location.search);
   const [letters, setLetters] = useState([]);
@@ -38,23 +38,23 @@ export default function AdminSupportMessages({ info }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [selectedRecipients, setSelectedRecipients] = useState(
-    fromUrl.recipients.length ? fromUrl.recipients :
-      initial.recipient_slug ? [initial.recipient_slug] : []
+    initial.recipient_slug ? [initial.recipient_slug] : []
   );
   const [template, setTemplate] = useState(
-    SUPPORT_MESSAGE_TEMPLATES.some(item => item.id === fromUrl.template)
-      ? fromUrl.template : initial.template || 'desculpas'
+    initial.template || 'desculpas'
   );
-  const [contactName, setContactName] = useState(fromUrl.name || initial.contact_name || '');
-  const [contactWhatsApp, setContactWhatsApp] = useState(fromUrl.phone || initial.contact_phone || '');
+  const [contactName, setContactName] = useState(initial.contact_name || '');
+  const [contactWhatsApp, setContactWhatsApp] = useState(initial.contact_phone || '');
   const [selectedOrderIds, setSelectedOrderIds] = useState(
-    fromUrl.orders.length ? fromUrl.orders :
-      initial.order_id ? [initial.order_id] : []
+    initial.order_id ? [initial.order_id] : []
   );
   const [resumeUrl, setResumeUrl] = useState(initial.resume_url || '');
   const [generatingResume, setGeneratingResume] = useState(false);
   const [text, setText] = useState('');
   const [edited, setEdited] = useState(false);
+  const [secureLinks,setSecureLinks] = useState(null);
+  const [secureBusy,setSecureBusy] = useState(false);
+  const [secureError,setSecureError] = useState('');
 
   async function reload() {
     setLoading(true);
@@ -69,18 +69,24 @@ export default function AdminSupportMessages({ info }) {
     }
   }
   useEffect(() => { reload(); }, []);
-  // Reflect the contact and operational selection in the admin URL, so a link
-  // opened from support can prefill WhatsApp without storing a private token.
+  // A context URL can be safely opened from WhatsApp after an admin login.
+  // The server resolves sensitive data only after authentication.
   useEffect(() => {
-    const next = supportContactAdminUrl({
-      name: contactName, phone: contactWhatsApp,
-      recipients: selectedRecipients, orders: selectedOrderIds, template
-    });
-    if (next !== location.pathname + location.search) {
-      navigate(next, { replace: true, state: location.state });
-    }
-  }, [contactName, contactWhatsApp, selectedRecipients, selectedOrderIds, template,
-      location.pathname, location.search, location.state, navigate]);
+    const opaque=fromUrl.opaque;
+    if(!opaque)return;
+    let cancelled=false;
+    api('/api/admin/support/context?c='+encodeURIComponent(opaque))
+      .then(({context,orders})=>{
+        if(cancelled)return;
+        setContactName(context.name||'');
+        setContactWhatsApp(context.phone||'');
+        setSelectedRecipients(context.recipientSlugs||[]);
+        setSelectedOrderIds((orders||[]).map(order=>order.id));
+        setTemplate(context.purpose==='finished'?'recebida':'aguardando');
+        setNotice('🔐 Atendimento recuperado. Os dados foram decifrados somente na sessão administrativa.');
+      }).catch(cause=>{if(!cancelled)setError(cause.message);});
+    return ()=>{cancelled=true;};
+  },[fromUrl.opaque]);
 
   useEffect(() => {
     if (validContactName(contactName) || !initial.order_id || !letters.length) return;
@@ -108,20 +114,61 @@ export default function AdminSupportMessages({ info }) {
   const invalidConfirm = templateInfo?.requiresSubmitted && !readyToConfirm;
   const invalidEmpty = template === 'rascunho_vazio' && !emptyDraftsSelected;
   const blocked = missingName || missingRecipients || invalidConfirm || invalidEmpty;
+  useEffect(()=>{
+    let active=true;
+    setSecureLinks(null);
+    setSecureError('');
+    setSecureBusy(true);
+    const timeout=setTimeout(async()=>{
+      try{
+        const base={
+          name:contactName,phone:contactWhatsApp,
+          recipientSlugs:selectedRecipients,
+          ids:selectedOrderIds,
+          source:'whatsapp',medium:'mensagem',
+          campaign:'suporte_cartinhas',content:template,stage:'admin_mensagens'
+        };
+        const [help,send]=await Promise.all([
+          createSecureSupportContext({...base,purpose:template==='recebida'?'finished':'support'}),
+          createSecureSupportContext({...base,purpose:'send',ids:[]})
+        ]);
+        if(!active)return;
+        const c=new URL(help.link).searchParams.get('c');
+        const append=(path)=>{
+          const u=new URL(path,window.location.origin);u.searchParams.set('c',c);
+          return u.toString();
+        };
+        const bySlug={};
+        for(const address of send.send_urls||[]){
+          const parsed=new URL(address);
+          const slug=parsed.pathname.split('/').pop();
+          bySlug[slug]=address;
+        }
+        setSecureLinks({
+          help:help.link,recipientHelp:help.link,
+          home:append('/'),open:append('/abrir'),
+          sendBySlug:bySlug,admin:help.admin_url,letters:help.admin_letters_url
+        });
+      }catch(cause){if(active)setSecureError(cause.message);}
+      finally{if(active)setSecureBusy(false);}
+    },350);
+    return()=>{active=false;clearTimeout(timeout);};
+  },[contactName,contactWhatsApp,selectedRecipients.join('|'),
+      selectedOrderIds.join('|'),template]);
   const validOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://ejc.migos.club';
 
   const generated = useMemo(() => {
-    if (blocked) return '';
+    if (blocked||!secureLinks) return '';
     try {
       return createSupportMessage(template, {
         contactName, recipientNames: names, recipients: people,
-        orders: selectedOrders, origin: validOrigin, resumeUrl,
+        orders: selectedOrders, origin: validOrigin, resumeUrl,secureLinks,
       });
     } catch {
       return '';
     }
   }, [template, contactName, selectedRecipients.join('|'), selectedOrderIds.join('|'),
-      names.join('|'), letters, resumeUrl, validOrigin, blocked]);
+      names.join('|'), letters, resumeUrl, validOrigin, blocked,secureLinks]);
   useEffect(() => { setText(generated); setEdited(false); }, [generated]);
 
   function addRecipient(slug) {

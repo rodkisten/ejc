@@ -1999,3 +1999,69 @@ test('o código de mural válido recupera WhatsApp do encontrista só dentro do 
   assert.equal(inspected.data.context.name,person.name);
   assert.equal(inspected.data.context.phone,'5533999546031');
 });
+
+test('admin gera link curto de rascunho com OG contextual sem vazar token',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:list[0].slug,sender_name:'Beatriz'
+  });
+  assert.equal(created.status,201);
+  const {id,token}=created.data;
+  const paid=await call(env,'/api/admin/orders/'+id+'/status','PATCH',{
+    status:'paid',bank_reference:'BANCOEFETIVADO123',
+    bank_checked:true,amount_checked:true
+  },admin);
+  assert.equal(paid.status,200);
+  const original='https://ejc.test/pedido/'+token;
+  const unauthorized=await call(env,'/api/admin/links/shorten','POST',{
+    url:original,kind:'draft'
+  });
+  assert.equal(unauthorized.status,401);
+  const createdLink=await call(env,'/api/admin/links/shorten','POST',{
+    url:original,kind:'draft'
+  },admin);
+  assert.equal(createdLink.status,201);
+  assert.match(createdLink.data.url,/^https:\/\/ejc\.test\/s\/[A-Za-z0-9_-]{14}$/);
+  assert.ok(!createdLink.data.url.includes(token));
+  const short=createdLink.data.url;
+  const preview=await worker.fetch(new Request(short,{
+    headers:{'User-Agent':'facebookexternalhit/1.1'}
+  }),env);
+  assert.equal(preview.status,200);
+  const html=await preview.text();
+  assert.match(html,/Finalize sua cartinha/);
+  assert.match(html,/og:image/);
+  assert.match(html,/og:url/);
+  assert.ok(html.includes(list[0].name));
+  assert.ok(!html.includes(token),'crawler cannot see edit token');
+
+  const real=await worker.fetch(new Request(short),env);
+  assert.equal(real.status,302);
+  assert.equal(real.headers.get('Location'),original);
+  assert.equal(real.headers.get('Cache-Control'),'private, no-store');
+  const invalid=await worker.fetch(new Request('https://ejc.test/s/AAAAAAAAAAAAAA'),env);
+  assert.equal(invalid.status,404);
+  const post=await worker.fetch(new Request(short,{method:'POST'}),env);
+  assert.equal(post.status,405);
+});
+
+test('pessoa pode encurtar somente seu próprio pedido privado',async()=>{
+  const env=fixture(),{list}=await setup(env);
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:list[0].slug,sender_name:'João'
+  });
+  const url='https://ejc.test/pedido/'+created.data.token;
+  const forbidden=await call(env,'/api/links/shorten','POST',{url});
+  assert.notEqual(forbidden.status,201);
+  const outsider=await call(env,'/api/links/shorten','POST',{
+    url:'https://malicious.example.org/pedido/'+created.data.token
+  },{token:created.data.token});
+  assert.notEqual(outsider.status,201);
+  const allowed=await call(env,'/api/links/shorten','POST',{url},{
+    token:created.data.token
+  });
+  assert.equal(allowed.status,201);
+  assert.match(allowed.data.url,/\/s\/[A-Za-z0-9_-]{14}$/);
+  const resolved=await worker.fetch(new Request(allowed.data.url),env);
+  assert.equal(resolved.headers.get('Location'),url);
+});

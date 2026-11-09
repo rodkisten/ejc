@@ -285,3 +285,10 @@
   .unfinished-home-item { align-items: stretch; padding: 12px; }
   .unfinished-home-item .btn { width: 100%; }
 }
+
+.unfinished-home-toggle {
+  justify-self: start; min-height: 40px; padding: 7px 0; border: 0;
+  background: transparent; color: #603584; font-size: .88rem;
+  font-weight: 850; text-decoration: underline; cursor: pointer;
+}
+.unfinished-home-toggle:focus-visible { outline: 2px solid #603584; outline-offset: 3px; }

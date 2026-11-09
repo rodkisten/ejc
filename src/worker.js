@@ -1,4 +1,5 @@
 import { generatePix } from './pix.js';
+import { adminStatistics } from './statistics.js';
 import { normalizePaymentLookup, likeTerm, maskedStatus } from './paymentSearch.js';
 import { isSquareRecipientJpeg } from './photo.js';
 import { normalizeComposition, STICKERS_BY_ID, plainLetter } from '../shared/letter.js';
@@ -1009,6 +1010,18 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
   await requireAdmin(req,env);
   if(path==='/api/admin/me')return result({authenticated:true});
+  if(path==='/api/admin/statistics' && req.method==='GET'){
+    const query=new URL(req.url).searchParams;
+    const from=query.get('from')||'',to=query.get('to')||'';
+    const validDay=value=>{
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
+      const date=new Date(value+'T00:00:00Z');
+      return !Number.isNaN(date.getTime())&&date.toISOString().slice(0,10)===value;
+    };
+    if((from&&!validDay(from))||(to&&!validDay(to))||(from&&to&&from>to))
+      bad('Informe um intervalo de datas válido.',400);
+    return result(await adminStatistics(env,{from,to}));
+  }
   // The campaign is an official, complimentary letter, NOT a Pix sale.
   if(path==='/api/admin/campaign/mini-mercado' && req.method==='GET') {
     const saved=await env.DB.prepare(

@@ -2108,3 +2108,55 @@ test('old mural links and short redirects preserve the grant, including across c
   assert.equal((await call(rotated,'/api/mural/'+recipient.slug,
     'GET',undefined,{token:badGrant})).status,403);
 });
+
+test('reabre carta paga enviada sem texto e protege contra apagamento involuntário', async () => {
+  const env = fixture(), { admin, list } = await setup(env);
+  const created = await call(env, '/api/orders', 'POST', {
+    recipient_slug: list[0].slug, sender_name: 'Pessoa remetente',
+  });
+  assert.equal(created.status, 201);
+  const id = created.data.id, token = created.data.token;
+  assert.equal((await call(env, '/api/admin/orders/' + id + '/status', 'PATCH', {
+    status: 'paid', bank_reference: 'RECUPERACAOTEXTO2026',
+    bank_checked: true, amount_checked: true,
+  }, admin)).status, 200);
+  assert.equal((await call(env, '/api/order/message', 'PUT', {
+    rich_html: '<p>O carinho que escrevi inicialmente.</p>',
+  }, { token })).status, 200);
+  assert.equal((await call(env, '/api/order/submit', 'POST', {}, { token })).status, 200);
+
+  // Older/incomplete browser payloads cannot silently delete a server message.
+  assert.equal((await call(env, '/api/order/message', 'PUT', {
+    rich_html: '',
+  }, { token })).status, 409);
+  assert.match((await env.DB.prepare('SELECT rich_html FROM orders WHERE id=?')
+    .bind(id).first()).rich_html, /carinho/);
+
+  // Simulate a consciously emptied legacy letter, leaving its payment intact.
+  assert.equal((await call(env, '/api/order/message', 'PUT', {
+    rich_html: '', confirm_clear: true,
+  }, { token })).status, 200);
+  const before = (await call(env, '/api/admin/cartinhas', 'GET', undefined, admin))
+    .data.letters.find((row) => row.id === id);
+  assert.equal(before.submitted, true);
+  assert.equal(before.has_text, false);
+  assert.equal(before.has_media, false);
+  const route = '/api/admin/cartinhas/' + id + '/resume-link';
+  assert.equal((await call(env, route, 'POST', {}, admin)).status, 409);
+  const reopened = await call(env, route, 'POST', { reopen_incomplete: true }, admin);
+  assert.equal(reopened.status, 200);
+  const resumeToken = new URL(reopened.data.resume_url).pathname.split('/').pop();
+  const during = await call(env, '/api/order', 'GET', undefined, { token: resumeToken });
+  assert.equal(during.status, 200);
+  assert.equal(during.data.submitted, false);
+  assert.equal(during.data.resume_access, true);
+  assert.equal(during.data.status, 'paid');
+  assert.equal((await call(env, '/api/order/message', 'PUT', {
+    rich_html: '<p>Texto recuperado no mesmo aparelho.</p>',
+  }, { token: resumeToken })).status, 200);
+  assert.equal((await call(env, '/api/order/submit', 'POST', {}, { token: resumeToken })).status, 200);
+  const finished = await call(env, '/api/order', 'GET', undefined, { token });
+  assert.equal(finished.status, 200);
+  assert.equal(finished.data.submitted, true);
+  assert.match(finished.data.rich_html, /Texto recuperado/);
+});

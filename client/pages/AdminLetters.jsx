@@ -93,7 +93,7 @@ function ResumeDraftLink({ letter }) {
   const contactNumber = normalizeBrazilianWhatsApp(contactPhone);
   const shareText = recovery && validContactName(contactName)
     ? [
-      '💌 *Oi, ' + contactName.trim().split(/\\s+/)[0] + '! Precisamos conferir sua cartinha.*',
+      '💌 *Oi, ' + contactName.trim().split(/\s+/)[0] + '! Precisamos conferir sua cartinha.*',
       '',
       'Na homenagem para *' + letter.recipient_name + '*, ' +
         (letter.has_media
@@ -115,7 +115,7 @@ function ResumeDraftLink({ letter }) {
       '🆘 Se precisar, responda aqui ou fale com a equipe: ' + recovery.help_url,
       '',
       'Com carinho, equipe do Mini Mercado do XX EJC Simonésia. 💗',
-    ].join('\\n')
+    ].join('\n')
     : '';
 
   async function createLink() {

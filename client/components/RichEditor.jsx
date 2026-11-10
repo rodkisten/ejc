@@ -35,8 +35,11 @@ export function cleanHtml(html) {
 }
 export default function RichEditor({ value, onChange, disabled = false }) {
   const ref = useRef(null);
+  const composing = useRef(false);
   useEffect(() => {
-    if (ref.current && cleanHtml(ref.current.innerHTML) !== cleanHtml(value)) {
+    // iOS Safari can re-render during an ongoing keyboard composition.
+    // Never replace the live DOM while the input method is committing text.
+    if (!composing.current && ref.current && cleanHtml(ref.current.innerHTML) !== cleanHtml(value)) {
       ref.current.innerHTML = cleanHtml(value);
     }
   }, [value]);
@@ -71,8 +74,18 @@ export default function RichEditor({ value, onChange, disabled = false }) {
         contentEditable={!disabled}
         suppressContentEditableWarning
         data-placeholder="Escreva aqui a sua cartinha..."
-        onInput={(e) => onChange(cleanHtml(e.currentTarget.innerHTML))}
-        onBlur={(e) => onChange(cleanHtml(e.currentTarget.innerHTML))}
+        onCompositionStart={() => { composing.current = true; }}
+        onCompositionEnd={(e) => {
+          composing.current = false;
+          onChange(cleanHtml(e.currentTarget.innerHTML));
+        }}
+        onInput={(e) => {
+          if (!composing.current) onChange(cleanHtml(e.currentTarget.innerHTML));
+        }}
+        onBlur={(e) => {
+          composing.current = false;
+          onChange(cleanHtml(e.currentTarget.innerHTML));
+        }}
       />
     </div>
   );

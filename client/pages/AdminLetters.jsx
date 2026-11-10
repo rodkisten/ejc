@@ -214,11 +214,14 @@ function ResumeDraftLink({ letter }) {
             <button type="button" className="btn" onClick={copyMessage} disabled={!shareText}>
               {copied ? '✓ Mensagem copiada' : 'Copiar mensagem e link'}
             </button>
-            {shareText && contactNumber && <a className="btn outline" target="_blank"
+            {shareText && <a className="btn outline" target="_blank"
               rel="noopener noreferrer"
-              href={whatsappShareUrl({phone:contactNumber,message:shareText})}
+              href={contactNumber
+                ? whatsappShareUrl({phone:contactNumber,message:shareText})
+                : 'https://api.whatsapp.com/send?text=' + encodeURIComponent(shareText)}
               onClick={()=>track('admin_draft_recovery_whatsapp_opened',{stage:'recovery'})}>
-              📲 Enviar WhatsApp para {contactName.split(' ')[0]}
+              📲 {contactNumber ? 'Enviar WhatsApp para ' + contactName.split(' ')[0]
+                : 'Escolher contato no WhatsApp'}
             </a>}
             <button type="button" className="btn ghost" onClick={createLink} disabled={busy}>
               <RefreshCw size={15} /> Renovar validade

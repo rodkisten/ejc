@@ -96,19 +96,23 @@ function ResumeDraftLink({ letter }) {
       '💌 *Oi, ' + contactName.trim().split(/\s+/)[0] + '! Precisamos conferir sua cartinha.*',
       '',
       'Na homenagem para *' + letter.recipient_name + '*, ' +
-        (letter.has_media
-          ? 'recebemos as fotos ou os áudios, mas o texto da mensagem não apareceu no servidor.'
-          : 'o texto da mensagem ainda não apareceu no servidor.'),
+        (letter.has_text
+          ? 'o texto foi salvo, mas a cartinha continua em modo rascunho e precisa ser finalizada.'
+          : letter.has_media
+            ? 'recebemos as fotos ou os áudios, mas o texto da mensagem não apareceu no servidor.'
+            : 'o texto da mensagem ainda não apareceu no servidor.'),
       'Seu pagamento continua confirmado e você *não precisa pagar novamente*. 💛',
       '',
       '🔐 *Seu link privado para recuperar e finalizar:*',
       recovery.resume_url,
       '',
-      '📱 *Muito importante:* abra o link no MESMO celular e navegador onde escreveu a cartinha.',
-      '1️⃣ Veja se aparece *Encontramos texto salvo neste aparelho*.',
-      '2️⃣ Toque em *Restaurar esta versão no editor* e confira as palavras.',
-      '3️⃣ Toque em *Salvar rascunho* e em *Finalizar e enviar cartinha*.',
-      '4️⃣ Se o texto não aparecer, tente o navegador original ou escreva novamente.',
+      letter.has_text
+        ? '📝 Abra o link, confira seu texto, toque em *Salvar rascunho* se editar e depois em *Finalizar e enviar cartinha*.'
+        : '📱 *Muito importante:* abra o link no MESMO celular e navegador onde escreveu a cartinha.',
+      letter.has_text ? '' : '1️⃣ Veja se aparece *Encontramos texto salvo neste aparelho*.',
+      letter.has_text ? '' : '2️⃣ Toque em *Restaurar esta versão no editor* e confira as palavras.',
+      letter.has_text ? '' : '3️⃣ Toque em *Salvar rascunho* e em *Finalizar e enviar cartinha*.',
+      letter.has_text ? '' : '4️⃣ Se o texto não aparecer, tente o navegador original ou escreva novamente.',
       '',
       'Guarde este link pessoal e não o encaminhe a outras pessoas.',
       '📋 Referência: ' + letter.id,
@@ -177,11 +181,13 @@ function ResumeDraftLink({ letter }) {
 
   return (
     <div className="admin-draft-recovery">
-      <p><strong>{letter.has_media ? '⚠️ Anexos recebidos, mas sem texto.' : '⚠️ Texto não encontrado no servidor.'}</strong>
+      <p><strong>{letter.has_text ? '💌 Texto salvo, mas envio ainda pendente.'
+        : letter.has_media ? '⚠️ Anexos recebidos, mas sem texto.'
+          : '⚠️ Texto não encontrado no servidor.'}</strong>
         {' '}{letter.submitted
           ? 'A cartinha já foi enviada. A equipe pode reabri-la para o remetente conferir o texto.'
           : 'O pagamento foi confirmado, mas a cartinha continua como rascunho.'}
-        {' '}O link abrirá a recuperação no aparelho do remetente.</p>
+        {' '}O link privado permitirá revisar e finalizar a cartinha.</p>
       {!validContactName(contactName) && <div className="field">
         <label htmlFor={'draft-contact-'+letter.id}>Como se chama a pessoa que entrou em contato?</label>
         <input id={'draft-contact-'+letter.id} value={contactName} maxLength={100}
@@ -206,7 +212,7 @@ function ResumeDraftLink({ letter }) {
         <div className="admin-draft-recovery-link">
           <p>Link privado de <strong>{recovery.sender_name}</strong>, válido por 14 dias.
             Envie diretamente ao remetente. O link original continua funcionando.
-            Peça que ele use o mesmo navegador e aparelho em que escreveu a cartinha.</p>
+            {!letter.has_text && ' Peça que ele use o mesmo navegador e aparelho em que escreveu a cartinha.'}</p>
           <a href={recovery.resume_url} target="_blank" rel="noopener noreferrer">
             {recovery.resume_url}
           </a>
@@ -658,7 +664,7 @@ export default function AdminLetters() {
             )}
             {letter.recovered_at&&!letter.gift&&
               <RecoveredLetterNotice letter={letter} onUpdated={refresh}/>}
-            {paid(letter.status) && !letter.gift && !letter.has_text && (
+            {paid(letter.status) && !letter.gift && (!letter.submitted || !letter.has_text) && (
               <ResumeDraftLink letter={letter} />
             )}
           </article>

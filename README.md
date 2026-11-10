@@ -588,3 +588,18 @@ As duas rotas fazem `302` para `https://wa.me/5532999662604` ao receber uma visi
 
 Os cliques em links curtos são contados em `help_link_counts` por dia/campanha, sem IP, texto ou token. Os eventos GA4 do site são enviados apenas após consentimento, com URLs privadas normalizadas. A recuperação de rascunhos pagos vazios é registrada em `draft_recovery` e a equipe só pode confirmar o aviso no WhatsApp depois que a cartinha recuperada tiver conteúdo e estiver enviada. Abrir o WhatsApp não marca a mensagem como enviada.
 
+
+### Compatibilidade de convites e links antigos
+
+Os convites completos de mural no formato `/mural/:slug?c=ec1_...#token=m2....`
+continuam aceitos independentemente dos links curtos `/s/:codigo`. O navegador
+mantém o token no fragmento, sem enviá-lo aos crawlers de prévia. O acesso
+continua condicionado à assinatura, ao código de mural vigente e à validade
+do token. Mensagens com fragmento escapado são normalizadas no cliente.
+
+Se `SESSION_SECRET` tiver sido **substituído**, configure temporariamente
+`LEGACY_SESSION_SECRET` com o valor **anterior** no painel de segredos do
+Worker. Assim, assinaturas `m2` antigas, contextos `ec1_` e destinos de
+links curtos emitidos com aquela chave continuam verificáveis **somente até
+suas expirações originais**. Não coloque os segredos no repositório,
+não regenere códigos pessoais e não desabilite a verificação de assinatura.

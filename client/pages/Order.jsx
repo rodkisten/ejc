@@ -227,6 +227,10 @@ export default function Order() {
     }
   }
   async function save(withSubmit = false) {
+    if (withSubmit && !letterPlainText(html) &&
+        (assets.length || order?.media?.length) &&
+        !window.confirm('Esta cartinha tem fotos ou áudios, mas nenhum texto. ' +
+          'Quer mesmo finalizar e enviar sem uma mensagem escrita?')) return;
     const confirmClear = letterPlainText(order?.rich_html) && !letterPlainText(html);
     if (confirmClear && !window.confirm(
       'O texto salvo no servidor será apagado. Quer realmente deixar a cartinha sem texto?')) return;

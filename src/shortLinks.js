@@ -91,8 +91,18 @@ export async function resolveShortLink(env,code,{origin}={}){
   if(Number(row.expires_at)<=Math.floor(Date.now()/1000))return {status:410};
   try{
     const site=new URL(origin||env.PUBLIC_ORIGIN).origin;
-    const destination=validateShortDestination(
-      await decryptDestination(env.SESSION_SECRET,row.destination_ciphertext),site);
+    let decoded;
+    try{
+      decoded=await decryptDestination(env.SESSION_SECRET,row.destination_ciphertext);
+    }catch(error){
+      // Short URLs created before a deliberate SESSION_SECRET rotation still
+      // resolve with the opt-in previous key, until their stored expiry.
+      const previous=env.LEGACY_SESSION_SECRET;
+      if(typeof previous!=='string'||previous.length<32||
+          previous===env.SESSION_SECRET)throw error;
+      decoded=await decryptDestination(previous,row.destination_ciphertext);
+    }
+    const destination=validateShortDestination(decoded,site);
     if(!KIND_PATTERN.test(row.kind))return {status:404};
     return {status:200,kind:row.kind,destination,expires_at:row.expires_at};
   }catch{return {status:410};}

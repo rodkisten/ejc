@@ -4,6 +4,7 @@ import MuralGallery from '../components/MuralGallery';
 import { api, track } from '../lib/api';
 import { saveAllCards } from '../components/LetterCard';
 import { openSecureSupport } from '../lib/secureSupport.js';
+import { muralTokenFromUrl, normalizeMuralUrl } from '../lib/muralAccess.js';
 
 export default function Mural() {
   const { slug } = useParams();
@@ -12,7 +13,7 @@ export default function Mural() {
   const [openBusy, setOpenBusy] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const muralToken = () => new URLSearchParams(location.hash.slice(1)).get('token');
+  const muralToken = () => muralTokenFromUrl(window.location.href);
 
   const load = useCallback(async () => {
     try {
@@ -26,7 +27,12 @@ export default function Mural() {
     }
   }, [slug]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const normalized=normalizeMuralUrl(window.location.href);
+    if(normalized!==window.location.href)
+      window.history.replaceState(window.history.state,'',normalized);
+    load();
+  }, [load]);
 
   async function openLetter(id) {
     if (opened[id] || openBusy) return;

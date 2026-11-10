@@ -1,5 +1,5 @@
 import { generatePix } from './pix.js';
-import {cleanSupportContext,encryptSupportContext,decryptSupportContext} from './supportContext.js';
+import {cleanSupportContext,encryptSupportContext,decryptSupportContextWithLegacy} from './supportContext.js';
 import {createShortLink,resolveShortLink} from './shortLinks.js';
 import { defaultHelpOgPng } from './defaultHelpOg.js';
 import { adminStatistics } from './statistics.js';
@@ -432,7 +432,17 @@ async function validMuralGrant(env,grant,recipient) {
   if(parts.length!==3||parts[1].length>500||parts[2].length>200)return false;
   try {
     const data=parts[0]+'.'+parts[1];
-    const valid=await crypto.subtle.verify('HMAC',await hmacKey(env),unb64url(parts[2]),encode.encode(data));
+    const signature=unb64url(parts[2]);
+    let valid=await crypto.subtle.verify('HMAC',await hmacKey(env),signature,encode.encode(data));
+    // Preserve previously issued invitations when the signing secret is rotated.
+    // A legacy key is opt-in; never accept an unsigned or expired mural token.
+    const previous=env.LEGACY_SESSION_SECRET;
+    if(!valid && typeof previous==='string' && previous.length>=32 &&
+        previous!==env.SESSION_SECRET){
+      const key=await crypto.subtle.importKey('raw',encode.encode(previous),
+        {name:'HMAC',hash:'SHA-256'},false,['verify']);
+      valid=await crypto.subtle.verify('HMAC',key,signature,encode.encode(data));
+    }
     if(!valid)return false;
     const payload=JSON.parse(new TextDecoder().decode(unb64url(parts[1])));
     return payload.id===recipient.id && payload.version===await digest(recipient.mural_code) &&
@@ -678,7 +688,7 @@ async function createCheckout(req,env,config) {
 
 async function encryptedSupportLink(req,env,url,finished=false){
   let context;
-  try{context=await decryptSupportContext(env.SESSION_SECRET,url.searchParams.get('c')||'');}
+  try{context=await decryptSupportContextWithLegacy(env,url.searchParams.get('c')||'');}
   catch{bad('Seu link de atendimento expirou ou é inválido. Peça um novo à equipe.',410);}
   const agent=req.headers.get('User-Agent')||'';
   const robot=/whatsapp|facebookexternalhit|facebot|twitterbot|telegrambot|slackbot|discordbot|linkedinbot|pinterest/i.test(agent)&&
@@ -978,7 +988,7 @@ async function supportContextMint(req,env){
 async function supportContextView(req,env,admin=false){
   const raw=new URL(req.url).searchParams.get('c')||'';
   let data;
-  try{data=await decryptSupportContext(env.SESSION_SECRET,raw);}
+  try{data=await decryptSupportContextWithLegacy(env,raw);}
   catch{bad('Este link de atendimento é inválido ou expirou.',410);}
   if(!admin){
     if(data.purpose!=='send')bad('Este contexto só está disponível à equipe.',403);
@@ -2759,7 +2769,7 @@ export default {
         }});
       }
       // Count recipient invitation landings, without recording a slug, IP or mural access grant.
-      if(request.method==='GET'&&/^\/mural\/[a-z0-9-]+$/.test(path)){
+      if(request.method==='GET'&&/^\/mural\/[a-z0-9-]+\/?$/.test(path)){
         const campaign=url.searchParams.get('utm_campaign');
         const agent=request.headers.get('User-Agent')||'';
         if(['convite_mural','cartinha_recuperada','pos_encontro'].includes(campaign) &&
@@ -2774,7 +2784,7 @@ export default {
       }
       // Fetch the SPA shell from / explicitly: crawlers often request deep links
       // without the Accept/Sec-Fetch headers that Cloudflare SPA fallback expects.
-      const social=path.match(/^\/(enviar|mural)\/([a-z0-9-]+)$/);
+      const social=path.match(/^\/(enviar|mural)\/([a-z0-9-]+)\/?$/);
       const socialRecipient=social?await env.DB.prepare(
         'SELECT name,slug,og_key,mural_og_key,photo_key,photo_consent FROM recipients WHERE slug=? AND active=1'
       ).bind(social[2]).first():null;

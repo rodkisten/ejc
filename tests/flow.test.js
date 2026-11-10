@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import worker from '../src/worker.js';
+import { createShortLink } from '../src/shortLinks.js';
+import { encryptSupportContext } from '../src/supportContext.js';
 import { dispatch } from '../src/notify.js';
 function fixture(){
   const sql=new DatabaseSync(':memory:');
@@ -2064,4 +2066,45 @@ test('pessoa pode encurtar somente seu próprio pedido privado',async()=>{
   assert.match(allowed.data.url,/\/s\/[A-Za-z0-9_-]{14}$/);
   const resolved=await worker.fetch(new Request(allowed.data.url),env);
   assert.equal(resolved.headers.get('Location'),url);
+});
+
+test('old mural links and short redirects preserve the grant, including across configured key rotation',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const recipient=list[0];
+  await call(env,'/api/admin/mural-codes/generate','POST',{regenerate:false},admin);
+  const code=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data
+    .recipients.find(row=>row.slug===recipient.slug).mural_code;
+  const grant=(await call(env,'/api/mural/redeem','POST',{code})).data.grant;
+  const opaque=await encryptSupportContext(env.SESSION_SECRET,{
+    purpose:'send',name:'Convite antigo',recipientSlugs:[recipient.slug]
+  });
+  const full='https://ejc.test/mural/'+recipient.slug+
+    '?c='+encodeURIComponent(opaque)+'#token='+encodeURIComponent(grant);
+  const original=await worker.fetch(new Request(full),env);
+  assert.equal(original.status,200,'the long link still returns the mural SPA');
+  assert.match(original.headers.get('X-Robots-Tag'),/noindex/);
+  assert.equal((await call(env,'/api/mural/'+recipient.slug,'GET',undefined,{token:grant})).status,200);
+  const short=await createShortLink(env,full,{origin:'https://ejc.test',kind:'mural'});
+  const redirected=await worker.fetch(new Request(short.url),env);
+  assert.equal(redirected.status,302);
+  assert.equal(redirected.headers.get('Location'),full,'redirect retains ?c and #token');
+  assert.equal(redirected.headers.get('Cache-Control'),'private, no-store');
+  const rotated={...env,SESSION_SECRET:'rotated-secret-'.repeat(4),
+    LEGACY_SESSION_SECRET:env.SESSION_SECRET};
+  assert.equal((await call(rotated,'/api/mural/'+recipient.slug,
+    'GET',undefined,{token:grant})).status,200,
+    'old HMAC grant remains valid only while the verified previous key is configured');
+  assert.equal((await call(rotated,'/api/support/context?c='+encodeURIComponent(opaque))).status,200);
+  const shortAfter=await worker.fetch(new Request(short.url),rotated);
+  assert.equal(shortAfter.status,302);
+  assert.equal(shortAfter.headers.get('Location'),full);
+  const withoutOldKey={...rotated,LEGACY_SESSION_SECRET:undefined};
+  assert.equal((await call(withoutOldKey,'/api/mural/'+recipient.slug,
+    'GET',undefined,{token:grant})).status,403);
+  assert.equal((await worker.fetch(new Request(short.url),withoutOldKey)).status,410);
+  const parts=grant.split('.');
+  const badGrant=parts[0]+'.'+parts[1]+'.'+
+    (parts[2][0]==='A'?'B':'A')+parts[2].slice(1);
+  assert.equal((await call(rotated,'/api/mural/'+recipient.slug,
+    'GET',undefined,{token:badGrant})).status,403);
 });

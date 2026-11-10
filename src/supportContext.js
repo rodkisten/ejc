@@ -81,6 +81,19 @@ export async function decryptSupportContext(secret,opaque,now=Date.now()){
     throw new Error('Contexto expirado, adulterado ou inválido.');
   }
 }
+// Optional key rollover: old encrypted links remain readable until their own
+// signed expiration, without ever treating support context as mural access.
+export async function decryptSupportContextWithLegacy(env,opaque,now=Date.now()){
+  try{
+    return await decryptSupportContext(env.SESSION_SECRET,opaque,now);
+  }catch(error){
+    const previous=env.LEGACY_SESSION_SECRET;
+    if(typeof previous==='string'&&previous.length>=32&&
+        previous!==env.SESSION_SECRET)
+      return decryptSupportContext(previous,opaque,now);
+    throw error;
+  }
+}
 export function supportSharePath(opaque,purpose='support'){
   const base=purpose==='finished'
     ?'/ajuda/terminei-a-cartinha'

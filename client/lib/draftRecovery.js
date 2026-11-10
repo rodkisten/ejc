@@ -1,4 +1,4 @@
-import { draftGet, draftKeys, draftSet } from './drafts.js';
+import { draftGet, draftKeys, draftRemove, draftSet } from './drafts.js';
 import { localCheckouts } from './cart.jsx';
 
 const ORDER_PREFIX = 'ejc-order-backup-';
@@ -85,20 +85,34 @@ export async function findLocalLetterVersions(order) {
     b.text.length - a.text.length);
 }
 
-// Save only nonempty text; initializing the editor with an empty server value
-// must never destroy a surviving local draft.
-export async function backupOrderLetter(order, { html, sender, composition }) {
-  if (!order?.id || !letterPlainText(html)) return false;
+// Preserve the last twelve nonempty local versions as well as the newest
+// draft. Serialize requests so an older Safari autosave cannot win a race.
+const writeQueue = new Map();
+export function backupOrderLetter(order, { html, sender, composition }) {
+  if (!order?.id || !letterPlainText(html)) return Promise.resolve(false);
   const key = ORDER_PREFIX + order.id;
-  const previous = await draftGet(key).catch(() => null);
-  if (previous?.html === html && previous?.sender === sender) return true;
-  await draftSet(key, {
-    order_id: order.id,
-    recipient_slug: order.recipient_slug,
-    sender: sender || order.sender_name || '',
-    html,
-    composition,
-    updatedAt: new Date().toISOString(),
+  const previousWrite = writeQueue.get(key) || Promise.resolve();
+  const write = previousWrite.catch(() => {}).then(async () => {
+    const previous = await draftGet(key).catch(() => null);
+    if (previous?.html === html && previous?.sender === sender) return true;
+    if (letterPlainText(previous?.html) && previous.html !== html) {
+      const prefix = 'ejc-order-version-' + order.id + '-';
+      await draftSet(prefix + Date.now() + '-' + Math.random().toString(36).slice(2, 6), previous);
+      const keys = (await draftKeys()).filter((value) => value.startsWith(prefix)).sort();
+      await Promise.all(keys.slice(0, -12).map((value) => draftRemove(value)));
+    }
+    await draftSet(key, {
+      order_id: order.id,
+      recipient_slug: order.recipient_slug,
+      sender: sender || order.sender_name || '',
+      html,
+      composition,
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
   });
-  return true;
+  writeQueue.set(key, write);
+  void write.finally(() => { if (writeQueue.get(key) === write) writeQueue.delete(key); })
+    .catch(() => {});
+  return write;
 }

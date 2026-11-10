@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { api, btime, money, privateOrder, uploadMedia, track } from '../lib/api';
 import { draftGet, draftSet, draftKey } from '../lib/drafts';
+import { backupOrderLetter, findLocalLetterVersions, letterPlainText } from '../lib/draftRecovery.js';
 import { cartDraftKey } from '../lib/cart';
 import { rememberPrivateOrder } from '../lib/unfinishedLetters.js';
 import QrCode from '../components/QrCode';
@@ -39,6 +40,10 @@ export default function Order() {
     [busy, setBusy] = useState(false),
     [saved, setSaved] = useState(false);
   const [sender, setSender] = useState('');
+  const [localVersions, setLocalVersions] = useState([]);
+  const [localScanDone, setLocalScanDone] = useState(false);
+  const [recoveryNotice, setRecoveryNotice] = useState('');
+  const [backupWarning, setBackupWarning] = useState('');
   const [html, setHtml] = useState(''),
     [assets, setAssets] = useState([]),
     [progress, setProgress] = useState('');
@@ -105,6 +110,10 @@ export default function Order() {
     setError('');
     setProgress('');
     setCompletion(null);
+    setLocalVersions([]);
+    setLocalScanDone(false);
+    setRecoveryNotice('');
+    setBackupWarning('');
     setHtml('');
     setSender('');
     setAssets((previous) => {
@@ -125,25 +134,66 @@ export default function Order() {
     setComposition(order.composition);
     setSaved(true);
   }, [order, saved]);
-  // The checkout draft is canonical in D1; don't overwrite edits with an older IndexedDB copy.
+  // Look for every matching local text version, including copies from before
+  // checkout. Never silently replace the D1 text with an older browser draft.
   useEffect(() => {
-    if (!order || order.checkout_id || !['paid', 'preparing', 'delivered'].includes(order.status)) return;
+    if (!order?.id || !saved) return;
+    let active = true;
+    setLocalScanDone(false);
+    findLocalLetterVersions(order)
+      .then((versions) => {
+        if (active) setLocalVersions(versions.filter((version) =>
+          letterPlainText(version.html) !== letterPlainText(order.rich_html)));
+      })
+      .catch(() => { if (active) setLocalVersions([]); })
+      .finally(() => { if (active) setLocalScanDone(true); });
+    return () => { active = false; };
+  }, [order?.id, saved, token]);
+
+  // A durable same-device backup follows each edit, without writing an empty
+  // initialization state over recovered text.
+  useEffect(() => {
+    if (!order?.id || !saved || !letterPlainText(html)) return;
+    const timer = setTimeout(() => {
+      backupOrderLetter(order, { html, sender, composition })
+        .catch(() => setBackupWarning('O navegador não conseguiu guardar uma cópia offline. Salve no servidor antes de fechar.'));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [order?.id, saved, html, sender, composition]);
+
+  useEffect(() => {
+    if (!order?.id || !saved || !letterPlainText(html)) return;
+    const flush = () => {
+      backupOrderLetter(order, { html, sender, composition }).catch(() => {});
+    };
+    window.addEventListener('pagehide', flush);
+    const visibility = () => { if (document.visibilityState === 'hidden') flush(); };
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', visibility);
+    };
+  }, [order?.id, saved, html, sender, composition]);
+
+  // A local attachment can still be uploaded if the server has no media.
+  // Otherwise it would duplicate photos already moved during checkout.
+  useEffect(() => {
+    if (!order?.id || !saved || order.media?.length) return;
     const slug = localStorage.getItem(`ejc-order-slug-${token}`);
     const cartId = localStorage.getItem('ejc-cart-order-' + token);
     if (!slug && !cartId) return;
-    draftGet(cartId ? cartDraftKey(cartId) : draftKey(slug))
-      .then((d) => {
-        if (!d) return;
-        setHtml((h) => h || d.html || '');
-        if (d.composition) setComposition(d.composition);
-        setAssets((current) =>
-          current.length
-            ? current
-            : (d.assets || []).map((a) => ({ ...a, url: URL.createObjectURL(a.file) })),
-        );
-      })
-      .catch(() => {});
-  }, [order?.status, token]);
+    let active = true;
+    draftGet(cartId ? cartDraftKey(cartId) : draftKey(slug)).then((draft) => {
+      if (!active || !draft || draft.recipient_slug !== order.recipient_slug) return;
+      const author = String(draft.sender || '').trim().toLowerCase();
+      const expected = String(order.sender_name || '').trim().toLowerCase();
+      if (author && expected && author !== expected) return;
+      setAssets((current) => current.length ? current :
+        (draft.assets || []).filter((asset) => asset.file)
+          .map((asset) => ({ ...asset, url: URL.createObjectURL(asset.file) })));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [order?.id, saved, token]);
   const paid = order && ['paid', 'preparing', 'delivered'].includes(order.status),
     ended = !order?.resume_access && !(paid && !order?.submitted) && order?.deadline &&
       Date.now() >= new Date(`${order.deadline}:00-03:00`).getTime();
@@ -177,15 +227,28 @@ export default function Order() {
     }
   }
   async function save(withSubmit = false) {
+    const confirmClear = letterPlainText(order?.rich_html) && !letterPlainText(html);
+    if (confirmClear && !window.confirm(
+      'O texto salvo no servidor será apagado. Quer realmente deixar a cartinha sem texto?')) return;
     setBusy(true);
     setError('');
     setCompletion(null);
     try {
+      try {
+        await backupOrderLetter(order, { html, sender, composition });
+      } catch {
+        setBackupWarning('Não foi possível atualizar a cópia offline neste navegador.');
+      }
       await api('/api/order/message', {
         method: 'PUT',
         token,
-        data: { rich_html: html, sender_name: sender, composition },
+        data: { rich_html: html, sender_name: sender, composition,
+          confirm_clear: !!confirmClear },
       });
+      const verified = await api('/api/order', { token });
+      if (letterPlainText(verified.rich_html) !== letterPlainText(html)) {
+        throw new Error('O texto recebido pelo servidor não confere com o editor. Sua cópia local foi mantida; tente salvar novamente.');
+      }
       track('letter_saved',{stage:paid?'paid':'pending'});
       for (const a of assets) {
         setProgress(`Enviando ${a.file.name}...`);
@@ -215,6 +278,8 @@ export default function Order() {
       }
       await reload();
       setProgress('');
+      setLocalVersions([]);
+      setRecoveryNotice('');
       setCompletion({
         type: withSubmit ? 'submitted' : 'saved',
         sender: sender || order.sender_name || '',
@@ -400,7 +465,7 @@ export default function Order() {
               {paid ? 'Pix confirmado. Você pode criar e atualizar sua homenagem' :
                 'Seu Pix já foi gerado. Edite, salve e confirme suas alterações agora, mesmo antes de pagar'}
               {' '}{order.resume_access
-                ? 'Este link privado de continuação permite terminar o rascunho pago.'
+                ? 'Este link privado de recuperação permite conferir e terminar a cartinha paga.'
                 : paid && !order.submitted
                   ? 'Seu rascunho pago pode ser finalizado com este link privado, mesmo após o prazo geral.'
                   : ended ? 'O prazo de edição terminou.' : `até ${btime(order.deadline)}.`}
@@ -412,6 +477,34 @@ export default function Order() {
               </Link>
             )}
             <div className="step-label">SUA CARTINHA / {order.submitted ? 'HOMENAGEM ENVIADA' : 'EDITANDO RASCUNHO'}</div>
+            {localScanDone && localVersions.length > 0 && (
+              <section className="form-card notice warning" role="region" aria-label="Recuperar texto da cartinha">
+                <h3>💌 Encontramos texto salvo neste aparelho!</h3>
+                <p>Compare as versões e escolha a correta. <strong>Não alteramos o texto do servidor automaticamente.</strong>
+                  Fotos, áudios e pagamento continuam preservados.</p>
+                {localVersions.slice(0, 8).map((version, index) => (
+                  <div key={version.key + index} className="admin-draft-recovery-link">
+                    <strong>{version.source}</strong>
+                    {version.updatedAt && <small> · {new Date(version.updatedAt).toLocaleString('pt-BR')}</small>}
+                    <p>{version.text.slice(0, 180)}{version.text.length > 180 ? '…' : ''}</p>
+                    <button className="btn outline" type="button" disabled={busy || ended}
+                      onClick={() => {
+                        setHtml(version.html);
+                        setRecoveryNotice('Texto restaurado no editor! Confira tudo, toque em Salvar rascunho e depois em Finalizar e enviar cartinha.');
+                        track('letter_local_text_restored', { stage: 'recovery' });
+                      }}>
+                      Restaurar esta versão no editor
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
+            {localScanDone && !localVersions.length && order.resume_access && !letterPlainText(order.rich_html) && (
+              <p className="notice">Não encontramos texto neste navegador. Se você escreveu em outro celular ou navegador,
+                abra este link por lá. Se não encontrar, poderá escrever o texto novamente sem pagar outro Pix.</p>
+            )}
+            {recoveryNotice && <div className="notice success" role="status">{recoveryNotice}</div>}
+            {backupWarning && <div className="notice warning" role="alert">{backupWarning}</div>
             <div className="send-recipient">
               {recipient?.photo_url ? <img src={recipient.photo_url} alt={'Foto de ' + order.recipient_name} /> :
                 <span className="recipient-initial">{order.recipient_name?.[0]}</span>}

@@ -19,7 +19,7 @@ import { THEMES } from '../../shared/letter.js';
 
 const paid = (status) => ['paid', 'preparing', 'delivered'].includes(status);
 const LETTER_FILTERS = ['all', 'pending', 'paid', 'ready', 'sent', 'recovered',
-  'ready-notify', 'draft', 'paid-draft', 'empty-paid-draft'];
+  'ready-notify', 'draft', 'paid-draft', 'empty-paid-draft', 'attachments-no-text'];
 function createdAt(value) {
   const raw = String(value || '').trim().replace(' ', 'T');
   const normalized = /(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(raw) ? raw : raw + 'Z';
@@ -92,22 +92,43 @@ function ResumeDraftLink({ letter }) {
   const [contactPhone, setContactPhone] = useState(fromUrl.phone || '');
   const contactNumber = normalizeBrazilianWhatsApp(contactPhone);
   const shareText = recovery && validContactName(contactName)
-    ? createSupportMessage('rascunho_vazio', {
-      contactName, recipientNames: [letter.recipient_name],
-      recipients: [{ name:letter.recipient_name, slug:letter.recipient_slug }],
-      orders: [{ id:letter.id, recipient_name:letter.recipient_name }],
-      resumeUrl: recovery.resume_url, origin: window.location.origin,
-      secureLinks:{help:recovery.help_url},
-    })
+    ? [
+      '💌 *Oi, ' + contactName.trim().split(/\\s+/)[0] + '! Precisamos conferir sua cartinha.*',
+      '',
+      'Na homenagem para *' + letter.recipient_name + '*, ' +
+        (letter.has_media
+          ? 'recebemos as fotos ou os áudios, mas o texto da mensagem não apareceu no servidor.'
+          : 'o texto da mensagem ainda não apareceu no servidor.'),
+      'Seu pagamento continua confirmado e você *não precisa pagar novamente*. 💛',
+      '',
+      '🔐 *Seu link privado para recuperar e finalizar:*',
+      recovery.resume_url,
+      '',
+      '📱 *Muito importante:* abra o link no MESMO celular e navegador onde escreveu a cartinha.',
+      '1️⃣ Veja se aparece *Encontramos texto salvo neste aparelho*.',
+      '2️⃣ Toque em *Restaurar esta versão no editor* e confira as palavras.',
+      '3️⃣ Toque em *Salvar rascunho* e em *Finalizar e enviar cartinha*.',
+      '4️⃣ Se o texto não aparecer, tente o navegador original ou escreva novamente.',
+      '',
+      'Guarde este link pessoal e não o encaminhe a outras pessoas.',
+      '📋 Referência: ' + letter.id,
+      '🆘 Se precisar, responda aqui ou fale com a equipe: ' + recovery.help_url,
+      '',
+      'Com carinho, equipe do Mini Mercado do XX EJC Simonésia. 💗',
+    ].join('\\n')
     : '';
 
   async function createLink() {
+    if (letter.submitted && !window.confirm(
+      'Esta cartinha já foi enviada sem texto. Reabrir como rascunho para o remetente corrigir? ' +
+      'Ela ficará temporariamente pendente no mural, mas fotos, áudios e pagamento serão preservados.'
+    )) return;
     setBusy(true);
     setError('');
     setCopied(false);
     try {
       const response = await api('/api/admin/cartinhas/' + encodeURIComponent(letter.id) + '/resume-link', {
-        method: 'POST', data: {},
+        method: 'POST', data: { reopen_incomplete: !!letter.submitted },
       });
       // PNG is rendered with the real recipient name and published automatically
       // before a recoverable link is copied or shared. No manual image editing.
@@ -156,8 +177,11 @@ function ResumeDraftLink({ letter }) {
 
   return (
     <div className="admin-draft-recovery">
-      <p><strong>⚠️ Sem conteúdo salvo no servidor.</strong> O pagamento foi confirmado,
-        mas ainda não há texto, foto ou áudio finalizado para aprovar.</p>
+      <p><strong>{letter.has_media ? '⚠️ Anexos recebidos, mas sem texto.' : '⚠️ Texto não encontrado no servidor.'}</strong>
+        {' '}{letter.submitted
+          ? 'A cartinha já foi enviada. A equipe pode reabri-la para o remetente conferir o texto.'
+          : 'O pagamento foi confirmado, mas a cartinha continua como rascunho.'}
+        {' '}O link abrirá a recuperação no aparelho do remetente.</p>
       {!validContactName(contactName) && <div className="field">
         <label htmlFor={'draft-contact-'+letter.id}>Como se chama a pessoa que entrou em contato?</label>
         <input id={'draft-contact-'+letter.id} value={contactName} maxLength={100}
@@ -174,12 +198,15 @@ function ResumeDraftLink({ letter }) {
       </div>
       {!recovery ? (
         <button type="button" className="btn outline" disabled={busy} onClick={createLink}>
-          <LockKeyhole size={16} /> {busy ? 'Criando link…' : 'Criar link para ' + recipient + ' continuar'}
+          <LockKeyhole size={16} /> {busy ? 'Criando link…' : letter.submitted
+            ? 'Reabrir rascunho e gerar link para ' + recipient
+            : 'Gerar link de recuperação para ' + recipient}
         </button>
       ) : (
         <div className="admin-draft-recovery-link">
           <p>Link privado de <strong>{recovery.sender_name}</strong>, válido por 14 dias.
-            Envie diretamente ao remetente. O link original continua funcionando.</p>
+            Envie diretamente ao remetente. O link original continua funcionando.
+            Peça que ele use o mesmo navegador e aparelho em que escreveu a cartinha.</p>
           <a href={recovery.resume_url} target="_blank" rel="noopener noreferrer">
             {recovery.resume_url}
           </a>
@@ -406,6 +433,7 @@ export default function AdminLetters() {
     if (filter === 'draft' && letter.submitted) return false;
     if (filter === 'paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift)) return false;
     if (filter === 'empty-paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift || letter.has_content)) return false;
+    if (filter === 'attachments-no-text' && (!paid(letter.status) || letter.gift || !letter.has_media || letter.has_text)) return false;
     if (filter === 'sent' && !letter.submitted) return false;
     if (filter === 'recovered' && !letter.recovered_at) return false;
     if (filter === 'ready-notify' && (!letter.recovered_at||!letter.submitted||letter.recipient_notified_at))return false;
@@ -556,6 +584,7 @@ export default function AdminLetters() {
           <option value="draft">Rascunhos</option>
           <option value="paid-draft">Pagos que ainda são rascunhos</option>
           <option value="empty-paid-draft">Pagos sem conteúdo salvo</option>
+          <option value="attachments-no-text">⚠️ Fotos ou áudio sem texto</option>
         </select>
         <strong aria-live="polite">{rows.length} cartinha(s)</strong>
       </div>
@@ -586,10 +615,12 @@ export default function AdminLetters() {
                 {letter.recovered_at&&<p className="admin-letter-content-status">
                   💚 Recuperada em {createdAt(letter.recovered_at)}
                 </p>}
-                {paid(letter.status) && !letter.submitted && !letter.gift && (
+                {paid(letter.status) && !letter.gift && (
                   <p className="admin-letter-content-status">
-                    {letter.has_content ? '✅ Mensagem ou anexo salvo · pronta para revisão'
-                      : '⚠️ Rascunho vazio no servidor'}
+                    {!letter.has_text && letter.has_media
+                      ? '⚠️ Fotos ou áudio recebidos, mas não encontramos texto da cartinha'
+                      : !letter.has_content ? '⚠️ Rascunho vazio no servidor'
+                        : !letter.submitted ? '✅ Mensagem salva · pronta para revisão' : ''}
                   </p>
                 )}
               </div>
@@ -624,7 +655,7 @@ export default function AdminLetters() {
             )}
             {letter.recovered_at&&!letter.gift&&
               <RecoveredLetterNotice letter={letter} onUpdated={refresh}/>}
-            {paid(letter.status) && !letter.submitted && !letter.gift && !letter.has_content && (
+            {paid(letter.status) && !letter.gift && !letter.has_text && (
               <ResumeDraftLink letter={letter} />
             )}
           </article>

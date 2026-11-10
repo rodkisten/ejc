@@ -77,7 +77,7 @@ function SecretLetterPreview({ letter }) {
   );
 }
 
-function ResumeDraftLink({ letter }) {
+function ResumeDraftLink({ letter, onUpdated }) {
   const route = useLocation();
   const fromUrl = supportContactParams(route.search);
   const [recovery, setRecovery] = useState(null);
@@ -158,6 +158,7 @@ function ResumeDraftLink({ letter }) {
         method:'POST',data:{url:tracked.toString(),kind:'draft'}
       });
       setRecovery({...response,resume_url:short.url,help_url:help.link});
+      if (letter.submitted) await onUpdated?.();
       if(ogWarning)setError(ogWarning);
     } catch (cause) {
       setError(cause.message || 'Não foi possível criar o link.');
@@ -665,7 +666,7 @@ export default function AdminLetters() {
             {letter.recovered_at&&!letter.gift&&
               <RecoveredLetterNotice letter={letter} onUpdated={refresh}/>}
             {paid(letter.status) && !letter.gift && (!letter.submitted || !letter.has_text) && (
-              <ResumeDraftLink letter={letter} />
+              <ResumeDraftLink letter={letter} onUpdated={refresh} />
             )}
           </article>
         ))}

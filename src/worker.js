@@ -1234,7 +1234,12 @@ async function publicRoute(req,env,path) {
     if(path==='/api/order/message'&&req.method==='PUT') {
       if(!writableLetter(o))bad('Cartinha indisponível para edição.',403);
       editable(config,o);
-      const data=await jsonBody(req,40000),html=safeRich(data.rich_html||'');
+      const data=await jsonBody(req,40000);
+      if(typeof data.rich_html!=='string')bad('O texto da cartinha não foi enviado. Nada foi alterado.',400);
+      const html=safeRich(data.rich_html);
+      // An asynchronous empty editor payload must never erase a message silently.
+      if(visibleDraftText(o.rich_html)&&!visibleDraftText(html)&&data.confirm_clear!==true)
+        bad('O servidor ainda tem um texto salvo. Confirme explicitamente antes de apagá-lo.',409);
       const sender=data.sender_name===undefined?o.sender_name:assertText(data.sender_name,100,'Remetente',false);
       const composition=JSON.stringify(normalizeComposition(data.composition===undefined
         ? JSON.parse(o.composition_json||'{}') : data.composition));
@@ -1703,13 +1708,26 @@ async function adminRoute(req,env,path) {
   // original hashed token or altering the order's payment or content.
   const adminResume=path.match(/^\/api\/admin\/cartinhas\/(EJC-[A-F0-9]{12})\/resume-link$/);
   if(adminResume && req.method==='POST') {
-    await jsonBody(req,256);
+    const input=await jsonBody(req,256);
     const order=await env.DB.prepare(
-      "SELECT id,sender_name,status,submitted_at,campaign_key FROM orders WHERE id=?"
+      "SELECT id,sender_name,status,submitted_at,campaign_key,rich_html FROM orders WHERE id=?"
     ).bind(adminResume[1]).first();
     if(!order)bad('Cartinha não encontrada.',404);
-    if(!activeOrder(order) || order.submitted_at || order.campaign_key)
-      bad('Somente rascunhos pagos podem receber um link de continuação.',409);
+    if(!activeOrder(order) || order.campaign_key)
+      bad('Somente cartinhas pagas podem receber um link de recuperação.',409);
+    if(order.submitted_at) {
+      if(visibleDraftText(order.rich_html))
+        bad('A cartinha enviada já contém texto. Não é possível reabri-la por esta ação.',409);
+      if(input?.reopen_incomplete!==true)
+        bad('Confirme a reabertura da cartinha incompleta antes de gerar o link.',409);
+      // Only an administrator can move an incomplete delivered letter back to
+      // draft. The paid status, existing media and original private link remain.
+      const opened=await env.DB.prepare(
+        "UPDATE orders SET submitted_at=NULL,updated_at=? WHERE id=? AND submitted_at IS NOT NULL AND status IN ('paid','preparing','delivered')"
+      ).bind(now(),order.id).run();
+      if(!opened.meta.changes)bad('Cartinha alterada. Atualize a lista e tente novamente.',409);
+      await event(env,order.id,'incomplete_text_reopened');
+    }
     const expiry=Math.floor(Date.now()/1000)+14*24*60*60;
     const code=order.id.slice(4),hexExpiry=expiry.toString(16).padStart(8,'0');
     const signed=b64url(new Uint8Array(await crypto.subtle.sign(
@@ -1863,6 +1881,7 @@ async function adminRoute(req,env,path) {
         recipient_slug:row.recipient_slug,status:row.status,gift:!!row.campaign_key,
         submitted:!!row.submitted_at,created_at:row.created_at,
         has_content:visibleDraftText(row.rich_html)||!!row.has_ready_media,
+        has_text:visibleDraftText(row.rich_html),has_media:!!row.has_ready_media,
         empty_paid_observed:!!row.empty_seen_at||missing.some(item=>item.id===row.id),
         recovered_at:row.recovered_at||null,recipient_notified_at:row.recipient_notified_at||null,
         theme:design.theme,stickers:design.stickers

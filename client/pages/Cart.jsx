@@ -45,6 +45,15 @@ export default function Cart() {
       if (payerName.trim().length < 2) throw new Error('Informe seu nome para conferência do Pix.');
       const drafts = await Promise.all(cart.items.map((item) => draftGet(cartDraftKey(item.id))));
       if (drafts.some((draft) => !draft)) throw new Error('Uma cartinha perdeu seu rascunho local. Edite-a antes de pagar.');
+      const mediaWithoutText = cart.items.filter((item, index) =>
+        (drafts[index].assets || []).length &&
+        !String(drafts[index].html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').trim());
+      if (mediaWithoutText.length && !window.confirm(
+        'Encontramos ' + mediaWithoutText.length + ' cartinha(s) com fotos ou áudio, mas sem texto. ' +
+        'Você tem certeza de que quer gerar o Pix sem mensagem escrita? ' +
+        'Se escreveu um texto, volte e confira antes de continuar.')) {
+        throw new Error('Revise o texto no editor antes de gerar o Pix.');
+      }
       const checkout = await api('/api/checkouts', {
         method: 'POST',
         data: { payer_name: payerName.trim(), items: cart.items.map((item, index) => ({

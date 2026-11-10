@@ -2102,7 +2102,9 @@ test('old mural links and short redirects preserve the grant, including across c
   assert.equal((await call(withoutOldKey,'/api/mural/'+recipient.slug,
     'GET',undefined,{token:grant})).status,403);
   assert.equal((await worker.fetch(new Request(short.url),withoutOldKey)).status,410);
-  const badGrant=grant.replace(/.$/,grant.endsWith('A')?'B':'A');
+  const parts=grant.split('.');
+  const badGrant=parts[0]+'.'+parts[1]+'.'+
+    (parts[2][0]==='A'?'B':'A')+parts[2].slice(1);
   assert.equal((await call(rotated,'/api/mural/'+recipient.slug,
     'GET',undefined,{token:badGrant})).status,403);
 });

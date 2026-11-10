@@ -4,7 +4,7 @@ import { ArrowRight, Info, ShoppingBag, Share2, CheckCircle2 } from 'lucide-reac
 import { useApp } from '../main';
 import { api, money, track } from '../lib/api';
 import { createSecureSupportContext } from '../lib/secureSupport.js';
-import { draftGet, draftSet, draftRemove, draftKey } from '../lib/drafts';
+import { draftGet, draftSet, draftKey } from '../lib/drafts';
 import { useCart, cartDraftKey, checkoutForDraft } from '../lib/cart';
 import { LetterCard } from '../components/LetterCard';
 import { useLetterComposer } from '../hooks/useLetterComposer';
@@ -75,8 +75,8 @@ export default function Send() {
     const timer = setTimeout(() => draftSet(key, {
       sender, html, composition, notifyOnRead, receiptEmail,
       assets: assets.map(({ file, kind }) => ({ file, kind })),
-      recipient_slug: slug,
-    }).catch(() => {}), 600);
+      recipient_slug: slug, updatedAt: new Date().toISOString(),
+    }).catch(() => setError('Não foi possível salvar a cópia offline. Verifique o armazenamento do navegador.')), 600);
     return () => clearTimeout(timer);
   }, [key, ready, sender, html, composition, assets, notifyOnRead, receiptEmail, slug]);
 
@@ -110,6 +110,13 @@ export default function Send() {
     setBusy(true);
     setError('');
     try {
+      // Keep the original pre-checkout version as another recovery source.
+      // A stale timer or interrupted navigation cannot be the only backup.
+      await draftSet(key, {
+        sender, html, composition, notifyOnRead, receiptEmail,
+        assets: assets.map(({ file, kind }) => ({ file, kind })),
+        recipient_slug: slug, updatedAt: new Date().toISOString(),
+      });
       await cart.save({
         id: editId || undefined,
         recipient_slug: slug,
@@ -117,7 +124,7 @@ export default function Send() {
         html, composition, notifyOnRead, receiptEmail: notifyOnRead ? receiptEmail : '',
         assets: assets.map(({ file, kind }) => ({ file, kind })),
       });
-      if (!editId) await draftRemove(draftKey(slug));
+      // Do not delete the original IndexedDB text after moving it to the cart.
       // Preserve contact information as authenticated ciphertext, never as
       // plaintext URL parameters or a localStorage profile.
       const secured=await createSecureSupportContext({

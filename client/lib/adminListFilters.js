@@ -26,13 +26,19 @@ export function isReadyForSending(letter) {
     PAID_STATUSES.has(letter.status));
 }
 
+export function needsTextCompletion(letter) {
+  return Boolean(letter && !letter.gift && !letter.has_text &&
+    PAID_STATUSES.has(letter.status));
+}
+
 export function matchesSupportOrder(letter, search = '', filter = 'all') {
   if (!letter || letter.gift) return false;
   if (filter === 'ready' && !isReadyForSending(letter)) return false;
   if (filter === 'paid-draft' && (!PAID_STATUSES.has(letter.status) || letter.submitted)) return false;
   if (filter === 'empty-paid-draft' &&
-    (!PAID_STATUSES.has(letter.status) || letter.submitted || letter.has_content)) return false;
+    (!PAID_STATUSES.has(letter.status) || letter.submitted || letter.has_text)) return false;
   if (filter === 'pending' && PAID_STATUSES.has(letter.status)) return false;
+  if (filter === 'needs-completion' && !needsTextCompletion(letter)) return false;
 
   const normalize = value => String(value || '').normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');

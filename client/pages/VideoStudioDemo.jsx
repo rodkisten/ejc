@@ -46,6 +46,7 @@ export default function VideoStudioDemo() {
   const outputCanvas = useRef(null);
   const pipeline = useRef(null);
   const [sticker, setSticker] = useState('none');
+  const [softSkin, setSoftSkin] = useState(0.35);
   const [renderMode, setRenderMode] = useState('raw');
   const stream = useRef(null);
   const recorder = useRef(null);
@@ -69,6 +70,7 @@ export default function VideoStudioDemo() {
   useEffect(() => { limit.current = config.maxDurationSeconds; }, [config.maxDurationSeconds]);
   useEffect(() => { pipeline.current?.setFilter(filter.id); }, [filter]);
   useEffect(() => { pipeline.current?.setSticker(sticker); }, [sticker]);
+  useEffect(() => { pipeline.current?.setSoftSkin(softSkin); }, [softSkin]);
   useEffect(() => {
     fetch('/api/admin/video-studio/config', { credentials: 'same-origin' })
       .then(response => { if (!response.ok) throw new Error('Falha ao carregar configuração.'); return response.json(); })
@@ -132,6 +134,7 @@ export default function VideoStudioDemo() {
           });
           pipeline.current.setFilter(filter.id);
           pipeline.current.setSticker(sticker);
+          pipeline.current.setSoftSkin(softSkin);
           setRenderMode('gpu');
         } catch (cause) { setError(cause.message); setRenderMode('raw'); }
       }
@@ -185,7 +188,7 @@ export default function VideoStudioDemo() {
           const item = {
             id: crypto.randomUUID(), userId: DEMO_USER.id,
             title: caption.trim() || 'Meu vídeo', filterId: rendered ? 'natural' : filter.id,
-            originalFilterId: filter.id, sticker, aspectRatio: config.aspectRatio,
+            originalFilterId: filter.id, sticker, softSkin, aspectRatio: config.aspectRatio,
             rendered: Boolean(rendered),
             createdAt: Date.now(), status: 'local-demo', blob,
           };
@@ -346,6 +349,17 @@ export default function VideoStudioDemo() {
       {renderMode === 'gpu' ? 'Efeitos e stickers incorporados ao vídeo gravado' :
         'Canvas não disponível: gravação original sem efeitos'}
     </p>
+    <div style={{ margin: '12px 0 18px' }}>
+      <label htmlFor="video-soft-skin" style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <span>✨ Soft Skin</span><strong>{Math.round(softSkin * 100)}%</strong>
+      </label>
+      <input id="video-soft-skin" type="range" min="0" max="100" step="5"
+        value={Math.round(softSkin * 100)}
+        onChange={event => setSoftSkin(Number(event.target.value) / 100)}
+        style={{ width: '100%', accentColor: '#a32952' }}/>
+      <p className="muted small">Suavização seletiva por cor e contraste. Não altera o formato do rosto.
+        Disponível com WebGL; 0% desativa o efeito.</p>
+    </div>
     <label htmlFor="video-demo-caption">Título da gravação</label>
     <input id="video-demo-caption" maxLength={120} value={caption}
       onChange={event => setCaption(event.target.value)} placeholder="Uma lembrança especial 💙"/>

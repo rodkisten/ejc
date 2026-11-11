@@ -1398,7 +1398,7 @@ async function adminRoute(req,env,path) {
       key:object.key
     }))});
   }
-  const demoVideo=path.match(/^\\/api\\/admin\\/video-demo\\/([a-f0-9-]{36})$/);
+  const demoVideo=path.match(/^\/api\/admin\/video-demo\/([a-f0-9-]{36})$/);
   if(demoVideo){
     const key='video-demo/ejc-video-demo/'+demoVideo[1];
     if(req.method==='PUT'){

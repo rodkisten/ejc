@@ -27,6 +27,7 @@ function AdminDashboard({ info, reload }) {
   const paid = new Set(info.orders.filter((order) => ['paid', 'preparing', 'delivered'].includes(order.status))
     .map(order => order.checkout_id || order.id));
   const sent = info.orders.filter((order) => order.submitted);
+  const opened = info.orders.filter(order => order.opened && order.submitted);
   return (
     <>
       <div className="section-head">
@@ -41,6 +42,9 @@ function AdminDashboard({ info, reload }) {
         <div><span>Pix a conferir</span><strong>{pending.size}</strong></div>
         <div><span>Pagamentos confirmados</span><strong>{paid.size}</strong></div>
         <div><span>Cartinhas enviadas</span><strong>{sent.length}</strong></div>
+        <div><span>📖 Cartinhas abertas</span><strong>{opened.length}</strong>
+          <small>Primeiras leituras · <NavLink to="/admin/estatisticas">Estatísticas completas</NavLink></small>
+        </div>
         <div><span>Total de pedidos</span><strong>{info.orders.length}</strong></div>
       </div>
       <div className="notice">
@@ -456,6 +460,7 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
             </form>
           ) : (
             <><strong>{r.name}</strong><small>/enviar/{r.slug}</small>
+              <small>📖 {r.opened_letter_count||0} cartinha(s) aberta(s)</small>
               {r.active===0 && <span className="person-status">Arquivado</span>}
               {Number(r.order_count||0)>0 && <small>{r.order_count} cartinha(s) vinculada(s)</small>}
             </>

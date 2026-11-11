@@ -2,6 +2,7 @@ import {
   computeLetterLayout, FONTS, normalizeComposition, plainLetter,
   STICKERS_BY_ID, STICKER_COLORS, THEMES,
 } from '../../shared/letter.js';
+import { fitPhotoBox } from '../../shared/photoFit.js';
 
 export const IMAGE_FORMATS = Object.freeze({
   letter: { width: 1080, height: 1350, name: 'cartinha' },
@@ -214,10 +215,9 @@ function drawPhoto(ctx, bitmap, x, y, width, height) {
   if (!iw || !ih) return;
   // Fit the entire original image in its available paper area. The previous
   // "cover" crop removed parts of portraits and panoramic photos in exports.
-  const ratio = Math.min(width / iw, height / ih);
-  const fittedWidth = iw * ratio, fittedHeight = ih * ratio;
-  const px = x + (width - fittedWidth) / 2;
-  const py = y + (height - fittedHeight) / 2;
+  const fitted = fitPhotoBox(iw, ih, x, y, width, height);
+  if (!fitted) return;
+  const { x: px, y: py, width: fittedWidth, height: fittedHeight } = fitted;
   ctx.save();
   ctx.shadowColor = '#34203844'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 8;
   ctx.fillStyle = '#fff';

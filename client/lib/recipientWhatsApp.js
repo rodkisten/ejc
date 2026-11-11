@@ -15,7 +15,8 @@ export function muralInvitationMessage({ name, url, count=1, openedCount=0, ids=
   const openedStatus=opened===0
     ? '💌 *Leitura:* nenhuma cartinha aberta até agora.'
     : opened===amount
-      ? '📖 *Leitura:* todas as '+amount+' '+(amount===1?'cartinha já foi aberta!':'cartinhas já foram abertas!')+' 💙'
+      ? amount===1 ? '📖 *Leitura:* a cartinha já foi aberta! 💙'
+        : '📖 *Leitura:* todas as '+amount+' cartinhas já foram abertas! 💙'
       : '📖 *Leitura:* '+opened+' de '+amount+' cartinhas já foram abertas. 💙';
   return [
     '💌✨ *'+first+', seu coração tem correspondência!*',

@@ -1841,7 +1841,7 @@ async function adminRoute(req,env,path) {
   if(readyMessage&&req.method==='POST'){
     const confirm=path.endsWith('/confirm');
     const row=await env.DB.prepare(
-      "SELECT o.id,o.submitted_at,o.status,o.rich_html,r.id AS recipient_id,r.name AS recipient_name,"+
+      "SELECT o.id,o.submitted_at,o.first_read_at,o.status,o.rich_html,r.id AS recipient_id,r.name AS recipient_name,"+
       "r.slug,r.active,r.whatsapp_phone,r.mural_code,d.recovered_at,d.recipient_notified_at "+
       "FROM orders o JOIN recipients r ON r.id=o.recipient_id "+
       "JOIN draft_recovery d ON d.order_id=o.id WHERE o.id=?"
@@ -1882,7 +1882,8 @@ async function adminRoute(req,env,path) {
       order_id:row.id,url:link.toString(),
       support_url:origin+'/ajuda/minha-cartinha?c='+encodeURIComponent(opaque),
       released:released(await settings(env)),
-      already_notified:!!row.recipient_notified_at});
+      already_notified:!!row.recipient_notified_at,
+      already_opened:!!row.first_read_at});
   }
   if(path==='/api/admin/help-link/stats'&&req.method==='GET'){
     const rows=(await env.DB.prepare(

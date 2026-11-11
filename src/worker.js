@@ -1,7 +1,7 @@
 import { generatePix } from './pix.js';
 import {cleanSupportContext,encryptSupportContext,decryptSupportContextWithLegacy} from './supportContext.js';
 import {createShortLink,resolveShortLink} from './shortLinks.js';
-import { defaultHelpOgPng } from './defaultHelpOg.js';
+import { defaultHelpOgPng, completionHelpOgPng } from './defaultHelpOg.js';
 import { adminStatistics } from './statistics.js';
 import { normalizePaymentLookup, likeTerm, maskedStatus } from './paymentSearch.js';
 import { isSquareRecipientJpeg } from './photo.js';
@@ -2548,6 +2548,18 @@ export default {
   async fetch(request,env,ctx) {
     try {
       const url=new URL(request.url), path=url.pathname;
+      if(path==='/og-cartinha-incompleta.png' &&
+        (request.method==='GET'||request.method==='HEAD')){
+        const bytes=await completionHelpOgPng();
+        return new Response(request.method==='HEAD'?null:bytes,{headers:{
+          'Content-Type':'image/png',
+          'Content-Length':String(bytes.byteLength),
+          'Cache-Control':'public, max-age=86400',
+          'X-Content-Type-Options':'nosniff',
+          'X-Robots-Tag':'noindex, nofollow'
+        }});
+      }
+
       // First-party /s/<random> redirects, without exposing the destination
       // to WhatsApp/Telegram crawlers. Previews are served as OG HTML here.
       const shortCode=path.match(/^\/s\/([A-Za-z0-9_-]{14})$/);

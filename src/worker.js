@@ -2604,6 +2604,34 @@ export default {
         // Ordinary navigation falls through to the SPA route below.
       }
 
+      // Secondary EJC support link intentionally serves the SAME OG art as
+      // the first "complete your letter" link. WhatsApp may select either URL
+      // when a message contains two links; the intended illustration remains.
+      // This static URL contains no sender, recipient, order ID or private grant.
+      if(path==='/ajuda/ejc'||path==='/ajuda/ejc/'){
+        if(request.method!=='GET'&&request.method!=='HEAD')
+          return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
+        if(isShortPreviewBot(request))
+          return shortLinkPreview(env,request,
+            url.origin+'/ajuda/concluir-cartinha','completion',url.origin+path);
+        const support=new URL('https://api.whatsapp.com/send');
+        support.searchParams.set('phone',SUPPORT_WHATSAPP);
+        setWhatsAppText(support,[
+          '🌹💙 Olá, pessoal do XX EJC Simonésia!',
+          '',
+          'Estou tentando concluir uma cartinha, mas encontrei uma dificuldade.',
+          'Vocês poderiam me ajudar, por gentileza? 🩵',
+          '',
+          'Muito obrigado pelo carinho e pelo apoio! 💙🌹'
+        ].join('\\n'));
+        return new Response(null,{status:302,headers:{
+          Location:support.toString(),
+          'Cache-Control':'no-store',
+          'Referrer-Policy':'no-referrer',
+          'X-Robots-Tag':'noindex, nofollow, noarchive'
+        }});
+      }
+
       // Public short support route. WhatsApp previews receive OG HTML; real visitors
       // receive a ready-to-send message. No mural token is ever accepted or copied.
       if(path==='/ajuda/minha-cartinha'||path==='/ajuda/minha-cartinha/'){

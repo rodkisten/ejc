@@ -212,14 +212,18 @@ function drawPhoto(ctx, bitmap, x, y, width, height) {
   const iw = bitmap.width || bitmap.naturalWidth;
   const ih = bitmap.height || bitmap.naturalHeight;
   if (!iw || !ih) return;
-  const ratio = Math.max(width / iw, height / ih);
-  const sw = width / ratio, sh = height / ratio;
-  const sx = (iw - sw) / 2, sy = (ih - sh) / 2;
+  // Fit the entire original image in its available paper area. The previous
+  // "cover" crop removed parts of portraits and panoramic photos in exports.
+  const ratio = Math.min(width / iw, height / ih);
+  const fittedWidth = iw * ratio, fittedHeight = ih * ratio;
+  const px = x + (width - fittedWidth) / 2;
+  const py = y + (height - fittedHeight) / 2;
   ctx.save();
   ctx.shadowColor = '#34203844'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 8;
-  ctx.fillStyle = '#fff'; ctx.fillRect(x - 11, y - 11, width + 22, height + 28);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(px - 11, py - 11, fittedWidth + 22, fittedHeight + 28);
   ctx.shadowColor = 'transparent';
-  ctx.drawImage(bitmap, sx, sy, sw, sh, x, y, width, height);
+  ctx.drawImage(bitmap, px, py, fittedWidth, fittedHeight);
   ctx.restore();
 }
 

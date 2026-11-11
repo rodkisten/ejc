@@ -159,7 +159,8 @@ export default function VideoStudioDemo() {
         throw new Error('Este navegador não oferece gravação de vídeo.');
       const media = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } },
-        audio: true,
+        audio: { channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 },
+          echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       });
       pipeline.current?.stop();
       pipeline.current = null;
@@ -175,13 +176,16 @@ export default function VideoStudioDemo() {
       const rendered = pipeline.current?.captureStream(24);
       const source = rendered || stream.current;
       const audioTracks = stream.current.getAudioTracks();
-      if (rendered) for (const track of audioTracks) source.addTrack(track);
+      if (rendered) for (const track of audioTracks) source.addTrack(track.clone());
       setRenderMode(rendered ? 'gpu' : 'raw');
-      const media = new MediaRecorder(source, mimeType ? { mimeType } : {});
+      const options = { audioBitsPerSecond: 128000, videoBitsPerSecond: 2500000 };
+      if (mimeType) options.mimeType = mimeType;
+      const media = new MediaRecorder(source, options);
       recorder.current = media;
       media.ondataavailable = event => { if (event.data.size) chunks.current.push(event.data); };
       media.onerror = () => setError('Falha na gravação. Tente novamente.');
       media.onstop = async () => {
+        if (rendered) source.getTracks().forEach(track => track.stop());
         try {
           const blob = new Blob(chunks.current, { type: media.mimeType || 'video/mp4' });
           if (!blob.size) throw new Error('O vídeo ficou vazio.');
@@ -273,11 +277,11 @@ export default function VideoStudioDemo() {
           style={{ display: ['preview', 'recording', 'saving'].includes(status) ? 'block' : 'none',
             width: '100%', height: '100%', position: 'absolute', inset: 0,
             objectFit: 'cover' }} />
-        {selected && url && <video key={url} src={url} controls playsInline
+        {status === 'review' && selected && url && <video key={url} src={url} controls playsInline
           style={{ width: '100%', height: '100%', position: 'absolute', inset: 0,
             objectFit: 'cover', objectPosition: 'center',
             filter: FILTERS.find(f => f.id === selected.filterId)?.css || 'none' }} />}
-        {selected && !url && <div style={{ position: 'absolute', inset: 0, display: 'grid',
+        {status === 'review' && selected && !url && <div style={{ position: 'absolute', inset: 0, display: 'grid',
           placeItems: 'center', background: '#f5e8ef', fontSize: 60 }}>{selected.emoji || '💌'}</div>}
         {['preview', 'recording'].includes(status) && <div style={{ position: 'absolute', top: 14,
           left: 14, right: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center',

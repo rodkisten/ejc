@@ -2623,7 +2623,7 @@ export default {
           'Vocês poderiam me ajudar, por gentileza? 🩵',
           '',
           'Muito obrigado pelo carinho e pelo apoio! 💙🌹'
-        ].join('\\n'));
+        ].join('\n'));
         return new Response(null,{status:302,headers:{
           Location:support.toString(),
           'Cache-Control':'no-store',

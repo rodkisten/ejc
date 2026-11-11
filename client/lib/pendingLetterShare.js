@@ -10,18 +10,25 @@ export function pendingLetterWhatsAppMessage(shortUrl) {
     throw new Error('Link de ajuda inválido.');
   }
 
+  // Keep the completion link first. The support URL is a separate, static
+  // WhatsApp handoff and its bot OG is intentionally the same as the first.
+  const supportUrl = new URL('/ajuda/ejc', url.origin).toString();
   return [
-    '💌 *Oi! Posso te pedir um carinho?* 💗',
+    '💌 *Oi! Posso te pedir um carinho?* 🩵',
     '',
     'Recebi a sua cartinha no mural do *XX EJC Simonésia*, mas parece que ela veio incompleta.',
-    'Fiquei muito feliz em saber que você preparou algo para mim e estou com o coração cheio de curiosidade para ler suas palavras! 🥹💜',
+    'Fiquei muito feliz em saber que você preparou algo para mim! Estou com o coração cheio de curiosidade para ler suas palavras. 💙🌹',
     '',
-    'Você poderia dar uma conferidinha e terminar o envio, por gentileza? Eu vou adorar conhecer o que você preparou com tanto carinho. 🥰',
+    'Você poderia dar uma conferidinha e terminar o envio, por gentileza? Vou amar descobrir o que você preparou! 🩵',
     '',
     '🔗 *Aqui tem uma ajudinha para concluir:*',
     url.toString(),
     '',
-    'Muito obrigado pelo carinho, pela lembrança e por dedicar um pedacinho do seu tempo a mim! 💖✨',
+    'Muito obrigado pelo carinho, pela lembrança e pelo seu tempo! 💙🌹',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '> 🩵 Se você tiver qualquer dificuldade para concluir sua cartinha, fale diretamente com o pessoal do EJC. Eles vão te acolher e dar todo o apoio de que precisar! 🌹',
+    supportUrl,
   ].join('\n');
 }
 

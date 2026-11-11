@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createVideoPipeline } from '../lib/videoPipeline.js';
 import { Camera, CircleStop, RotateCcw, Trash2, Video, Settings2, Check } from 'lucide-react';
 
 const FILTERS = [
@@ -42,6 +43,10 @@ const examples = [
 ];
 export default function VideoStudioDemo() {
   const camera = useRef(null);
+  const outputCanvas = useRef(null);
+  const pipeline = useRef(null);
+  const [sticker, setSticker] = useState('none');
+  const [renderMode, setRenderMode] = useState('raw');
   const stream = useRef(null);
   const recorder = useRef(null);
   const chunks = useRef([]);
@@ -62,6 +67,8 @@ export default function VideoStudioDemo() {
   const stopRef = useRef(null);
   const ratio = config.aspectRatio.replace(':', '/');
   useEffect(() => { limit.current = config.maxDurationSeconds; }, [config.maxDurationSeconds]);
+  useEffect(() => { pipeline.current?.setFilter(filter.id); }, [filter]);
+  useEffect(() => { pipeline.current?.setSticker(sticker); }, [sticker]);
   useEffect(() => {
     fetch('/api/admin/video-studio/config', { credentials: 'same-origin' })
       .then(response => { if (!response.ok) throw new Error('Falha ao carregar configuração.'); return response.json(); })
@@ -116,12 +123,25 @@ export default function VideoStudioDemo() {
   useEffect(() => {
     if (!['preview', 'recording'].includes(status) || !camera.current || !stream.current) return;
     camera.current.srcObject = stream.current;
-    camera.current.play().catch(() => {});
+    camera.current.play().then(() => {
+      if (!pipeline.current && outputCanvas.current) {
+        try {
+          pipeline.current = createVideoPipeline({
+            video: camera.current, canvas: outputCanvas.current,
+            aspectRatio: config.aspectRatio, onError: setError,
+          });
+          pipeline.current.setFilter(filter.id);
+          pipeline.current.setSticker(sticker);
+          setRenderMode('gpu');
+        } catch (cause) { setError(cause.message); setRenderMode('raw'); }
+      }
+    }).catch(() => {});
   }, [status]);
   useEffect(() => () => clearInterval(recordingTimer.current), []);
   useEffect(() => () => {
     if (recorder.current?.state === 'recording') recorder.current.stop();
     stream.current?.getTracks().forEach(track => track.stop());
+    pipeline.current?.stop();
   }, []);
   useEffect(() => {
     if (!selected?.blob) { setUrl(''); return; }
@@ -138,6 +158,8 @@ export default function VideoStudioDemo() {
         video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } },
         audio: true,
       });
+      pipeline.current?.stop();
+      pipeline.current = null;
       stream.current = media;
       setStatus('preview');
     } catch (cause) { setError(cause.message); }
@@ -147,7 +169,12 @@ export default function VideoStudioDemo() {
       const mimeType = ['video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm']
         .find(type => MediaRecorder.isTypeSupported(type));
       chunks.current = [];
-      const media = new MediaRecorder(stream.current, mimeType ? { mimeType } : {});
+      const rendered = pipeline.current?.captureStream(24);
+      const source = rendered || stream.current;
+      const audioTracks = stream.current.getAudioTracks();
+      if (rendered) for (const track of audioTracks) source.addTrack(track);
+      setRenderMode(rendered ? 'gpu' : 'raw');
+      const media = new MediaRecorder(source, mimeType ? { mimeType } : {});
       recorder.current = media;
       media.ondataavailable = event => { if (event.data.size) chunks.current.push(event.data); };
       media.onerror = () => setError('Falha na gravação. Tente novamente.');
@@ -157,7 +184,9 @@ export default function VideoStudioDemo() {
           if (!blob.size) throw new Error('O vídeo ficou vazio.');
           const item = {
             id: crypto.randomUUID(), userId: DEMO_USER.id,
-            title: caption.trim() || 'Meu vídeo', filterId: filter.id,
+            title: caption.trim() || 'Meu vídeo', filterId: rendered ? 'natural' : filter.id,
+            originalFilterId: filter.id, sticker, aspectRatio: config.aspectRatio,
+            rendered: Boolean(rendered),
             createdAt: Date.now(), status: 'local-demo', blob,
           };
           await save(item);
@@ -183,6 +212,8 @@ export default function VideoStudioDemo() {
     if (recorder.current?.state === 'recording') recorder.current.stop();
     stream.current?.getTracks().forEach(track => track.stop());
     stream.current = null;
+    pipeline.current?.stop();
+    pipeline.current = null;
     setStatus('saving');
   }
   stopRef.current = stop;
@@ -233,10 +264,12 @@ export default function VideoStudioDemo() {
       <div style={{ position: 'relative', aspectRatio: ratio, overflow: 'hidden', borderRadius: 22,
         background: '#111', width: '100%', isolation: 'isolate' }}>
         <video ref={camera} muted playsInline autoPlay
+          style={{ position: 'absolute', width: 1, height: 1, opacity: 0,
+            pointerEvents: 'none' }} />
+        <canvas ref={outputCanvas} aria-label="Prévia da câmera com efeitos"
           style={{ display: ['preview', 'recording', 'saving'].includes(status) ? 'block' : 'none',
             width: '100%', height: '100%', position: 'absolute', inset: 0,
-            objectFit: 'cover', objectPosition: 'center', transform: 'scaleX(-1)',
-            filter: filter.css }} />
+            objectFit: 'cover' }} />
         {selected && url && <video key={url} src={url} controls playsInline
           style={{ width: '100%', height: '100%', position: 'absolute', inset: 0,
             objectFit: 'cover', objectPosition: 'center',
@@ -280,7 +313,7 @@ export default function VideoStudioDemo() {
       </div>
       {status === 'preview' && <button type="button" className="btn ghost"
         onClick={() => { stream.current?.getTracks().forEach(track => track.stop());
-          stream.current = null; setStatus('idle'); }}>Fechar câmera</button>}
+          stream.current = null; pipeline.current?.stop(); pipeline.current = null; setStatus('idle'); }}>Fechar câmera</button>}
     </div>
     <div style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '12px 2px',
       scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}>
@@ -296,6 +329,23 @@ export default function VideoStudioDemo() {
           {preset.name}</small>
       </button>)}
     </div>
+    <div style={{ display: 'flex', gap: 10, justifyContent: 'center', alignItems: 'center',
+      flexWrap: 'wrap', paddingBottom: 12 }}>
+      <span className="muted small">Stickers no vídeo:</span>
+      {['none', '💙', '🌹', '✨', '💌', '🙏'].map(value =>
+        <button key={value} type="button" onClick={() => setSticker(value)}
+          aria-label={value === 'none' ? 'Sem sticker' : 'Sticker ' + value}
+          aria-pressed={sticker === value}
+          style={{ fontSize: 22, borderRadius: 12, padding: '6px 9px', cursor: 'pointer',
+            background: sticker === value ? '#f2d8e6' : 'transparent',
+            border: sticker === value ? '2px solid #a32952' : '2px solid transparent' }}>
+          {value === 'none' ? '✕' : value}
+        </button>)}
+    </div>
+    <p className="muted small" style={{ textAlign: 'center' }}>
+      {renderMode === 'gpu' ? 'Efeitos e stickers incorporados ao vídeo gravado' :
+        'Canvas não disponível: gravação original sem efeitos'}
+    </p>
     <label htmlFor="video-demo-caption">Título da gravação</label>
     <input id="video-demo-caption" maxLength={120} value={caption}
       onChange={event => setCaption(event.target.value)} placeholder="Uma lembrança especial 💙"/>
@@ -332,7 +382,7 @@ export default function VideoStudioDemo() {
       </div>)}
     </div>
     <p className="muted small">Upload limitado a 20 MB por vídeo; vídeos remotos exigem login admin.
-      Para arquivos maiores será necessário upload multipart. Nesta fase, filtros são prévias CSS. A gravação original é preservada
+      Para arquivos maiores será necessário upload multipart. Filtros e stickers são gravados no vídeo quando Canvas Capture está disponível. O arquivo é preservado
       no IndexedDB; renderização FFmpeg ainda não está conectada.</p>
   </section>;
 }

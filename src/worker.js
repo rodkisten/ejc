@@ -2580,6 +2580,15 @@ export default {
         if(isShortPreviewBot(request))return shortLinkPreview(
           env,request,resolved.destination,resolved.kind,url.origin+path
         );
+        // Per-link analytics: no IP, user agent, recipient, or private URL stored.
+        // HEAD requests and social-preview crawlers are deliberately excluded.
+        if(request.method==='GET')try{
+          await env.DB.prepare(
+            'INSERT INTO short_link_visits(code,day,visits,last_visited_at) VALUES(?,?,1,?) '+
+            'ON CONFLICT(code,day) DO UPDATE SET visits=visits+1,last_visited_at=excluded.last_visited_at'
+          ).bind(shortCode[1],new Date().toISOString().slice(0,10),
+            Math.floor(Date.now()/1000)).run();
+        }catch(error){console.warn('Short-link visit tracking unavailable',error?.message);}
         if(request.method==='GET')try{
           await env.DB.prepare(
             'INSERT INTO help_link_counts(day,campaign,clicks) VALUES(?,?,1) '+

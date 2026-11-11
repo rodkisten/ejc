@@ -515,6 +515,16 @@ export default function Order() {
               <span>Para <strong>{order.recipient_name}</strong></span>
             </div>
             <h1>Uma cartinha para <em>{order.recipient_name}.</em></h1>
+            {!letterPlainText(html) &&
+              ((order.media || []).some(asset => asset.kind === 'image') ||
+                assets.some(asset => asset.kind === 'image')) && (
+                <div className="notice success" role="status">
+                  📸 <strong>Suas fotos anteriores já estão aqui!</strong>
+                  {' '}Elas aparecem logo abaixo e serão mantidas enquanto você escreve a mensagem.
+                  As fotos salvas no servidor não precisam ser enviadas novamente.
+                  Se alguma veio de uma cópia local, toque em <strong>Salvar rascunho</strong> para enviá-la.
+                </div>
+              )}
             <p className="muted">Escreva, decore e escolha suas fotos ou áudios, do mesmo jeitinho de quando criou a cartinha.</p>
             <LetterComposerFields
               sender={sender}

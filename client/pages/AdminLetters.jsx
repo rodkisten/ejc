@@ -3,7 +3,7 @@ import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { CheckCheck, Eye, EyeOff, LockKeyhole, RefreshCw, Search, ShieldCheck, Sparkles } from 'lucide-react';
 import { api, track } from '../lib/api';
 import { readyLetterWhatsAppMessage } from '../lib/helpLink.js';
-import { readAdminListFilters, updateAdminListFilter, isReadyForSending } from '../lib/adminListFilters.js';
+import { readAdminListFilters, updateAdminListFilter, isReadyForSending, needsTextCompletion } from '../lib/adminListFilters.js';
 import { publishDraftOg } from '../lib/draftOg.js';
 import { createSecureSupportContext } from '../lib/secureSupport.js';
 import { whatsappShareUrl, normalizeBrazilianWhatsApp } from '../lib/recipientWhatsApp.js';
@@ -19,7 +19,7 @@ import { THEMES } from '../../shared/letter.js';
 
 const paid = (status) => ['paid', 'preparing', 'delivered'].includes(status);
 const LETTER_FILTERS = ['all', 'pending', 'paid', 'ready', 'sent', 'recovered',
-  'ready-notify', 'draft', 'paid-draft', 'empty-paid-draft', 'attachments-no-text'];
+  'ready-notify', 'draft', 'paid-draft', 'empty-paid-draft', 'attachments-no-text', 'needs-completion'];
 function createdAt(value) {
   const raw = String(value || '').trim().replace(' ', 'T');
   const normalized = /(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(raw) ? raw : raw + 'Z';
@@ -31,7 +31,9 @@ function createdAt(value) {
 function statusText(letter) {
   if (letter.gift) return '💛 Presente do Mini Mercado · enviada';
   if (letter.status === 'cancelled') return 'Pedido cancelado';
-  if (paid(letter.status)) return letter.submitted ? 'Pago · enviada' : 'Pago · rascunho';
+  if (paid(letter.status)) return letter.submitted
+    ? (!letter.has_text && letter.has_media ? 'Pago · enviada só com anexos' : 'Pago · enviada')
+    : 'Pago · rascunho';
   return letter.submitted ? 'Pix pendente · enviada' : 'Pix pendente · rascunho';
 }
 
@@ -91,7 +93,7 @@ function ResumeDraftLink({ letter, onUpdated }) {
   );
   const [contactPhone, setContactPhone] = useState(fromUrl.phone || '');
   const contactNumber = normalizeBrazilianWhatsApp(contactPhone);
-  const shareText = recovery && validContactName(contactName)
+  const buildShareText = (access) => validContactName(contactName)
     ? [
       '💌 *Oi, ' + contactName.trim().split(/\s+/)[0] + '! Precisamos conferir sua cartinha.*',
       '',
@@ -102,9 +104,12 @@ function ResumeDraftLink({ letter, onUpdated }) {
             ? 'recebemos as fotos ou os áudios, mas o texto da mensagem não apareceu no servidor.'
             : 'o texto da mensagem ainda não apareceu no servidor.'),
       'Seu pagamento continua confirmado e você *não precisa pagar novamente*. 💛',
+      letter.has_media && !letter.has_text
+        ? '📸 *Suas fotos e seus áudios já enviados estão guardados na cartinha.* Eles aparecerão no editor ao abrir o link. Não precisa anexá-los novamente!'
+        : '',
       '',
       '🔐 *Seu link privado para recuperar e finalizar:*',
-      recovery.resume_url,
+      access.resume_url,
       '',
       letter.has_text
         ? '📝 Abra o link, confira seu texto, toque em *Salvar rascunho* se editar e depois em *Finalizar e enviar cartinha*.'
@@ -116,17 +121,23 @@ function ResumeDraftLink({ letter, onUpdated }) {
       '',
       'Guarde este link pessoal e não o encaminhe a outras pessoas.',
       '📋 Referência: ' + letter.id,
-      '🆘 Se precisar, responda aqui ou fale com a equipe: ' + recovery.help_url,
+      '🆘 Se precisar, responda aqui ou fale com a equipe: ' + access.help_url,
       '',
       'Com carinho, equipe do Mini Mercado do XX EJC Simonésia. 💗',
     ].join('\n')
     : '';
+  const shareText = recovery ? buildShareText(recovery) : '';
 
-  async function createLink() {
+  async function createLink(openWhatsApp = false) {
+    if (openWhatsApp && !validContactName(contactName)) {
+      setError('Informe o nome de quem enviou a cartinha para preparar a mensagem.');
+      return;
+    }
     if (letter.submitted && !window.confirm(
       'Esta cartinha já foi enviada sem texto. Reabrir como rascunho para o remetente corrigir? ' +
       'Ela ficará temporariamente pendente no mural, mas fotos, áudios e pagamento serão preservados.'
     )) return;
+    const popup = openWhatsApp ? prepareWhatsAppPopup('Preparando mensagem para concluir…') : null;
     setBusy(true);
     setError('');
     setCopied(false);
@@ -157,10 +168,20 @@ function ResumeDraftLink({ letter, onUpdated }) {
       const short=await api('/api/admin/links/shorten',{
         method:'POST',data:{url:tracked.toString(),kind:'draft'}
       });
-      setRecovery({...response,resume_url:short.url,help_url:help.link});
+      const nextRecovery={...response,resume_url:short.url,help_url:help.link};
+      setRecovery(nextRecovery);
       if (letter.submitted) await onUpdated?.();
+      if (openWhatsApp) {
+        const message=buildShareText(nextRecovery);
+        const url=contactNumber
+          ? whatsappShareUrl({phone:contactNumber,message})
+          : 'https://api.whatsapp.com/send?text='+encodeURIComponent(message);
+        navigateToWhatsApp(url,popup);
+        track('admin_draft_recovery_whatsapp_opened',{stage:'recovery'});
+      }
       if(ogWarning)setError(ogWarning);
     } catch (cause) {
+      closeWhatsAppPopup(popup);
       setError(cause.message || 'Não foi possível criar o link.');
     } finally {
       setBusy(false);
@@ -181,7 +202,7 @@ function ResumeDraftLink({ letter, onUpdated }) {
   }
 
   return (
-    <div className="admin-draft-recovery">
+    <div className="admin-draft-recovery" id={'retomar-'+letter.id}>
       <p><strong>{letter.has_text ? '💌 Texto salvo, mas envio ainda pendente.'
         : letter.has_media ? '⚠️ Anexos recebidos, mas sem texto.'
           : '⚠️ Texto não encontrado no servidor.'}</strong>
@@ -189,6 +210,10 @@ function ResumeDraftLink({ letter, onUpdated }) {
           ? 'A cartinha já foi enviada. A equipe pode reabri-la para o remetente conferir o texto.'
           : 'O pagamento foi confirmado, mas a cartinha continua como rascunho.'}
         {' '}O link privado permitirá revisar e finalizar a cartinha.</p>
+      {!letter.has_text && letter.has_media && <p className="notice success">
+        📸 As fotos e os áudios já salvos serão carregados no editor automaticamente.
+        A pessoa só precisa acrescentar as palavras e finalizar. Não é necessário reenviar os arquivos.
+      </p>}
       {!validContactName(contactName) && <div className="field">
         <label htmlFor={'draft-contact-'+letter.id}>Como se chama a pessoa que entrou em contato?</label>
         <input id={'draft-contact-'+letter.id} value={contactName} maxLength={100}
@@ -203,8 +228,12 @@ function ResumeDraftLink({ letter, onUpdated }) {
           onChange={event => setContactPhone(event.target.value)}/>
         <small>Preenche automaticamente o WhatsApp quando você abrir a conversa. Não é o telefone do encontrista.</small>
       </div>
+      <button type="button" className="btn" disabled={busy || !validContactName(contactName)}
+        onClick={() => createLink(true)}>
+        📲 {busy ? 'Preparando mensagem…' : 'Enviar mensagem para concluir'}
+      </button>
       {!recovery ? (
-        <button type="button" className="btn outline" disabled={busy} onClick={createLink}>
+        <button type="button" className="btn outline" disabled={busy} onClick={() => createLink(false)}>
           <LockKeyhole size={16} /> {busy ? 'Criando link…' : letter.submitted
             ? 'Reabrir rascunho e gerar link para ' + recipient
             : 'Gerar link de recuperação para ' + recipient}
@@ -230,7 +259,7 @@ function ResumeDraftLink({ letter, onUpdated }) {
               📲 {contactNumber ? 'Enviar WhatsApp para ' + contactName.split(' ')[0]
                 : 'Escolher contato no WhatsApp'}
             </a>}
-            <button type="button" className="btn ghost" onClick={createLink} disabled={busy}>
+            <button type="button" className="btn ghost" onClick={() => createLink(false)} disabled={busy}>
               <RefreshCw size={15} /> Renovar validade
             </button>
           </div>
@@ -442,7 +471,8 @@ export default function AdminLetters() {
     if (filter === 'ready' && !isReadyForSending(letter)) return false;
     if (filter === 'draft' && letter.submitted) return false;
     if (filter === 'paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift)) return false;
-    if (filter === 'empty-paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift || letter.has_content)) return false;
+    if (filter === 'empty-paid-draft' && (!paid(letter.status) || letter.submitted || letter.gift || letter.has_text)) return false;
+    if (filter === 'needs-completion' && !needsTextCompletion(letter)) return false;
     if (filter === 'attachments-no-text' && (!paid(letter.status) || letter.gift || !letter.has_media || letter.has_text)) return false;
     if (filter === 'sent' && !letter.submitted) return false;
     if (filter === 'recovered' && !letter.recovered_at) return false;
@@ -593,7 +623,8 @@ export default function AdminLetters() {
           <option value="ready-notify">📲 Recuperadas prontas para avisar</option>
           <option value="draft">Rascunhos</option>
           <option value="paid-draft">Pagos que ainda são rascunhos</option>
-          <option value="empty-paid-draft">Pagos sem conteúdo salvo</option>
+          <option value="empty-paid-draft">Rascunhos pagos sem texto (inclusive fotos)</option>
+          <option value="needs-completion">📲 Precisam concluir o texto</option>
           <option value="attachments-no-text">⚠️ Fotos ou áudio sem texto</option>
         </select>
         <strong aria-live="polite">{rows.length} cartinha(s)</strong>
@@ -645,6 +676,9 @@ export default function AdminLetters() {
                   recipient_slug:letter.recipient_slug, order_id:letter.id,
                   contact_name:validContactName(letter.sender_name)?letter.sender_name:''
                 }}}>💬 Responder</Link>
+                {needsTextCompletion(letter) && letter.has_media && (
+                  <a className="btn outline" href={'#retomar-'+letter.id}>📸 Pedir para concluir</a>
+                )}
                 <button type="button" className="btn outline" aria-expanded={!!expanded[letter.id]}
                   onClick={() => setExpanded((previous) => ({
                     ...previous, [letter.id]: !previous[letter.id],

@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  readAdminListFilters, updateAdminListFilter, isReadyForSending, matchesSupportOrder,
+  readAdminListFilters, updateAdminListFilter, isReadyForSending,
+  needsTextCompletion, matchesSupportOrder,
 } from '../client/lib/adminListFilters.js';
 
 test('shareable list filters preserve existing encrypted support context and URL history state', () => {
@@ -39,4 +40,25 @@ test('support search filters by sender, recipient and order ID without accents',
   assert.equal(matchesSupportOrder(empty,'','empty-paid-draft'),true);
   assert.equal(matchesSupportOrder(empty,'','paid-draft'),true);
   assert.equal(matchesSupportOrder({...ready,gift:true},'','all'),false);
+});
+
+test('cartinhas pagas apenas com fotos continuam visíveis para pedir conclusão do texto', () => {
+  const photoOnly = {
+    id:'EJC-123456789ABE',recipient_name:'Ana',sender_name:'Pessoa amiga',
+    recipient_slug:'ana',status:'paid',submitted:false,gift:false,
+    has_content:true,has_text:false,has_media:true,
+  };
+  assert.equal(needsTextCompletion(photoOnly),true);
+  assert.equal(matchesSupportOrder(photoOnly,'','empty-paid-draft'),true,
+    'o filtro sem texto inclui fotos já enviadas');
+  assert.equal(matchesSupportOrder(photoOnly,'','needs-completion'),true);
+
+  const submittedPhotos = {...photoOnly,submitted:true};
+  assert.equal(needsTextCompletion(submittedPhotos),true);
+  assert.equal(matchesSupportOrder(submittedPhotos,'','needs-completion'),true,
+    'cartinhas enviadas só com fotos também podem ser reabertas');
+  assert.equal(matchesSupportOrder(submittedPhotos,'','empty-paid-draft'),false);
+  assert.equal(needsTextCompletion({...photoOnly,has_text:true}),false);
+  assert.equal(needsTextCompletion({...photoOnly,status:'pending'}),false);
+  assert.equal(needsTextCompletion({...photoOnly,gift:true}),false);
 });

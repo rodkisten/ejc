@@ -519,10 +519,15 @@ export default function Order() {
               ((order.media || []).some(asset => asset.kind === 'image') ||
                 assets.some(asset => asset.kind === 'image')) && (
                 <div className="notice success" role="status">
-                  📸 <strong>Suas fotos anteriores já estão aqui!</strong>
-                  {' '}Elas aparecem logo abaixo e serão mantidas enquanto você escreve a mensagem.
-                  As fotos salvas no servidor não precisam ser enviadas novamente.
-                  Se alguma veio de uma cópia local, toque em <strong>Salvar rascunho</strong> para enviá-la.
+                  <span style={{ minWidth: 0 }}>
+                    <strong>📸 Suas fotos continuam aqui!</strong>
+                    {' '}Elas aparecem na seção de fotos, prontas para acompanhar sua mensagem.
+                    Não precisa enviá-las novamente.
+                    {assets.some(asset => asset.kind === 'image') && (
+                      <> Se alguma foto ainda estiver apenas neste aparelho,
+                        toque em <strong>Salvar rascunho</strong> para enviá-la.</>
+                    )}
+                  </span>
                 </div>
               )}
             <p className="muted">Escreva, decore e escolha suas fotos ou áudios, do mesmo jeitinho de quando criou a cartinha.</p>

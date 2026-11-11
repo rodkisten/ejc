@@ -1390,6 +1390,29 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
   await requireAdmin(req,env);
   if(path==='/api/admin/me')return result({authenticated:true});
+
+  if(path==='/api/admin/video-studio/config'){
+    const key='video_studio_config';
+    if(req.method==='GET'){
+      const record=await env.DB.prepare('SELECT value FROM settings WHERE key=?').bind(key).first();
+      let saved={};
+      try{saved=JSON.parse(record?.value||'{}');}catch{}
+      return result({config:{maxDurationSeconds:Math.min(180,Math.max(5,Number(saved.maxDurationSeconds)||30)),
+        aspectRatio:['9:16','1:1','4:5'].includes(saved.aspectRatio)?saved.aspectRatio:'9:16'}});
+    }
+    if(req.method==='PUT'){
+      const body=await req.json();
+      const maxDurationSeconds=Number(body.maxDurationSeconds);
+      if(!Number.isInteger(maxDurationSeconds)||maxDurationSeconds<5||maxDurationSeconds>180)
+        bad('Duração deve ser de 5 a 180 segundos.',400);
+      if(!['9:16','1:1','4:5'].includes(body.aspectRatio))bad('Formato inválido.',400);
+      const config={maxDurationSeconds,aspectRatio:body.aspectRatio};
+      await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+        .bind(key,JSON.stringify(config)).run();
+      return result({config});
+    }
+  }
+
   // Laboratório isolado: objetos de vídeo nunca são anexados a pedidos reais.
   if(path==='/api/admin/video-demo' && req.method==='GET'){
     const listing=await env.MEDIA.list({prefix:'video-demo/ejc-video-demo/',limit:100});

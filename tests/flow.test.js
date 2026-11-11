@@ -2294,7 +2294,7 @@ test('encontrista pode pedir conclusão por link curto, com prévia OG e sem rev
   assert.equal(helpPreview.status,200);
   const helpMeta=await helpPreview.text();
   assert.match(helpMeta,/Preciso de ajuda com a sua cartinha pra mim/);
-  assert.match(helpMeta,/og-cartinha-incompleta\\.png/);
+  assert.match(helpMeta,/og-cartinha-incompleta\.png/);
   assert.equal(
     helpMeta.match(/<meta property="og:image" content="([^"]+)"/)?.[1],
     html.match(/<meta property="og:image" content="([^"]+)"/)?.[1],

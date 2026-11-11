@@ -5,6 +5,10 @@ import { api, track } from '../lib/api';
 import { saveAllCards } from '../components/LetterCard';
 import { openSecureSupport } from '../lib/secureSupport.js';
 import { muralTokenFromUrl, normalizeMuralUrl } from '../lib/muralAccess.js';
+import { pendingLetterWhatsAppUrl } from '../lib/pendingLetterShare.js';
+import {
+  prepareWhatsAppPopup, navigateToWhatsApp, closeWhatsAppPopup,
+} from '../lib/whatsappNavigation.js';
 
 export default function Mural() {
   const { slug } = useParams();
@@ -80,6 +84,28 @@ export default function Mural() {
     }
   }
 
+  async function requestCompletion(id) {
+    // The popup has to open directly on the user's tap, before the API call,
+    // otherwise Safari and Chrome on iOS may block the WhatsApp handoff.
+    const popup = prepareWhatsAppPopup('Preparando uma mensagem carinhosa… 💌');
+    try {
+      const grant = muralToken();
+      if (!grant) throw new Error('Abra seu mural pelo link privado antes de enviar o recado.');
+      const response = await api(
+        '/api/mural/' + encodeURIComponent(slug) + '/cards/' +
+          encodeURIComponent(id) + '/request-completion',
+        { method: 'POST', data: {}, token: grant },
+      );
+      const url = pendingLetterWhatsAppUrl(response.url);
+      navigateToWhatsApp(url, popup);
+      track('recipient_request_letter_completion', { stage: 'unfinished_letter' });
+      return response.url;
+    } catch (cause) {
+      closeWhatsAppPopup(popup);
+      throw cause;
+    }
+  }
+
   const openHelp=async(id)=>{
     try{
       const grant=muralToken();
@@ -96,6 +122,6 @@ export default function Mural() {
   return (
     <MuralGallery data={data} opened={opened} openBusy={openBusy} error={error} busy={busy}
       onOpenLetter={openLetter} onDownloadAll={downloadAll} onRefresh={load}
-      onSupportClick={openHelp} />
+      onSupportClick={openHelp} onRequestCompletion={requestCompletion} />
   );
 }

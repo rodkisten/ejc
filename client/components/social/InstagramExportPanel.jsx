@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, Image as ImageIcon, Instagram, MessageCircle, Smartphone } from 'lucide-react';
+import { Download, Instagram, MessageCircle, Smartphone } from 'lucide-react';
 import { IMAGE_FORMATS, renderLetterImages, letterFileName } from '../../lib/letterExport.js';
 import { download } from '../../lib/api.js';
 

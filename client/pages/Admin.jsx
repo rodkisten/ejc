@@ -408,7 +408,7 @@ function People({info,reload}){const [names,setNames]=useState(''),[notice,setNo
     <RecipientPhoneBulkImport recipients={info.recipients} onRefresh={reload} />
     <section className="form-card">
       <h2>Imagens para redes sociais</h2>
-      <p className="muted small">Atualize a arte da home e as prévias individuais (nome e foto). O WhatsApp e o Telegram receberão PNGs com dimensões reais.</p>
+      <p className="muted small">Atualize a arte da home e as prévias individuais (nome e foto). O WhatsApp e outras redes sociais receberão PNGs com dimensões reais.</p>
       <button className="btn ghost" disabled={!!ogProgress} onClick={makeHomeOg}>
         <ImagePlus size={16}/> Publicar nova OG da home
       </button>

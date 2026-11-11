@@ -94,9 +94,29 @@ export function createVideoPipeline({video,canvas,aspectRatio='9:16',onError}){
   const cover=(source,target)=>{
     const vw=video.videoWidth,vh=video.videoHeight;
     if(!vw||!vh)return;
-    const scale=Math.max(width/vw,height/vh);
-    const sw=width/scale,sh=height/scale;
-    target.drawImage(source,(vw-sw)/2,(vh-sh)/2,sw,sh,0,0,width,height);
+    const sourceRatio=vw/vh;
+    const targetRatio=width/height;
+    // iOS may return a landscape camera track despite portrait constraints.
+    // Cropping that track to 9:16 cuts away most of the face: use contain instead.
+    const needsContain=sourceRatio>targetRatio*1.12 || sourceRatio<targetRatio/1.12;
+    target.save();
+    target.clearRect(0,0,width,height);
+    if(needsContain){
+      // Blurred edge-to-edge backdrop keeps the exported Story exactly 9:16.
+      const coverScale=Math.max(width/vw,height/vh);
+      const bw=vw*coverScale,bh=vh*coverScale;
+      target.filter='blur(22px) brightness(.6)';
+      target.drawImage(source,(width-bw)/2,(height-bh)/2,bw,bh);
+      target.filter='none';
+      const fitScale=Math.min(width/vw,height/vh);
+      const fw=vw*fitScale,fh=vh*fitScale;
+      target.drawImage(source,(width-fw)/2,(height-fh)/2,fw,fh);
+    }else{
+      const scale=Math.max(width/vw,height/vh);
+      const sw=width/scale,sh=height/scale;
+      target.drawImage(source,(vw-sw)/2,(vh-sh)/2,sw,sh,0,0,width,height);
+    }
+    target.restore();
   };
   const frameDraw=()=>{
     if(!running)return;

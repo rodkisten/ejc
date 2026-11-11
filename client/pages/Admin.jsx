@@ -27,7 +27,8 @@ function AdminDashboard({ info, reload }) {
   const paid = new Set(info.orders.filter((order) => ['paid', 'preparing', 'delivered'].includes(order.status))
     .map(order => order.checkout_id || order.id));
   const sent = info.orders.filter((order) => order.submitted);
-  const opened = info.orders.filter(order => order.opened && order.submitted);
+  const openedCount = Number(info.read_summary?.opened ??
+    info.orders.filter(order => order.opened && order.submitted).length);
   return (
     <>
       <div className="section-head">
@@ -42,7 +43,7 @@ function AdminDashboard({ info, reload }) {
         <div><span>Pix a conferir</span><strong>{pending.size}</strong></div>
         <div><span>Pagamentos confirmados</span><strong>{paid.size}</strong></div>
         <div><span>Cartinhas enviadas</span><strong>{sent.length}</strong></div>
-        <div><span>📖 Cartinhas abertas</span><strong>{opened.length}</strong>
+        <div><span>📖 Cartinhas abertas</span><strong>{openedCount}</strong>
           <small>Primeiras leituras · <NavLink to="/admin/estatisticas">Estatísticas completas</NavLink></small>
         </div>
         <div><span>Total de pedidos</span><strong>{info.orders.length}</strong></div>

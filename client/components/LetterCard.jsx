@@ -49,14 +49,14 @@ export function LetterCard({ letter, recipient, actions = true, editable = false
             </button>
             <button type="button" className="btn"
               disabled={!!busy} onClick={() => runExport('share')}>
-              <Share2 size={16} /> Telegram / Compartilhar
+              <Share2 size={16} /> WhatsApp / Compartilhar
             </button>
             <button type="button" className="btn outline"
               disabled={!!busy} onClick={() => runExport('zip')}>
               <FileArchive size={16} /> ZIP com anexos
             </button>
           </div>
-          <p className="muted small">No iPhone, selecione o Telegram, WhatsApp ou outro app na folha de compartilhamento. O link privado do mural não é compartilhado.</p>
+          <p className="muted small">No iPhone, selecione WhatsApp ou outro aplicativo na folha de compartilhamento. O link privado do mural não é compartilhado.</p>
           {busy && <p className="muted small" role="status">Preparando sua cartinha...</p>}
           {error && <p className="notice error" role="alert">{error}</p>}
           <InstagramExportPanel letter={letter} recipient={recipient} />

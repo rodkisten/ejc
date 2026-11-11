@@ -1,13 +1,13 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Download, LockKeyhole, Sparkles, MailOpen, LoaderCircle, LifeBuoy } from 'lucide-react';
+import { Download, LockKeyhole, Sparkles, MailOpen, LoaderCircle, LifeBuoy, BookOpenCheck } from 'lucide-react';
 import { LetterCard } from './LetterCard';
 import UnfinishedLetterNotice from './UnfinishedLetterNotice';
 
 // Shared recipient layout: the user portal and the technical preview render the same UI.
 export default function MuralGallery({ data, opened = {}, openBusy = '', error = '', busy = false,
   onOpenLetter, onDownloadAll, onRefresh,
-  onSupportClick, onRequestCompletion, technical = false, technicalAll = true }) {
+  onSupportClick, onRequestCompletion, restoreErrors = {}, technical = false, technicalAll = true }) {
   const openLetter = onOpenLetter;
   const downloadAll = onDownloadAll;
   const availableToDownload = (data?.cards || []).some(
@@ -78,12 +78,22 @@ export default function MuralGallery({ data, opened = {}, openBusy = '', error =
                             </div>
                           </div>}
                       </>
+                    ) : !technical && envelope.already_opened && !restoreErrors[envelope.id] ? (
+                      <div className="mural-envelope-button" role="status" aria-live="polite">
+                        <LoaderCircle size={28} className="ejc-stat-spin" />
+                        <strong>Reabrindo a cartinha que você já leu… ♡</strong>
+                        <span>O carinho continua aqui. Estamos recuperando sua cartinha.</span>
+                      </div>
                     ) : (
                       <button type="button" className="mural-envelope-button"
                         disabled={!!openBusy} onClick={() => openLetter(envelope.id)}>
-                        {openBusy === envelope.id ? <LoaderCircle size={28} /> : <MailOpen size={31} />}
-                        <strong>Uma cartinha só para você ♡</strong>
-                        <span>Homenagem {index + 1} · Toque para abrir e ler</span>
+                        {openBusy === envelope.id ? <LoaderCircle size={28} /> :
+                          envelope.already_opened ? <BookOpenCheck size={31} /> : <MailOpen size={31} />}
+                        <strong>{envelope.already_opened ? 'Sua cartinha já foi aberta ♡' :
+                          'Uma cartinha só para você ♡'}</strong>
+                        <span>{restoreErrors[envelope.id] ?
+                          'Não conseguimos restaurá-la automaticamente. Toque para tentar novamente.' :
+                          'Homenagem ' + (index + 1) + ' · Toque para abrir e ler'}</span>
                       </button>
                     )}
                   </div>

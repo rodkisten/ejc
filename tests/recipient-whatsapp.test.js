@@ -42,3 +42,20 @@ test('no contact numbers or signed mural tokens are baked into public pages',()=
   assert.match(worker,/address\.hash='token='/);
   assert.match(worker,/ready_letter_count/);
 });
+
+test('o convite informa leituras imediatamente depois do link, sem expor conteúdo',()=>{
+  const url='https://ejc.migos.club/s/AbCdEf1234-_GH';
+  const partiallyOpened=muralInvitationMessage({
+    name:'Ana Julia',url,count:3,openedCount:2,
+  });
+  const start=partiallyOpened.indexOf(url)+url.length;
+  assert.ok(start>=url.length);
+  assert.match(partiallyOpened.slice(start,start+100),/^\n📖 \*Leitura:\* 2 de 3 cartinhas já foram abertas/);
+  assert.match(muralInvitationMessage({name:'Ana',url,count:1,openedCount:1}),
+    /📖 \*Leitura:\* a cartinha já foi aberta!/);
+  assert.match(muralInvitationMessage({name:'Ana',url,count:4,openedCount:4}),
+    /📖 \*Leitura:\* todas as 4 cartinhas já foram abertas!/);
+  assert.match(muralInvitationMessage({name:'Ana',url,count:1,openedCount:0}),
+    /💌 \*Leitura:\* nenhuma cartinha aberta/);
+  assert.doesNotMatch(partiallyOpened,/first_read_at|EJC-[A-F0-9]{12}/);
+});

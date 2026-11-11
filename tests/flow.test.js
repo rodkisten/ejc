@@ -2334,3 +2334,66 @@ test('encontrista pode pedir conclusão por link curto, com prévia OG e sem rev
   assert.equal((await call(env,endpoint,'POST',{}, {token:grant})).status,409,
     'não pedir conclusão de uma cartinha já concluída');
 });
+
+test('cartinha aberta permanece identificada ao retornar ao mural e aparece na estatística e convite',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const person=list[0];
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:person.slug,sender_name:'Remetente privado',
+  });
+  const id=created.data.id, token=created.data.token;
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Seu carinho está aqui.</p>',
+  },{token})).status,200);
+  assert.equal((await call(env,'/api/admin/orders/'+id+'/status','PATCH',{
+    status:'paid',bank_reference:'READTRACKING2026',
+    bank_checked:true,amount_checked:true,
+  },admin)).status,200);
+  assert.equal((await call(env,'/api/order/submit','POST',{}, {token})).status,200);
+
+  await call(env,'/api/admin/mural-codes/generate','POST',{regenerate:false},admin);
+  await call(env,'/api/admin/settings','PUT',{release_at:'2020-11-08T16:00'},admin);
+  const code=(await call(env,'/api/admin/bootstrap','GET',undefined,admin))
+    .data.recipients.find(row=>row.id===person.id).mural_code;
+  const grant=(await call(env,'/api/mural/redeem','POST',{code})).data.grant;
+  const listUrl='/api/mural/'+person.slug;
+  const cardUrl=listUrl+'/cards/'+id;
+
+  const before=await call(env,listUrl,'GET',undefined,{token:grant});
+  assert.equal(before.status,200);
+  assert.equal(before.data.cards.length,1);
+  assert.equal(before.data.cards[0].already_opened,false);
+
+  const first=await call(env,cardUrl,'GET',undefined,{token:grant});
+  assert.equal(first.status,200);
+  assert.match(first.data.card.rich_html,/Seu carinho/);
+
+  // Opening the mural again must preserve the opened state without making
+  // the user tap the letter again. The client hydrates such cards on load.
+  const revisited=await call(env,listUrl,'GET',undefined,{token:grant});
+  assert.equal(revisited.status,200);
+  assert.equal(revisited.data.cards[0].already_opened,true);
+  assert.equal('rich_html' in revisited.data.cards[0],false,
+    'o resumo privado não revela o conteúdo da carta');
+  const second=await call(env,cardUrl,'GET',undefined,{token:grant});
+  assert.equal(second.status,200);
+
+  const report=await call(env,'/api/admin/statistics','GET',undefined,admin);
+  assert.equal(report.status,200);
+  assert.equal(report.data.letters.read_count,1,'leituras são únicas por cartinha');
+  const bootstrap=await call(env,'/api/admin/bootstrap','GET',undefined,admin);
+  const listed=bootstrap.data.orders.find(order=>order.id===id);
+  assert.equal(listed.opened,1);
+  assert.ok(listed.first_read_at);
+  assert.equal(bootstrap.data.recipients.find(row=>row.id===person.id).opened_letter_count,1);
+
+  // The private invited user receives just a count and no letter body.
+  await env.DB.prepare('UPDATE recipients SET mural_og_key=?,whatsapp_phone=? WHERE id=?')
+    .bind('og/mural/v1/test/read.png','5532999662604',person.id).run();
+  const invite=await call(env,
+    '/api/admin/recipients/'+person.id+'/whatsapp-link','POST',{},admin);
+  assert.equal(invite.status,200);
+  assert.equal(invite.data.count,1);
+  assert.equal(invite.data.opened_count,1);
+  assert.ok(!JSON.stringify(invite.data).includes('Seu carinho está aqui.'));
+});

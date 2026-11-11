@@ -8,9 +8,16 @@ export function normalizeBrazilianWhatsApp(value) {
   return /^55[1-9][0-9][0-9]{8,9}$/.test(canonical)?canonical:'';
 }
 
-export function muralInvitationMessage({ name, url, count=1, ids=[], supportUrl='' }) {
+export function muralInvitationMessage({ name, url, count=1, openedCount=0, ids=[], supportUrl='' }) {
   const first=String(name||'').trim().split(/\s+/)[0]||'encontrista';
   const amount=Number(count)||1;
+  const opened=Math.max(0,Math.min(amount,Number(openedCount)||0));
+  const openedStatus=opened===0
+    ? '💌 *Leitura:* nenhuma cartinha aberta até agora.'
+    : opened===amount
+      ? amount===1 ? '📖 *Leitura:* a cartinha já foi aberta! 💙'
+        : '📖 *Leitura:* todas as '+amount+' cartinhas já foram abertas! 💙'
+      : '📖 *Leitura:* '+opened+' de '+amount+' cartinhas já foram abertas. 💙';
   return [
     '💌✨ *'+first+', seu coração tem correspondência!*',
     '',
@@ -26,6 +33,7 @@ export function muralInvitationMessage({ name, url, count=1, ids=[], supportUrl=
     '',
     '🔐 *Seu acesso pessoal ao mural:*',
     url,
+    openedStatus,
     '',
     '_Este link é só seu, válido por 14 dias. Guarde com carinho e não compartilhe._',
     '_Se ainda aparecer fechado, ele abrirá no horário de liberação do Encontro._',

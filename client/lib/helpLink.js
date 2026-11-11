@@ -47,7 +47,9 @@ export function completedLetterHelpLink({sender='',items=[],origin='https://ejc.
   return url.toString();
 }
 
-export function readyLetterWhatsAppMessage({recipient_name,order_id,url,released=true,support_url=''}){
+export function readyLetterWhatsAppMessage({
+  recipient_name,order_id,url,released=true,support_url='',already_opened=false
+}){
   const first=String(recipient_name||'encontrista').trim().split(/\s+/)[0];
   return [
     '💌✨ *'+first+', sua cartinha ficou prontinha!*',
@@ -55,7 +57,11 @@ export function readyLetterWhatsAppMessage({recipient_name,order_id,url,released
     'Que alegria! A homenagem que estava sendo finalizada já foi preparada com muito carinho pela equipe do Mini Mercado do XX EJC Simonésia. 💖',
     released?'🔐 *Abra seu mural secreto para ver a surpresa:*':
       '🔐 *Guarde o acesso ao seu mural! Ele estará disponível no horário de liberação:*',
-    url,'',
+    url,
+    already_opened
+      ? '📖 *Leitura:* esta cartinha já foi aberta! 💙'
+      : '💌 *Leitura:* esta cartinha ainda não foi aberta.',
+    '',
     '🌹 Que Deus abençoe sua caminhada e que você persevere sempre na fé! *Filipenses 1,6*',
     '',
     '_Com carinho, equipe do Mini Mercado · XX EJC Simonésia_',

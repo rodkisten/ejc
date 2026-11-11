@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import MuralGallery from '../components/MuralGallery';
 import { api, track } from '../lib/api';
@@ -14,6 +14,8 @@ export default function Mural() {
   const { slug } = useParams();
   const [data, setData] = useState(null);
   const [opened, setOpened] = useState({});
+  const [restoreErrors, setRestoreErrors] = useState({});
+  const restoringRef = useRef(new Set());
   const [openBusy, setOpenBusy] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -38,6 +40,45 @@ export default function Mural() {
     load();
   }, [load]);
 
+  // first_read_at belongs to the server, not localStorage. On a subsequent
+  // visit, hydrate previously read letters without a second tap. Only an
+  // authenticated mural grant may fetch the real card contents.
+  useEffect(() => {
+    if (data?.locked || !data?.cards?.length) return undefined;
+    let cancelled = false;
+    const previouslyRead = data.cards.filter(card =>
+      card.already_opened && !card.draft_pending && !card.empty_content
+    );
+    async function restore() {
+      // Small batches avoid overwhelming mobile Safari and keep each card
+      // independent if one media fetch fails.
+      for (let position = 0; position < previouslyRead.length && !cancelled; position += 3) {
+        const batch = previouslyRead.slice(position, position + 3);
+        await Promise.all(batch.map(async ({ id }) => {
+          if (restoringRef.current.has(id)) return;
+          restoringRef.current.add(id);
+          try {
+            const response = await api(
+              '/api/mural/' + encodeURIComponent(slug) + '/cards/' + encodeURIComponent(id),
+              { token: muralToken() || undefined },
+            );
+            if (!cancelled) setOpened(previous =>
+              previous[id] ? previous : { ...previous, [id]: response.card }
+            );
+          } catch (cause) {
+            if (!cancelled) setRestoreErrors(previous => ({
+              ...previous, [id]: cause.message || 'Toque para tentar abrir novamente.',
+            }));
+          } finally {
+            restoringRef.current.delete(id);
+          }
+        }));
+      }
+    }
+    void restore();
+    return () => { cancelled = true; };
+  }, [data, slug]);
+
   async function openLetter(id) {
     if (opened[id] || openBusy) return;
     setOpenBusy(id);
@@ -49,6 +90,11 @@ export default function Mural() {
         { token: muralToken() || undefined },
       );
       setOpened((previous) => ({ ...previous, [id]: response.card }));
+      setData(previous => previous ? {
+        ...previous,
+        cards: previous.cards.map(card => card.id === id ? { ...card, already_opened: true } : card),
+      } : previous);
+      setRestoreErrors(previous => ({ ...previous, [id]: '' }));
       track('private_letter_opened',{stage:'individual'});
     } catch (cause) {
       setError(cause.message);
@@ -122,6 +168,7 @@ export default function Mural() {
   return (
     <MuralGallery data={data} opened={opened} openBusy={openBusy} error={error} busy={busy}
       onOpenLetter={openLetter} onDownloadAll={downloadAll} onRefresh={load}
-      onSupportClick={openHelp} onRequestCompletion={requestCompletion} />
+      onSupportClick={openHelp} onRequestCompletion={requestCompletion}
+      restoreErrors={restoreErrors} />
   );
 }

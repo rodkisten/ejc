@@ -58,6 +58,7 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
   const [confirming, setConfirming] = useState(() => isWhatsAppConfirmationPending(confirmationKey));
   const [confirmedLocal, setConfirmedLocal] = useState(false);
   const ready=Number(recipient.ready_letter_count || 0);
+  const opened=Number(recipient.opened_letter_count || 0);
   const isCampaign=campaignKey===CAMPAIGN_KEY;
   const published=Number(recipient.campaign_letter_count || 0)>0;
   const sent=confirmedLocal || Boolean(
@@ -100,7 +101,7 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
         message += '\n\n🆘 *Precisa de ajuda com suas cartinhas?*\n'+context.link+'\n_É só abrir e contar para a equipe o que aconteceu._';
       }else{
         message=muralInvitationMessage({name:details.name,url:inviteUrl,count:details.count,
-          ids:details.letter_ids||[],supportUrl:context.link});
+          openedCount:details.opened_count,ids:details.letter_ids||[],supportUrl:context.link});
       }
       const href=whatsappShareUrl({phone:details.phone,message});
       track('admin_whatsapp_invite_opened',{stage:isCampaign?'campaign':'mural'});
@@ -143,6 +144,11 @@ export function WhatsAppShareButton({ recipient, onRefresh, compact = false, cam
       </button>
       {sent&&<small className="whatsapp-action-hint is-sent">✅ Enviado e confirmado manualmente.
         O botão continua ativo para reenviar.</small>}
+      {!isCampaign && ready>0 && (
+        <small className="whatsapp-action-hint" aria-live="polite">
+          📖 {opened} de {ready} cartinha(s) já aberta(s). O status também aparece depois do link no convite.
+        </small>
+      )}
       {!ready&&<small className="whatsapp-action-hint">Aguardando cartinhas prontas.</small>}
       {isCampaign&&!published&&<small className="whatsapp-action-hint">Publique a carta da campanha primeiro.</small>}
       {ready>0&&!recipient.whatsapp_phone&&<small className="whatsapp-action-hint">Salve o telefone antes de compartilhar.</small>}
@@ -273,6 +279,7 @@ export default function WhatsAppAdmin({ info, reload }) {
               <div>
                 <strong>{person.name}</strong>
                 <small>{person.order_count} cartinha(s) vinculada(s) · {person.ready_letter_count||0} pronta(s)</small>
+                <small>📖 {person.opened_letter_count||0} cartinha(s) já aberta(s)</small>
                 <small>{person.mural_og_ready?'Prévia personalizada pronta':'Arte do mural será gerada antes do envio'}</small>
                 <small>{person.campaign_wa_sent_at
                   ? '✅ Campanha enviada '+new Date(person.campaign_wa_sent_at).toLocaleString('pt-BR')+

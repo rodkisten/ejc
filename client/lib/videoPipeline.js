@@ -7,9 +7,36 @@ varying vec2 uv;
 uniform sampler2D image;
 uniform int effect;
 uniform float time;
+uniform vec2 resolution;
+uniform float softSkin;
 void main(){
   vec4 pixel=texture2D(image,vec2(uv.x,1.0-uv.y));
   vec3 c=pixel.rgb;
+  if(softSkin>0.001){
+    vec3 rgb=c;
+    float mx=max(max(rgb.r,rgb.g),rgb.b);
+    float mn=min(min(rgb.r,rgb.g),rgb.b);
+    float chroma=mx-mn;
+    float skin=step(0.24,rgb.r)*step(0.15,rgb.g)*step(0.08,rgb.b)
+      *step(rgb.g,rgb.r)*step(rgb.b,rgb.g)*smoothstep(0.04,0.16,chroma);
+    vec2 d=1.8/resolution;
+    vec3 sum=vec3(0.0);
+    float weight=0.0;
+    for(int x=-2;x<=2;x++){
+      for(int y=-2;y<=2;y++){
+        vec2 offset=vec2(float(x),float(y))*d;
+        vec3 neighbor=texture2D(image,vec2(uv.x,1.0-uv.y)+offset).rgb;
+        vec3 diff=neighbor-rgb;
+        float spatial=exp(-dot(vec2(float(x),float(y)),vec2(float(x),float(y)))*0.28);
+        float tonal=exp(-dot(diff,diff)*48.0);
+        float w=spatial*tonal;
+        sum+=neighbor*w;weight+=w;
+      }
+    }
+    vec3 blurred=sum/max(weight,0.001);
+    float edge=1.0-smoothstep(0.08,0.35,length(blurred-rgb));
+    c=mix(rgb,blurred,softSkin*skin*edge*0.88);
+  }
   float l=dot(c,vec3(0.299,0.587,0.114));
   if(effect==1){c=mix(c,vec3(l),0.15);c*=vec3(1.15,1.04,0.88);c=pow(c,vec3(0.94));}
   if(effect==2){c=mix(c,vec3(l),0.17);c=pow(c,vec3(0.85));c=mix(c,vec3(1.0),0.08);}
@@ -37,7 +64,7 @@ export function createVideoPipeline({video,canvas,aspectRatio='9:16',onError}){
   const crop=document.createElement('canvas');
   crop.width=width;crop.height=height;
   const cropCtx=crop.getContext('2d',{alpha:false});
-  let gl,program,texture,position,effect,frame=0;
+  let gl,program,texture,position,effect,softUniform,frame=0;
   try{
     gl=stage.getContext('webgl',{alpha:false,antialias:false,preserveDrawingBuffer:false});
     if(!gl)throw new Error('WebGL indisponível');
@@ -52,6 +79,8 @@ export function createVideoPipeline({video,canvas,aspectRatio='9:16',onError}){
     position=gl.getAttribLocation(program,'position');
     gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
     effect=gl.getUniformLocation(program,'effect');
+    softUniform=gl.getUniformLocation(program,'softSkin');
+    gl.uniform2f(gl.getUniformLocation(program,'resolution'),width,height);
     texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
@@ -61,7 +90,7 @@ export function createVideoPipeline({video,canvas,aspectRatio='9:16',onError}){
   }catch(error){gl=null;onError?.('GPU indisponível, usando Canvas 2D: '+error.message);}
   const ctx=canvas.getContext('2d',{alpha:false});
   if(!ctx)throw new Error('Canvas 2D indisponível');
-  let running=true,filterId='natural',sticker='none',mirror=true;
+  let running=true,filterId='natural',sticker='none',mirror=true,softSkin=0;
   const cover=(source,target)=>{
     const vw=video.videoWidth,vh=video.videoHeight;
     if(!vw||!vh)return;
@@ -80,6 +109,7 @@ export function createVideoPipeline({video,canvas,aspectRatio='9:16',onError}){
           gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
           gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,crop);
           gl.uniform1i(effect,Math.max(0,EFFECTS.indexOf(filterId)));
+          gl.uniform1f(softUniform,softSkin);
           gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
         }
         ctx.save();
@@ -108,6 +138,7 @@ export function createVideoPipeline({video,canvas,aspectRatio='9:16',onError}){
   return {
     canvas,width,height,
     setFilter(value){filterId=value;},
+    setSoftSkin(value){softSkin=Math.max(0,Math.min(1,Number(value)||0));},
     setSticker(value){sticker=value;},
     setMirror(value){mirror=Boolean(value);},
     captureStream(fps=24){return canvas.captureStream?.(fps)||null;},

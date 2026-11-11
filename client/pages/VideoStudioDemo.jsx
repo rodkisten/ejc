@@ -257,7 +257,7 @@ export default function VideoStudioDemo() {
       <button type="button" className="btn" disabled={savingConfig} onClick={persistConfig}>
         <Check size={17}/> {savingConfig ? 'Salvando...' : 'Salvar configurações'}
       </button>
-    </div>
+    </div>}
     <p>Usuário fictício: <strong>{DEMO_USER.name}</strong>. Gravações ficam no navegador até você enviá-las ao R2. Não há envio para destinatários, Pix ou publicação. Exemplos são ilustrativos, não gravações reais.</p>
     {error && <div className="notice error" role="alert">{error}</div>}
     <div style={{ width: '100%', maxWidth: 400, margin: 'auto' }}>

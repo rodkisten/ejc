@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, CircleStop, RotateCcw, Trash2, Video } from 'lucide-react';
+import { Camera, CircleStop, RotateCcw, Trash2, Video, Settings2, Check } from 'lucide-react';
 
 const FILTERS = [
   { id: 'natural', name: 'Natural', css: 'none' },
@@ -53,6 +53,33 @@ export default function VideoStudioDemo() {
   const [selected, setSelected] = useState(null);
   const [url, setUrl] = useState('');
   const [seconds, setSeconds] = useState(0);
+  const [config, setConfig] = useState({ maxDurationSeconds: 30, aspectRatio: '9:16' });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const startedAt = useRef(0);
+  const recordingTimer = useRef(null);
+  const limit = useRef(30);
+  const stopRef = useRef(null);
+  const ratio = config.aspectRatio.replace(':', '/');
+  useEffect(() => { limit.current = config.maxDurationSeconds; }, [config.maxDurationSeconds]);
+  useEffect(() => {
+    fetch('/api/admin/video-studio/config', { credentials: 'same-origin' })
+      .then(response => { if (!response.ok) throw new Error('Falha ao carregar configuração.'); return response.json(); })
+      .then(data => setConfig(data.config)).catch(cause => setError(cause.message));
+  }, []);
+  async function persistConfig() {
+    setSavingConfig(true);
+    try {
+      const response = await fetch('/api/admin/video-studio/config', {
+        method: 'PUT', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config),
+      });
+      if (!response.ok) throw new Error('Não foi possível salvar a configuração.');
+      setConfig((await response.json()).config);
+      setSettingsOpen(false);
+    } catch (cause) { setError(cause.message); }
+    finally { setSavingConfig(false); }
+  }
   const [remote, setRemote] = useState([]);
   const [uploading, setUploading] = useState('');
   const refreshRemote = async () => {
@@ -91,11 +118,7 @@ export default function VideoStudioDemo() {
     camera.current.srcObject = stream.current;
     camera.current.play().catch(() => {});
   }, [status]);
-  useEffect(() => {
-    if (status !== 'recording') return;
-    const timer = setInterval(() => setSeconds(value => value + 1), 1000);
-    return () => clearInterval(timer);
-  }, [status]);
+  useEffect(() => () => clearInterval(recordingTimer.current), []);
   useEffect(() => () => {
     if (recorder.current?.state === 'recording') recorder.current.stop();
     stream.current?.getTracks().forEach(track => track.stop());
@@ -144,16 +167,25 @@ export default function VideoStudioDemo() {
         } catch (cause) { setError(cause.message); setStatus('preview'); }
       };
       media.start(1000);
+      startedAt.current = Date.now();
       setSeconds(0);
+      clearInterval(recordingTimer.current);
+      recordingTimer.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startedAt.current) / 1000);
+        setSeconds(elapsed);
+        if (elapsed >= limit.current) stopRef.current?.();
+      }, 200);
       setStatus('recording');
     } catch (cause) { setError(cause.message); }
   }
   function stop() {
+    clearInterval(recordingTimer.current);
     if (recorder.current?.state === 'recording') recorder.current.stop();
     stream.current?.getTracks().forEach(track => track.stop());
     stream.current = null;
     setStatus('saving');
   }
+  stopRef.current = stop;
   async function seed() {
     try {
       for (const [title, filterId, emoji] of examples) {
@@ -171,50 +203,103 @@ export default function VideoStudioDemo() {
   }
   return <section className="form-card" style={{ maxWidth: 860 }}>
     <span className="eyebrow">EXCLUSIVO DA ADMINISTRAÇÃO · LABORATÓRIO</span>
-    <h1>🎬 Video Studio</h1>
-    <p>Usuário fictício: <strong>{DEMO_USER.name}</strong>. Vídeos ficam apenas neste navegador,
-      sem envio para destinatários, Pix ou publicação. Exemplos são ilustrativos, não gravações reais.</p>
-    {error && <div className="notice error" role="alert">{error}</div>}
-    <div style={{ maxWidth: 360, margin: 'auto', position: 'relative' }}>
-      <video ref={camera} muted playsInline autoPlay
-        style={{ display: ['preview', 'recording', 'saving'].includes(status) ? 'block' : 'none',
-          width: '100%', aspectRatio: '9/16', objectFit: 'cover', borderRadius: 20,
-          transform: 'scaleX(-1)', filter: filter.css, background: '#111' }} />
-      {selected && url && <video key={url} src={url} controls playsInline
-        style={{ width: '100%', aspectRatio: '9/16', objectFit: 'contain', borderRadius: 20,
-          filter: FILTERS.find(f => f.id === selected.filterId)?.css || 'none', background: '#111' }} />}
-      {selected && !url && <div style={{ aspectRatio: '9/16', display: 'grid',
-        placeItems: 'center', background: '#f5e8ef', borderRadius: 20, fontSize: 60 }}>
-        {selected.emoji || '💌'}
-      </div>}
+    <div className="row between" style={{ alignItems: 'center', gap: 12 }}>
+      <h1>🎬 Video Studio</h1>
+      <button type="button" className="btn ghost" onClick={() => setSettingsOpen(value => !value)}
+        aria-label="Configurações do Video Studio"><Settings2 size={18}/> Config</button>
     </div>
-    <div className="inline-actions" style={{ justifyContent: 'center', marginTop: 16 }}>
-      {status === 'idle' || status === 'review'
-        ? <button type="button" className="btn" onClick={() => { setSelected(null); openCamera(); }}>
-            <Camera size={17}/> Abrir câmera
-          </button>
-        : null}
-      {status === 'preview' && <button type="button" className="btn" onClick={start}>
-        <Video size={17}/> Gravar
-      </button>}
-      {status === 'recording' && <button type="button" className="btn" onClick={stop}>
-        <CircleStop size={17}/> Finalizar · {seconds}s
-      </button>}
-      {status === 'saving' && <span>Salvando gravação...</span>}
-      {status === 'preview' && <button type="button" className="btn ghost" onClick={() => {
-        stream.current?.getTracks().forEach(track => track.stop());
-        stream.current = null;
-        setStatus('idle');
-      }}>Fechar câmera</button>}
+    {settingsOpen && <div className="form-card" style={{ marginBottom: 20 }}>
+      <h2>Configurações do Admin Studio</h2>
+      <label htmlFor="video-duration">Tempo máximo de gravação</label>
+      <select id="video-duration" value={config.maxDurationSeconds}
+        onChange={event => setConfig(value => ({ ...value, maxDurationSeconds: Number(event.target.value) }))}>
+        {[10, 15, 30, 45, 60, 90, 120, 180].map(value =>
+          <option key={value} value={value}>{value} segundos</option>)}
+      </select>
+      <label htmlFor="video-ratio">Formato de vídeo</label>
+      <select id="video-ratio" value={config.aspectRatio}
+        onChange={event => setConfig(value => ({ ...value, aspectRatio: event.target.value }))}>
+        <option value="9:16">Vertical 9:16 (Stories e Reels)</option>
+        <option value="4:5">Retrato 4:5 (Feed)</option>
+        <option value="1:1">Quadrado 1:1</option>
+      </select>
+      <button type="button" className="btn" disabled={savingConfig} onClick={persistConfig}>
+        <Check size={17}/> {savingConfig ? 'Salvando...' : 'Salvar configurações'}
+      </button>
+    </div>
+    <p>Usuário fictício: <strong>{DEMO_USER.name}</strong>. Gravações ficam no navegador até você enviá-las ao R2. Não há envio para destinatários, Pix ou publicação. Exemplos são ilustrativos, não gravações reais.</p>
+    {error && <div className="notice error" role="alert">{error}</div>}
+    <div style={{ width: '100%', maxWidth: 400, margin: 'auto' }}>
+      <div style={{ position: 'relative', aspectRatio: ratio, overflow: 'hidden', borderRadius: 22,
+        background: '#111', width: '100%', isolation: 'isolate' }}>
+        <video ref={camera} muted playsInline autoPlay
+          style={{ display: ['preview', 'recording', 'saving'].includes(status) ? 'block' : 'none',
+            width: '100%', height: '100%', position: 'absolute', inset: 0,
+            objectFit: 'cover', objectPosition: 'center', transform: 'scaleX(-1)',
+            filter: filter.css }} />
+        {selected && url && <video key={url} src={url} controls playsInline
+          style={{ width: '100%', height: '100%', position: 'absolute', inset: 0,
+            objectFit: 'cover', objectPosition: 'center',
+            filter: FILTERS.find(f => f.id === selected.filterId)?.css || 'none' }} />}
+        {selected && !url && <div style={{ position: 'absolute', inset: 0, display: 'grid',
+          placeItems: 'center', background: '#f5e8ef', fontSize: 60 }}>{selected.emoji || '💌'}</div>}
+        {['preview', 'recording'].includes(status) && <div style={{ position: 'absolute', top: 14,
+          left: 14, right: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          color: '#fff', pointerEvents: 'none', fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ padding: '6px 12px', background: 'rgba(0,0,0,.55)', borderRadius: 20 }}>
+            {status === 'recording' ? '🔴 ' : '● '}
+            {String(Math.floor(seconds / 60)).padStart(2, '0')}:
+            {String(seconds % 60).padStart(2, '0')} / {String(Math.floor(config.maxDurationSeconds / 60)).padStart(2, '0')}:
+            {String(config.maxDurationSeconds % 60).padStart(2, '0')}
+          </span>
+          <span style={{ padding: '6px 10px', background: 'rgba(0,0,0,.55)', borderRadius: 20 }}>
+            {config.aspectRatio}
+          </span>
+        </div>}
+        {status === 'recording' && <div style={{ position: 'absolute', bottom: 0, left: 0,
+          height: 5, width: `${Math.min(100, seconds / config.maxDurationSeconds * 100)}%`,
+          background: '#ff375f', transition: 'width .2s linear' }}/>}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 94 }}>
+        {['idle', 'review'].includes(status) && <button type="button" className="btn"
+          onClick={() => { setSelected(null); setSeconds(0); openCamera(); }}>
+          <Camera size={18}/> Abrir câmera
+        </button>}
+        {['preview', 'recording'].includes(status) && <button type="button"
+          onClick={status === 'preview' ? start : stop}
+          aria-label={status === 'preview' ? 'Começar gravação' : 'Parar gravação'}
+          style={{ width: 76, height: 76, borderRadius: '50%', background: '#fff',
+            border: '5px solid #e8e2e9', boxShadow: '0 0 0 2px #a32952',
+            display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+          <span style={{ display: 'block', width: status === 'preview' ? 55 : 27,
+            height: status === 'preview' ? 55 : 27,
+            borderRadius: status === 'preview' ? '50%' : 6, background: '#e3224e',
+            transition: 'all .2s' }}/>
+        </button>}
+        {status === 'saving' && <span>Salvando gravação...</span>}
+      </div>
+      {status === 'preview' && <button type="button" className="btn ghost"
+        onClick={() => { stream.current?.getTracks().forEach(track => track.stop());
+          stream.current = null; setStatus('idle'); }}>Fechar câmera</button>}
+    </div>
+    <div style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '12px 2px',
+      scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}>
+      {FILTERS.map(preset => <button key={preset.id} type="button"
+        onClick={() => setFilter(preset)}
+        style={{ flex: '0 0 78px', border: 'none', background: 'transparent',
+          color: 'inherit', cursor: 'pointer', scrollSnapAlign: 'center', padding: 0 }}>
+        <div style={{ width: 66, height: 66, margin: 'auto', borderRadius: 15,
+          background: 'linear-gradient(135deg,#f7b7ac,#8a78bd)', filter: preset.css,
+          outline: filter.id === preset.id ? '3px solid #a32952' : '1px solid #ddd',
+          outlineOffset: 2, display: 'grid', placeItems: 'center', fontSize: 24 }}>🌹</div>
+        <small style={{ display: 'block', marginTop: 7, fontWeight: filter.id === preset.id ? 700 : 400 }}>
+          {preset.name}</small>
+      </button>)}
     </div>
     <label htmlFor="video-demo-caption">Título da gravação</label>
     <input id="video-demo-caption" maxLength={120} value={caption}
       onChange={event => setCaption(event.target.value)} placeholder="Uma lembrança especial 💙"/>
-    <div className="row filters" style={{ flexWrap: 'wrap' }}>
-      {FILTERS.map(preset => <button key={preset.id} type="button"
-        className={filter.id === preset.id ? 'btn' : 'btn ghost'}
-        onClick={() => setFilter(preset)}>{preset.name}</button>)}
-    </div>
+
     <div className="row between" style={{ marginTop: 24 }}>
       <h2>Itens da pessoa demo ({items.length})</h2>
       <button className="btn ghost" onClick={seed}><RotateCcw size={16}/> Criar 5 exemplos</button>

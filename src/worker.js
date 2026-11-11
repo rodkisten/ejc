@@ -1169,7 +1169,7 @@ async function publicRoute(req,env,path) {
     // Paid, unfinished letters appear as a kind note, never as the sender's
     // unsent content. The released mural still requires its private grant.
     const rows=(await env.DB.prepare(
-      "SELECT o.id,o.submitted_at,o.sender_name,o.rich_html,o.composition_json,"+
+      "SELECT o.id,o.submitted_at,o.first_read_at,o.sender_name,o.rich_html,o.composition_json,"+
       "EXISTS(SELECT 1 FROM media m WHERE m.order_id=o.id AND m.status='ready') AS has_ready_media "+
       "FROM orders o WHERE o.recipient_id=? AND o.status IN ('paid','preparing','delivered') "+
       "ORDER BY COALESCE(o.submitted_at,o.created_at) DESC,o.id"
@@ -1177,7 +1177,7 @@ async function publicRoute(req,env,path) {
     const cards=rows.map(o=>{
       const unfinished=!o.submitted_at;
       const empty=unfinished || (!visibleDraftText(o.rich_html) && !o.has_ready_media);
-      if(!empty)return {id:o.id,submitted_at:o.submitted_at};
+      if(!empty)return {id:o.id,submitted_at:o.submitted_at,already_opened:!!o.first_read_at};
       // Use only the publicly chosen signature, never override an alias with
       // the real sender name. Anonymous letters expose no sender identity.
       let signature='';
@@ -1186,7 +1186,7 @@ async function publicRoute(req,env,path) {
         if(!design.anonymous)signature=(design.authorName||o.sender_name||'').trim();
       } catch { /* Invalid legacy composition: keep the sender anonymous. */ }
       return {
-        id:o.id,submitted_at:o.submitted_at,
+        id:o.id,submitted_at:o.submitted_at,already_opened:!!o.first_read_at,
         ...(unfinished?{draft_pending:true}:{empty_content:true}),
         sender_name:signature,
       };
@@ -2073,7 +2073,10 @@ async function adminRoute(req,env,path) {
     const phone=normaliseWhatsAppPhone(person.whatsapp_phone);
     if(!phone)bad('Cadastre primeiro o WhatsApp do encontrista.',409);
     const ready=await env.DB.prepare(
-      "SELECT COUNT(*) AS count FROM orders WHERE recipient_id=? AND submitted_at IS NOT NULL AND status IN ('paid','preparing','delivered')"
+      "SELECT COUNT(*) AS count, "+
+      "SUM(CASE WHEN first_read_at IS NOT NULL THEN 1 ELSE 0 END) AS opened_count "+
+      "FROM orders WHERE recipient_id=? AND submitted_at IS NOT NULL "+
+      "AND status IN ('paid','preparing','delivered')"
     ).bind(person.id).first();
     if(!ready?.count)bad('O encontrista ainda não tem cartinhas pagas e enviadas.',409);
     if(!person.mural_og_key)bad('Gere a imagem do convite antes de compartilhar o mural.',409);
@@ -2099,6 +2102,7 @@ async function adminRoute(req,env,path) {
     address.hash='token='+encodeURIComponent(grant);
     return result({
       name:person.name,phone,url:address.toString(),count:ready.count,
+      opened_count:Number(ready.opened_count||0),
       letter_ids:readyLetters.map(letter=>letter.id),
       og_url:origin+image.path,expires_in_days:14
     });
@@ -2290,10 +2294,15 @@ async function adminRoute(req,env,path) {
         (SELECT d.send_count FROM recipient_whatsapp_deliveries d WHERE d.recipient_id=r.id
           AND d.campaign_key='pos-encontro') AS campaign_wa_send_count,
         (SELECT d.sent_at FROM recipient_whatsapp_deliveries d WHERE d.recipient_id=r.id
-          AND d.campaign_key='mural') AS mural_wa_sent_at
+          AND d.campaign_key='mural') AS mural_wa_sent_at,
+        (SELECT COUNT(*) FROM orders o WHERE o.recipient_id=r.id
+          AND o.first_read_at IS NOT NULL AND o.submitted_at IS NOT NULL
+          AND o.status IN ('paid','preparing','delivered') AND o.demo=0) AS opened_letter_count
         FROM recipients r ORDER BY r.name COLLATE NOCASE`).all(),
       env.DB.prepare(`SELECT o.id,o.status,o.total_cents,o.created_at,o.payment_claimed_at,o.confirmed_at,o.bank_reference,
-        CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted,o.demo,
+        CASE WHEN o.submitted_at IS NULL THEN 0 ELSE 1 END AS submitted,
+        CASE WHEN o.first_read_at IS NULL THEN 0 ELSE 1 END AS opened,
+        o.first_read_at,o.demo,
         r.name AS recipient_name,r.slug AS recipient_slug,
         COALESCE(NULLIF(c.payer_name,''),o.payer_name) AS payer_name,
         o.checkout_id,o.txid,COALESCE(c.txid,o.txid) AS payment_txid

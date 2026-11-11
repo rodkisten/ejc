@@ -80,3 +80,17 @@ test('recovered-letter WhatsApp notification also includes a traceable recipient
   assert.match(text,/encontrista=Maria/);
   assert.match(text,/id=EJC-123456789ABC/);
 });
+
+test('o aviso da cartinha recuperada mostra o status de leitura logo depois do link',()=>{
+  const url='https://ejc.migos.club/mural/ana#token=private';
+  const opened=readyLetterWhatsAppMessage({
+    recipient_name:'Ana',order_id:'EJC-123456789ABC',url,already_opened:true,
+  });
+  const notOpened=readyLetterWhatsAppMessage({
+    recipient_name:'Ana',order_id:'EJC-123456789ABC',url,already_opened:false,
+  });
+  assert.match(opened.slice(opened.indexOf(url)+url.length),
+    /^\n📖 \*Leitura:\* esta cartinha já foi aberta!/);
+  assert.match(notOpened.slice(notOpened.indexOf(url)+url.length),
+    /^\n💌 \*Leitura:\* esta cartinha ainda não foi aberta/);
+});

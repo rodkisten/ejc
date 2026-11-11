@@ -12,6 +12,7 @@ import Home from './pages/Home';
 import Send from './pages/Send';
 import Order from './pages/Order';
 import Mural from './pages/Mural';
+import PendingLetterHelp from './pages/PendingLetterHelp';
 import Admin from './pages/Admin';
 import Unlock from './pages/Unlock';
 import ConfirmEmail from './pages/ConfirmEmail';
@@ -78,6 +79,7 @@ function App(){
       <Route path="/checkout/:token" element={<Checkout/>}/>
       <Route path="/pedido/:token" element={<Order/>}/>
       <Route path="/mural/:slug" element={<Mural/>}/>
+      <Route path="/ajuda/concluir-cartinha" element={<PendingLetterHelp/>}/>
       <Route path="/abrir" element={<Unlock/>}/>
       <Route path="/confirmar-email" element={<ConfirmEmail/>}/>
       <Route path="/privacidade" element={<Privacy/>}/>

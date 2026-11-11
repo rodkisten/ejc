@@ -5,7 +5,7 @@ const encoder=new TextEncoder();
 const decoder=new TextDecoder();
 const DOMAIN='ejc:short-destination:v1';
 const CODE_PATTERN=/^[A-Za-z0-9_-]{14}$/;
-const KIND_PATTERN=/^(support|finished|admin|letters|send|draft|invite|mural|checkout|order|home|open)$/;
+const KIND_PATTERN=/^(support|finished|completion|admin|letters|send|draft|invite|mural|checkout|order|home|open)$/;
 const MAX_TTL=60*60*24*365;
 const DEFAULT_TTL=60*60*24*14;
 

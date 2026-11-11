@@ -98,3 +98,61 @@
   .unfinished-letter-note-actions { flex-direction: column; }
   .unfinished-letter-note-actions .btn { width: 100%; }
 }
+
+/* A recipient may ask the sender to finish a private letter, with no phone preselected. */
+.unfinished-letter-note .unfinished-letter-note-invitation {
+  max-width: 540px;
+  padding: 12px 15px;
+  background: #fff1f8;
+  border: 1px solid #f3cce3;
+  border-radius: 15px;
+  color: #6c356a;
+  font-size: .91rem;
+}
+.unfinished-letter-note-actions .unfinished-letter-note-whatsapp {
+  width: 100%;
+  background: linear-gradient(120deg, #7a3ca1, #a83e91);
+  border-color: #78349b;
+  color: white;
+  font-weight: 800;
+  min-height: 50px;
+  box-shadow: 0 6px 14px #88378128;
+}
+.unfinished-letter-note-whatsapp:disabled { opacity: .6; cursor: wait; }
+.unfinished-letter-note-share-link {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  max-width: 560px;
+  padding: 13px;
+  background: #f8eff9;
+  border: 1px solid #e7d3f0;
+  border-radius: 14px;
+  text-align: left;
+}
+.unfinished-letter-note-share-link > span {
+  color: #61436b;
+  font-size: .83rem;
+  font-weight: 750;
+}
+.unfinished-letter-note-share-link > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.unfinished-letter-note-share-link a {
+  flex: 1 1 160px;
+  overflow-wrap: anywhere;
+  font-size: .85rem;
+  font-weight: 750;
+  color: #67308b;
+}
+.unfinished-letter-note-share-link .btn { min-height: 38px; }
+.unfinished-letter-note .unfinished-letter-note-error {
+  color: #a12e58;
+  font-weight: 650;
+  font-size: .85rem;
+}

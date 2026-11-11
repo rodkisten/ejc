@@ -37,7 +37,7 @@ const FONT={
   '?':['01110','10001','00001','00010','00100','00000','00100'],
   '!':['00100','00100','00100','00100','00100','00000','00100']
 };
-async function draw(){
+async function draw(mode='help'){
   const raster=new Uint8Array(H*(W+1));
   function rect(x,y,w,h,color){
     for(let py=Math.max(0,y);py<Math.min(H,y+h);py++){
@@ -65,15 +65,30 @@ async function draw(){
   rect(298,33,604,564,4);
   rect(318,52,564,66,3);
   letters('CARTINHAS VIRTUAIS',72,3,1);
-  rect(326,145,548,266,2);
-  rect(338,156,524,238,2);
-  rect(355,177,490,83,3);
-  letters('PRECISO DE',191,9,1);
-  letters('AJUDA?',288,12,4);
-  rect(334,444,532,118,3);
-  rect(340,450,520,106,4);
-  letters('MINI MERCADO',465,5,1);
-  letters('XX EJC SIMONESIA',522,3,2);
+  if(mode==='completion'){
+    // The central 520px region remains readable in WhatsApp's square crop.
+    // Exact full wording appears both in this image and its OpenGraph title.
+    rect(326,144,548,372,2);
+    rect(338,156,524,347,4);
+    rect(351,172,498,47,3);
+    letters('PRECISO DE AJUDA',181,5,1);
+    letters('COM A SUA',240,8,1);
+    letters('CARTINHA',325,10,6);
+    letters('PRA MIM',430,8,1);
+    rect(334,522,532,57,3);
+    rect(341,529,518,43,4);
+    letters('XX EJC SIMONESIA',538,4,1);
+  }else{
+    rect(326,145,548,266,2);
+    rect(338,156,524,238,2);
+    rect(355,177,490,83,3);
+    letters('PRECISO DE',191,9,1);
+    letters('AJUDA?',288,12,4);
+    rect(334,444,532,118,3);
+    rect(340,450,520,106,4);
+    letters('MINI MERCADO',465,5,1);
+    letters('XX EJC SIMONESIA',522,3,2);
+  }
   // Hearts, small rays, confetti: intentionally in the outer gutters.
   const heart=(x,y,scale)=>{
     const bits=['01100110','11111111','11111111','01111110','00111100','00011000'];
@@ -122,4 +137,14 @@ let cached;
 export async function defaultHelpOgPng(){
   if(!cached)cached=draw().catch(error=>{cached=null;throw error;});
   return cached;
+}
+// A distinct, static PNG per Worker instance. No R2 upload, third-party
+// image service, message content or additional infrastructure is required.
+let completionCached;
+export async function completionHelpOgPng(){
+  if(!completionCached)completionCached=draw('completion').catch(error=>{
+    completionCached=null;
+    throw error;
+  });
+  return completionCached;
 }

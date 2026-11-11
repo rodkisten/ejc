@@ -1,7 +1,7 @@
 import { generatePix } from './pix.js';
 import {cleanSupportContext,encryptSupportContext,decryptSupportContextWithLegacy} from './supportContext.js';
 import {createShortLink,resolveShortLink} from './shortLinks.js';
-import { defaultHelpOgPng } from './defaultHelpOg.js';
+import { defaultHelpOgPng, completionHelpOgPng } from './defaultHelpOg.js';
 import { adminStatistics } from './statistics.js';
 import { normalizePaymentLookup, likeTerm, maskedStatus } from './paymentSearch.js';
 import { isSquareRecipientJpeg } from './photo.js';
@@ -763,6 +763,11 @@ async function shortLinkPreview(env,request,destination,kind,shortUrl){
     description='Nossa equipe está aqui para ajudar você com sua cartinha virtual.';
     image=site+'/og-ajuda-minha-cartinha.png';
     alt='Preciso de ajuda. Mini Mercado XX EJC Simonésia';
+  }else if(kind==='completion'){
+    title='Preciso de ajuda com a sua cartinha pra mim 💗';
+    description='Recebi sua cartinha, mas ela veio incompleta. Pode conferir e terminar com carinho?';
+    image=site+'/og-cartinha-incompleta.png';
+    alt='Preciso de ajuda com a sua cartinha pra mim, com um coração. XX EJC Simonésia.';
   }else if(kind==='finished'){
     title='Cartinhas Virtuais · Enviei minha cartinha, e agora?';
     description='Confira o recebimento e descubra o próximo passo.';
@@ -1101,6 +1106,37 @@ async function publicRoute(req,env,path) {
     await env.DB.prepare('DELETE FROM mural_code_attempts WHERE fingerprint=?').bind(fingerprint).run();
     return result({slug:person.slug,grant:await muralGrant(env,person)});
   }
+  // Only the recipient's existing private mural grant can request a public,
+  // sender-directed reminder for one of their paid, incomplete letters.
+  // The resulting link contains NO order ID, name, mural token or editing access.
+  const completionRequest=path.match(
+    /^\/api\/mural\/([a-z0-9-]+)\/cards\/(EJC-[A-F0-9]{12})\/request-completion$/
+  );
+  if(completionRequest&&req.method==='POST'){
+    const person=await env.DB.prepare(
+      'SELECT id,slug,mural_code FROM recipients WHERE slug=? AND active=1'
+    ).bind(completionRequest[1]).first();
+    if(!person)bad('Encontrista não encontrado.',404);
+    const grant=req.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
+    if(!await validMuralGrant(env,grant,person))bad('Código de acesso inválido.',403);
+    if(!released(config))bad('O mural ainda não foi liberado.',403);
+    const order=await env.DB.prepare(
+      "SELECT id,status,submitted_at,rich_html,campaign_key,"+
+      "EXISTS(SELECT 1 FROM media WHERE order_id=orders.id AND status='ready') AS has_ready_media "+
+      "FROM orders WHERE id=? AND recipient_id=?"
+    ).bind(completionRequest[2],person.id).first();
+    if(!order||!activeOrder(order)||order.campaign_key)
+      bad('Cartinha indisponível para este pedido.',404);
+    const incomplete=!order.submitted_at ||
+      (!visibleDraftText(order.rich_html)&&!order.has_ready_media);
+    if(!incomplete)bad('Esta cartinha já está completa. Atualize seu mural.',409);
+    const origin=new URL(env.PUBLIC_ORIGIN||req.url).origin;
+    const short=await createShortLink(env,origin+'/ajuda/concluir-cartinha',{
+      origin,kind:'completion',ttlSeconds:14*24*60*60
+    });
+    return result({url:short.url,expires_at:short.expires_at});
+  }
+
   // Loading a mural listing is not a read receipt; opening an envelope is.
   const cardPath=path.match(/^\/api\/mural\/([a-z0-9-]+)\/cards\/(EJC-[A-F0-9]{12})$/);
   const mural=path.match(/^\/api\/mural\/([a-z0-9-]+)$/);
@@ -2512,6 +2548,18 @@ export default {
   async fetch(request,env,ctx) {
     try {
       const url=new URL(request.url), path=url.pathname;
+      if(path==='/og-cartinha-incompleta.png' &&
+        (request.method==='GET'||request.method==='HEAD')){
+        const bytes=await completionHelpOgPng();
+        return new Response(request.method==='HEAD'?null:bytes,{headers:{
+          'Content-Type':'image/png',
+          'Content-Length':String(bytes.byteLength),
+          'Cache-Control':'public, max-age=86400',
+          'X-Content-Type-Options':'nosniff',
+          'X-Robots-Tag':'noindex, nofollow'
+        }});
+      }
+
       // First-party /s/<random> redirects, without exposing the destination
       // to WhatsApp/Telegram crawlers. Previews are served as OG HTML here.
       const shortCode=path.match(/^\/s\/([A-Za-z0-9_-]{14})$/);
@@ -2545,6 +2593,17 @@ export default {
           'X-Robots-Tag':'noindex, nofollow, noarchive'
         }});
       }
+      // A public how-to page, not a bearer link: only the sender's original
+      // private order URL can open or modify the cartinha.
+      if(path==='/ajuda/concluir-cartinha'||path==='/ajuda/concluir-cartinha/'){
+        if(request.method!=='GET'&&request.method!=='HEAD')
+          return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
+        if(isShortPreviewBot(request))
+          return shortLinkPreview(env,request,
+            url.origin+'/ajuda/concluir-cartinha','completion',url.origin+path);
+        // Ordinary navigation falls through to the SPA route below.
+      }
+
       // Public short support route. WhatsApp previews receive OG HTML; real visitors
       // receive a ready-to-send message. No mural token is ever accepted or copied.
       if(path==='/ajuda/minha-cartinha'||path==='/ajuda/minha-cartinha/'){

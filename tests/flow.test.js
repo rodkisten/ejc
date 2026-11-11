@@ -2231,3 +2231,76 @@ test('cartinha enviada apenas com fotos pode receber link de conclusão mantendo
   assert.equal(after.has_text,true);
   assert.equal(after.has_media,true);
 });
+
+test('encontrista pode pedir conclusão por link curto, com prévia OG e sem revelar acesso privado',async()=>{
+  const env=fixture(),{admin,list}=await setup(env);
+  const person=list[0];
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:person.slug,sender_name:'Pessoa que escreveu',
+  });
+  const orderId=created.data.id;
+  const endpoint='/api/mural/'+person.slug+'/cards/'+orderId+'/request-completion';
+
+  // Neither a visitor without a mural grant nor the sender's editing token may create a reminder.
+  assert.equal((await call(env,endpoint,'POST',{})).status,403);
+  assert.equal((await call(env,endpoint,'POST',{}, {token:created.data.token})).status,403);
+
+  await call(env,'/api/admin/mural-codes/generate','POST',{regenerate:false},admin);
+  const code=(await call(env,'/api/admin/bootstrap','GET',undefined,admin)).data
+    .recipients.find(item=>item.slug===person.slug).mural_code;
+  const grant=(await call(env,'/api/mural/redeem','POST',{code})).data.grant;
+
+  assert.equal((await call(env,endpoint,'POST',{}, {token:grant})).status,403,
+    'o mural ainda está bloqueado');
+  assert.equal((await call(env,'/api/admin/orders/'+orderId+'/status','PATCH',{
+    status:'paid',bank_reference:'PENDENTEWHATSAPP2026',
+    bank_checked:true,amount_checked:true,
+  },admin)).status,200);
+  await call(env,'/api/admin/settings','PUT',{release_at:'2020-11-08T16:00'},admin);
+
+  const listing=await call(env,'/api/mural/'+person.slug,'GET',undefined,{token:grant});
+  assert.equal(listing.status,200);
+  assert.equal(listing.data.cards[0].draft_pending,true);
+
+  const createdLink=await call(env,endpoint,'POST',{}, {token:grant});
+  assert.equal(createdLink.status,200);
+  assert.match(createdLink.data.url,/^https:\/\/ejc\.test\/s\/[A-Za-z0-9_-]{14}$/);
+  assert.equal(JSON.stringify(createdLink.data).includes(orderId),false);
+  assert.equal(JSON.stringify(createdLink.data).includes(grant),false);
+  assert.equal(JSON.stringify(createdLink.data).includes(person.name),false);
+
+  const redirected=await worker.fetch(new Request(createdLink.data.url),env);
+  assert.equal(redirected.status,302);
+  assert.equal(redirected.headers.get('Location'),'https://ejc.test/ajuda/concluir-cartinha');
+  assert.equal(redirected.headers.get('Cache-Control'),'private, no-store');
+
+  const robot=await worker.fetch(new Request(createdLink.data.url,{
+    headers:{'User-Agent':'WhatsApp/2.26.1'},
+  }),env);
+  assert.equal(robot.status,200);
+  const html=await robot.text();
+  assert.match(html,/Preciso de ajuda com a sua cartinha pra mim/);
+  assert.match(html,/og-cartinha-incompleta\.png/);
+  assert.match(html,/og:image:width/);
+  assert.ok(html.includes(createdLink.data.url));
+  assert.ok(!html.includes(orderId));
+  assert.ok(!html.includes(grant));
+
+  const image=await worker.fetch(new Request('https://ejc.test/og-cartinha-incompleta.png'),env);
+  assert.equal(image.status,200);
+  assert.equal(image.headers.get('Content-Type'),'image/png');
+  const png=new Uint8Array(await image.arrayBuffer());
+  assert.deepEqual([...png.slice(0,8)],[137,80,78,71,13,10,26,10]);
+  const view=new DataView(png.buffer,png.byteOffset,png.byteLength);
+  assert.equal(view.getUint32(16),1200);
+  assert.equal(view.getUint32(20),630);
+
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Agora a sua cartinha está completinha.</p>',
+  },{token:created.data.token})).status,200);
+  assert.equal((await call(env,'/api/order/submit','POST',{},{
+    token:created.data.token,
+  })).status,200);
+  assert.equal((await call(env,endpoint,'POST',{}, {token:grant})).status,409,
+    'não pedir conclusão de uma cartinha já concluída');
+});

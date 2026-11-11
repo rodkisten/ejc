@@ -7,7 +7,7 @@ import UnfinishedLetterNotice from './UnfinishedLetterNotice';
 // Shared recipient layout: the user portal and the technical preview render the same UI.
 export default function MuralGallery({ data, opened = {}, openBusy = '', error = '', busy = false,
   onOpenLetter, onDownloadAll, onRefresh,
-  onSupportClick, technical = false, technicalAll = true }) {
+  onSupportClick, onRequestCompletion, technical = false, technicalAll = true }) {
   const openLetter = onOpenLetter;
   const downloadAll = onDownloadAll;
   const availableToDownload = (data?.cards || []).some(
@@ -57,6 +57,8 @@ export default function MuralGallery({ data, opened = {}, openBusy = '', error =
                         senderName={envelope.composition?.anonymous ? '' :
                           envelope.composition?.authorName || envelope.sender_name}
                         onRefresh={onRefresh}
+                        onRequestCompletion={!technical && onRequestCompletion
+                          ? () => onRequestCompletion(envelope.id) : undefined}
                         onSupportClick={!technical&&onSupportClick
                           ?()=>onSupportClick(envelope.id):undefined} />
                     ) : opened[envelope.id] ? (

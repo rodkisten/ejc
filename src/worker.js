@@ -1390,6 +1390,40 @@ async function adminRoute(req,env,path) {
   if(path==='/api/admin/logout'&&req.method==='POST')return result({ok:true},200,{'Set-Cookie':'ejc_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});
   await requireAdmin(req,env);
   if(path==='/api/admin/me')return result({authenticated:true});
+  // Laboratório isolado: objetos de vídeo nunca são anexados a pedidos reais.
+  if(path==='/api/admin/video-demo' && req.method==='GET'){
+    const listing=await env.MEDIA.list({prefix:'video-demo/ejc-video-demo/',limit:100});
+    return result({items:listing.objects.map(object=>({
+      id:object.key.split('/').pop(),bytes:object.size,createdAt:object.uploaded?.toISOString(),
+      key:object.key
+    }))});
+  }
+  const demoVideo=path.match(/^\\/api\\/admin\\/video-demo\\/([a-f0-9-]{36})$/);
+  if(demoVideo){
+    const key='video-demo/ejc-video-demo/'+demoVideo[1];
+    if(req.method==='PUT'){
+      const size=Number(req.headers.get('Content-Length')||0);
+      if(size>20*1024*1024)bad('Vídeo excede 20 MB.',413);
+      const mime=(req.headers.get('Content-Type')||'').split(';')[0];
+      if(!['video/mp4','video/webm','video/quicktime'].includes(mime))bad('Formato de vídeo inválido.',415);
+      const bytes=await req.arrayBuffer();
+      if(!bytes.byteLength||bytes.byteLength>20*1024*1024)bad('Vídeo excede 20 MB.',413);
+      await env.MEDIA.put(key,bytes,{httpMetadata:{contentType:mime},
+        customMetadata:{scope:'admin-demo',userId:'ejc-video-demo'}});
+      return result({ok:true,id:demoVideo[1],bytes:bytes.byteLength});
+    }
+    if(req.method==='GET'){
+      const object=await env.MEDIA.get(key);
+      if(!object)bad('Vídeo não encontrado.',404);
+      return new Response(object.body,{headers:{...BASE_HEADERS,'Content-Type':object.httpMetadata?.contentType||'video/mp4',
+        'Content-Length':String(object.size),'Accept-Ranges':'none'}});
+    }
+    if(req.method==='DELETE'){
+      await env.MEDIA.delete(key);
+      return result({ok:true});
+    }
+  }
+
   if(path==='/api/admin/links/shorten'&&req.method==='POST')
     return shortenAdminLink(req,env);
   if(path==='/api/admin/support-templates' && req.method==='GET'){

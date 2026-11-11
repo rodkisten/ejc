@@ -102,12 +102,10 @@ export function createVideoPipeline({video,canvas,aspectRatio='9:16',onError}){
     target.save();
     target.clearRect(0,0,width,height);
     if(needsContain){
-      // Blurred edge-to-edge backdrop keeps the exported Story exactly 9:16.
-      const coverScale=Math.max(width/vw,height/vh);
-      const bw=vw*coverScale,bh=vh*coverScale;
-      target.filter='blur(22px) brightness(.6)';
-      target.drawImage(source,(width-bw)/2,(height-bh)/2,bw,bh);
-      target.filter='none';
+      // Single camera image, letterboxed inside the 9:16 Story frame.
+      // Never paint a second, enlarged copy of the face behind it.
+      target.fillStyle='#111';
+      target.fillRect(0,0,width,height);
       const fitScale=Math.min(width/vw,height/vh);
       const fw=vw*fitScale,fh=vh*fitScale;
       target.drawImage(source,(width-fw)/2,(height-fh)/2,fw,fh);

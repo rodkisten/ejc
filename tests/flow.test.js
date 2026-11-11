@@ -2286,6 +2286,36 @@ test('encontrista pode pedir conclusão por link curto, com prévia OG e sem rev
   assert.ok(!html.includes(orderId));
   assert.ok(!html.includes(grant));
 
+  // When WhatsApp fetches the second (support) URL instead of the first,
+  // its preview must still display the FIRST link's completion artwork.
+  const helpPreview=await worker.fetch(new Request('https://ejc.test/ajuda/ejc',{
+    headers:{'User-Agent':'WhatsApp/2.26.1'},
+  }),env);
+  assert.equal(helpPreview.status,200);
+  const helpMeta=await helpPreview.text();
+  assert.match(helpMeta,/Preciso de ajuda com a sua cartinha pra mim/);
+  assert.match(helpMeta,/og-cartinha-incompleta\\.png/);
+  assert.equal(
+    helpMeta.match(/<meta property="og:image" content="([^"]+)"/)?.[1],
+    html.match(/<meta property="og:image" content="([^"]+)"/)?.[1],
+    'a segunda URL não substitui a imagem OG da primeira'
+  );
+  assert.ok(!helpMeta.includes(orderId));
+  assert.ok(!helpMeta.includes(grant));
+
+  const supportRedirect=await worker.fetch(
+    new Request('https://ejc.test/ajuda/ejc'),env
+  );
+  assert.equal(supportRedirect.status,302);
+  const support=new URL(supportRedirect.headers.get('Location'));
+  assert.equal(support.origin,'https://api.whatsapp.com');
+  assert.equal(support.searchParams.get('phone'),'5532999662604');
+  assert.ok(support.searchParams.get('text').includes('XX EJC Simonésia'));
+  assert.ok(support.searchParams.get('text').includes('🌹'));
+  assert.ok(support.searchParams.get('text').includes('💙'));
+  assert.ok(!supportRedirect.headers.get('Location').includes(orderId));
+  assert.ok(!supportRedirect.headers.get('Location').includes(grant));
+
   const image=await worker.fetch(new Request('https://ejc.test/og-cartinha-incompleta.png'),env);
   assert.equal(image.status,200);
   assert.equal(image.headers.get('Content-Type'),'image/png');

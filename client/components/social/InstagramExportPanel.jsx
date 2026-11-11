@@ -30,12 +30,20 @@ export default function InstagramExportPanel({ letter, recipient }) {
       const name = letterFileName(recipient || letter.recipient_name, format);
       const file = new File([blob], name, { type: 'image/png' });
       if (!saveOnly && navigator.share && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: 'Cartinha para ' + (recipient || letter.recipient_name),
-          text: 'Uma lembrança especial do XX EJC Simonésia 💙🌹',
-        });
-        return;
+        try {
+          await navigator.share({
+            files: [file],
+            title: 'Cartinha para ' + (recipient || letter.recipient_name),
+            text: 'Uma lembrança especial do XX EJC Simonésia 💙🌹',
+          });
+          return;
+        } catch (cause) {
+          if (cause?.name === 'AbortError') return; // User dismissed the share sheet.
+          // iOS can expire the user gesture while the PNG is rendered.
+          // Keep the photo usable instead of ending with a blocked share dialog.
+          if (cause?.name !== 'NotAllowedError' && cause?.name !== 'TypeError')
+            throw cause;
+        }
       }
       download(blob, name, 'image/png');
       if (!saveOnly) setNotice(

@@ -1,7 +1,8 @@
-import React, { useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { cleanHtml } from '../RichEditor';
 import { computeLetterLayout, FONTS, normalizeComposition, THEMES } from '../../../shared/letter.js';
 import StickerLayer from './StickerLayer';
+import LetterMediaLightbox from './LetterMediaLightbox';
 
 function AdaptiveBody({ html, layout, font }) {
   const ref = useRef(null);
@@ -45,6 +46,7 @@ export default function LetterCanvas({ letter, recipient, editable = false, onCo
   const media = letter?.media || [];
   const images = media.filter((m) => m.kind === 'image');
   const audios = media.filter((m) => m.kind === 'audio');
+  const [openPhoto, setOpenPhoto] = useState(null);
   const layout = useMemo(() => computeLetterLayout({
     html: letter?.rich_html, photos: images.length, audios: audios.length,
     stickers: composition.stickers.length,
@@ -73,9 +75,11 @@ export default function LetterCanvas({ letter, recipient, editable = false, onCo
       {!!images.length && (
         <div className={`letter-photos letter-photos--${images.length === 1 ? 'single' : 'grid'}`}>
           {images.map((image, i) => (
-            <div className="letter-photo-frame" key={image.id || i}>
+            <button type="button" className="letter-photo-frame" key={image.id || i}
+              aria-label={'Ampliar foto ' + (i + 1) + ' da cartinha'}
+              onClick={() => setOpenPhoto(i)}>
               <img src={image.url} alt={`Foto ${i + 1} enviada junto da cartinha`} loading="lazy" />
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -92,6 +96,10 @@ export default function LetterCanvas({ letter, recipient, editable = false, onCo
         </div>
       )}
       <div className="letter-paper-bottom">Feito com carinho · XX EJC Simonésia</div>
+      {openPhoto !== null && images.length > 0 && (
+        <LetterMediaLightbox images={images} initialIndex={openPhoto}
+          onClose={() => setOpenPhoto(null)} />
+      )}
     </article>
   );
 }

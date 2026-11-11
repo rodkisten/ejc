@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ImagePlus, LockKeyhole, Trash2 } from 'lucide-react';
 import RichEditor from './RichEditor';
 import Recorder from './Recorder';
 import VoicePlayer from './VoicePlayer';
 import LetterControls from './letter/LetterControls';
+import LetterMediaLightbox from './letter/LetterMediaLightbox';
 import '../styles/letter-composer-shared.css';
 
 /**
@@ -32,6 +33,11 @@ export default function LetterComposerFields({
   const audios = assets.filter(asset => asset.kind === 'audio');
   const existingPhotos = existingMedia.filter(asset => asset.kind === 'image');
   const existingAudios = existingMedia.filter(asset => asset.kind === 'audio');
+  const [openPhoto, setOpenPhoto] = useState(null);
+  const allPhotos = [
+    ...existingPhotos.map(asset => ({ ...asset, filename: asset.filename || 'Foto enviada' })),
+    ...photos.map(asset => ({ ...asset, filename: asset.file?.name || 'Foto da cartinha' })),
+  ];
 
   return (
     <>
@@ -83,23 +89,39 @@ export default function LetterComposerFields({
               event.target.value = '';
             }} />
         </label>}
-        {(existingPhotos.length > 0 || photos.length > 0) && <div className="photos-grid">
-          {existingPhotos.map(asset => <div className="photo-item" key={asset.id}>
-            <img src={asset.url} alt="Foto enviada" />
-            {!disabled && <button type="button" aria-label="Excluir foto"
-              onClick={() => onRemoveExistingMedia?.(asset)}><Trash2 size={17} /></button>}
-          </div>)}
-          {photos.map(asset => <div className="photo-item" key={asset.url}>
-            <img src={asset.url} alt="Prévia de foto" />
-            {!disabled && <button type="button" aria-label="Excluir foto"
-              onClick={() => onRemoveAsset(asset)}><Trash2 size={17} /></button>}
-          </div>)}
-        </div>}
+        {allPhotos.length > 0 && (
+          <>
+            <p className="muted small">Fotos sem cortes. Toque para ampliar, baixar ou compartilhar.</p>
+            <div className="photos-grid">
+              {allPhotos.map((asset, index) => (
+                <div className="photo-item" key={asset.id || asset.url}>
+                  <button type="button" className="photo-item__open"
+                    aria-label={'Ampliar foto ' + (index + 1)}
+                    onClick={() => setOpenPhoto(index)}>
+                    <img src={asset.url} alt={'Foto ' + (index + 1) + ' da cartinha'} loading="lazy" />
+                  </button>
+                  {!disabled && (
+                    <button type="button" className="photo-item__remove" aria-label="Excluir foto"
+                      onClick={() => index < existingPhotos.length
+                        ? onRemoveExistingMedia?.(asset) : onRemoveAsset(asset)}>
+                      <Trash2 size={17} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       <fieldset disabled={disabled} className="ejc-composer-controls-fieldset">
         <LetterControls composition={composition} onChange={onCompositionChange} senderName={sender} />
       </fieldset>
+
+      {openPhoto !== null && allPhotos.length > 0 && (
+        <LetterMediaLightbox images={allPhotos} initialIndex={openPhoto}
+          onClose={() => setOpenPhoto(null)} />
+      )}
 
       {readReceiptSlot}
 

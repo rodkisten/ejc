@@ -902,31 +902,60 @@ select:focus-visible {
 }
 .photos-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr));
+  align-items: start;
   gap: 12px;
   margin-top: 18px;
 }
 .photo-item {
   position: relative;
-  aspect-ratio: 1;
+  min-width: 0;
   border-radius: 12px;
   overflow: hidden;
-  background: #ede2df;
+  background: #f5f0f2;
 }
-.photo-item img {
+.photo-item__open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.photo-item button {
-  position: absolute;
-  right: 6px;
-  top: 6px;
-  background: #fff;
+  margin: 0;
+  padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: 12px;
+  background: transparent;
+  cursor: zoom-in;
+  touch-action: manipulation;
+}
+.photo-item__open img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 420px;
+  aspect-ratio: auto;
+  object-fit: contain;
+}
+.photo-item .photo-item__remove {
+  position: absolute;
+  z-index: 1;
+  right: 7px;
+  top: 7px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  background: #fffef8;
+  border: 1px solid #eadde5;
+  border-radius: 12px;
   padding: 7px;
   color: #9a2d54;
+  cursor: pointer;
+}
+.photo-item__open:focus-visible,
+.photo-item__remove:focus-visible {
+  outline: 3px solid #6e3d93;
+  outline-offset: -3px;
 }
 .toggle-line {
   display: flex !important;

@@ -14,8 +14,18 @@ test('mensagem carinhosa preserva Unicode, pede conclusão e agradece',()=>{
   assert.match(text,/curiosidade para ler suas palavras/);
   assert.match(text,/terminar o envio/);
   assert.match(text,/Muito obrigado pelo carinho/);
-  assert.ok(text.includes('💗'));
+  assert.ok(text.includes('🩵'));
+  assert.ok(text.includes('💙'));
+  assert.ok(text.includes('🌹'));
   assert.ok(text.includes(short));
+  assert.ok(text.includes('━━━━━━━━━━━━━━━━━━━━'));
+  assert.match(text, /^> 🩵 Se você tiver qualquer dificuldade.*pessoal do EJC/m);
+  assert.match(text, /todo o apoio de que precisar/);
+  const help='https://ejc.migos.club/ajuda/ejc';
+  assert.ok(text.includes(help),'o segundo link aponta diretamente ao apoio do EJC');
+  assert.ok(text.indexOf(short)<text.indexOf(help),'a prévia principal vem primeiro');
+  assert.equal((text.match(/https:\/\//g)||[]).length,2,
+    'apenas dois links públicos, sem tokens ou dados pessoais');
 });
 
 test('WhatsApp deixa o destinatário em branco para a pessoa escolher',()=>{
@@ -24,7 +34,8 @@ test('WhatsApp deixa o destinatário em branco para a pessoa escolher',()=>{
   assert.equal(url.pathname,'/send');
   assert.equal(url.searchParams.has('phone'),false);
   assert.ok(url.searchParams.get('text').includes(short));
-  assert.ok(url.searchParams.get('text').includes('💖'));
+  assert.ok(url.searchParams.get('text').includes('💙🌹'));
+  assert.ok(url.searchParams.get('text').includes('https://ejc.migos.club/ajuda/ejc'));
   assert.ok(!url.searchParams.has('id'));
   assert.ok(!url.searchParams.has('token'));
 });

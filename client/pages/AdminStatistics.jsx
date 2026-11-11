@@ -227,7 +227,7 @@ export default function AdminStatistics() {
         <Metric icon={Wallet} name="Pix confirmado" value={money(p.revenue_cents)} context={number(p.paid) + ' compras pagas'} tone="rose" />
         <Metric icon={HeartHandshake} name="Cartinhas pagas e enviadas" value={number(l.paid_submitted)} context={percent(l.paid_submitted, l.paid) + ' das cartinhas pagas'} tone="peach" />
         <Metric icon={UsersRound} name="Encontristas alcançados" value={number(covered)} context={'de ' + number(r.overview?.active) + ' encontristas ativos'} tone="lavender" />
-        <Metric icon={Activity} name="Cartinhas com leitura registrada" value={number(l.read_count)} context={percent(l.read_count, l.paid_submitted) + ' das pagas e enviadas'} tone="blue" />
+        <Metric icon={Activity} name="📖 Cartinhas abertas" value={number(l.read_count)} context={percent(l.read_count, l.paid_submitted) + ' das pagas e enviadas'} tone="blue" />
       </div>
       <Section eyebrow="01 / FINANCEIRO" title="Arrecadação e pagamentos"
         description="Uma compra agrupada conta como um único Pix, independentemente de quantas cartinhas contém. Cartas gratuitas e demonstrações são excluídas.">
@@ -261,12 +261,18 @@ export default function AdminStatistics() {
           <Metric icon={HeartHandshake} name="Cartinhas com Pix confirmado" value={number(l.paid)} context={number(l.paid_submitted) + ' finalizadas'} />
           <Metric icon={CalendarDays} name="Rascunhos pagos" value={number(l.paid_drafts)} context="precisam ser finalizados" tone="warning" />
           <Metric icon={ImageIcon} name="Cartinhas com anexos" value={number(l.with_media)} context="áudio ou foto disponível" />
+          <Metric icon={Activity} name="Já abertas pelo encontrista" value={number(l.read_count)}
+            context="contagem única da primeira abertura" tone="blue" />
         </div>
         <div className="ejc-stat-panel"><h3>Funil de conclusão</h3>
           <Ratio label="Cartinhas criadas" value={l.total || 0} total={l.total || 0} />
           <Ratio label="Com Pix confirmado" value={l.paid || 0} total={l.total || 0} color="purple" />
           <Ratio label="Pagas e finalizadas" value={l.paid_submitted || 0} total={l.total || 0} color="pink" />
-          <Ratio label="Leituras registradas" value={l.read_count || 0} total={l.total || 0} color="blue" />
+          <Ratio label="Cartinhas abertas (primeira leitura)" value={l.read_count || 0}
+            total={l.total || 0} color="blue" />
+          <Ratio label="Cartinhas finalizadas aguardando abertura"
+            value={Math.max(0,(l.paid_submitted||0)-(l.read_count||0))}
+            total={l.total||0} color="gold" />
           <p className="ejc-stat-note">Há {number(l.awaiting_drafts)} rascunhos aguardando pagamento e {number(report.recovery.open)} rascunhos vazios pagos sinalizados para recuperação.</p>
         </div>
         <div className="ejc-stat-panels">

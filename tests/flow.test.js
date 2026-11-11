@@ -2160,3 +2160,74 @@ test('reabre carta paga enviada sem texto e protege contra apagamento involuntá
   assert.equal(finished.data.submitted, true);
   assert.match(finished.data.rich_html, /Texto recuperado/);
 });
+
+test('cartinha enviada apenas com fotos pode receber link de conclusão mantendo anexos e Pix', async () => {
+  const env=fixture(),{admin,list}=await setup(env);
+  const created=await call(env,'/api/orders','POST',{
+    recipient_slug:list[0].slug,sender_name:'Remetente das fotos',
+  });
+  assert.equal(created.status,201);
+  const id=created.data.id,originalToken=created.data.token;
+  const bytes=new Uint8Array([137,80,78,71,42,21,8,16]);
+  const uploaded=await call(env,'/api/order/media/init','POST',{
+    kind:'image',filename:'foto-do-encontro.png',content_type:'image/png'
+  },{token:originalToken});
+  assert.equal(uploaded.status,200);
+  const mediaId=uploaded.data.id;
+  assert.equal((await call(env,'/api/order/media/'+mediaId+'/part/1','PUT',
+    bytes,{token:originalToken,raw:true})).status,200);
+  assert.equal((await call(env,'/api/order/media/'+mediaId+'/complete','POST',
+    {},{token:originalToken})).status,200);
+
+  assert.equal((await call(env,'/api/admin/orders/'+id+'/status','PATCH',{
+    status:'paid',bank_reference:'FOTOSAPENAS2026',
+    bank_checked:true,amount_checked:true,
+  },admin)).status,200);
+  assert.equal((await call(env,'/api/order/submit','POST',{}, {token:originalToken})).status,200);
+
+  const before=(await call(env,'/api/admin/cartinhas','GET',undefined,admin))
+    .data.letters.find(letter=>letter.id===id);
+  assert.equal(before.submitted,true);
+  assert.equal(before.has_text,false);
+  assert.equal(before.has_media,true);
+  assert.equal(before.has_content,true);
+
+  const endpoint='/api/admin/cartinhas/'+id+'/resume-link';
+  assert.equal((await call(env,endpoint,'POST',{},admin)).status,409);
+  const recovered=await call(env,endpoint,'POST',{reopen_incomplete:true},admin);
+  assert.equal(recovered.status,200);
+  const access=new URL(recovered.data.resume_url).pathname.split('/').pop();
+  const during=await call(env,'/api/order','GET',undefined,{token:access});
+  assert.equal(during.status,200);
+  assert.equal(during.data.submitted,false);
+  assert.equal(during.data.status,'paid');
+  assert.equal(during.data.resume_access,true);
+  assert.equal(during.data.media.length,1);
+  assert.equal(during.data.media[0].id,mediaId);
+  assert.equal(during.data.media[0].kind,'image');
+  assert.equal(during.data.media[0].filename,'foto-do-encontro.png');
+
+  // The existing editor photo URL remains readable through the recovery grant.
+  const photo=await worker.fetch(new Request('https://ejc.test'+during.data.media[0].url),env);
+  assert.equal(photo.status,200);
+  assert.deepEqual([...new Uint8Array(await photo.arrayBuffer())],[...bytes]);
+  assert.equal((await call(env,'/api/order','GET',undefined,{token:originalToken}))
+    .data.media.length,1,'o link original continua válido');
+
+  assert.equal((await call(env,'/api/order/message','PUT',{
+    rich_html:'<p>Uma mensagem para acompanhar suas fotos 💛</p>',
+    sender_name:'Remetente das fotos',
+  },{token:access})).status,200);
+  assert.equal((await call(env,'/api/order/submit','POST',{}, {token:access})).status,200);
+
+  const finished=await call(env,'/api/order','GET',undefined,{token:originalToken});
+  assert.equal(finished.status,200);
+  assert.equal(finished.data.submitted,true);
+  assert.equal(finished.data.media.length,1,'nenhuma foto duplicada');
+  assert.equal(finished.data.media[0].id,mediaId);
+  assert.match(finished.data.rich_html,/acompanhar suas fotos/);
+  const after=(await call(env,'/api/admin/cartinhas','GET',undefined,admin))
+    .data.letters.find(letter=>letter.id===id);
+  assert.equal(after.has_text,true);
+  assert.equal(after.has_media,true);
+});

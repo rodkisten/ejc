@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, CircleStop, Play, RotateCcw, Trash2, Video } from 'lucide-react';
+import { Camera, CircleStop, RotateCcw, Trash2, Video } from 'lucide-react';
 
 const FILTERS = [
   { id: 'natural', name: 'Natural', css: 'none' },
@@ -56,6 +56,11 @@ export default function VideoStudioDemo() {
   const refresh = async () => setItems((await list()).sort((a, b) => b.createdAt - a.createdAt));
   useEffect(() => { refresh().catch(e => setError(e.message)); }, []);
   useEffect(() => {
+    if (!['preview', 'recording'].includes(status) || !camera.current || !stream.current) return;
+    camera.current.srcObject = stream.current;
+    camera.current.play().catch(() => {});
+  }, [status]);
+  useEffect(() => {
     if (status !== 'recording') return;
     const timer = setInterval(() => setSeconds(value => value + 1), 1000);
     return () => clearInterval(timer);
@@ -80,7 +85,6 @@ export default function VideoStudioDemo() {
         audio: true,
       });
       stream.current = media;
-      if (camera.current) { camera.current.srcObject = media; await camera.current.play(); }
       setStatus('preview');
     } catch (cause) { setError(cause.message); }
   }

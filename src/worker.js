@@ -2282,7 +2282,7 @@ async function adminRoute(req,env,path) {
     return result({ok:true,status:'paid',letters:children.length});
   }
   if(path==='/api/admin/bootstrap'&&req.method==='GET'){
-    const [config,recipients,orders]=await Promise.all([
+    const [config,recipients,orders,readSummary]=await Promise.all([
       settings(env),
       env.DB.prepare(`SELECT r.id,r.name,r.slug,r.active,r.created_at,r.photo_key,r.photo_consent,r.og_key,r.mural_og_key,r.mural_code,r.whatsapp_phone,
         (SELECT COUNT(*) FROM orders o WHERE o.recipient_id=r.id) AS order_count,
@@ -2309,7 +2309,12 @@ async function adminRoute(req,env,path) {
         o.checkout_id,o.txid,COALESCE(c.txid,o.txid) AS payment_txid
         FROM orders o JOIN recipients r ON o.recipient_id=r.id
         LEFT JOIN checkouts c ON c.id=o.checkout_id WHERE o.campaign_key IS NULL
-        ORDER BY o.created_at DESC LIMIT 500`).all()
+        ORDER BY o.created_at DESC LIMIT 500`).all(),
+      env.DB.prepare(
+        "SELECT COUNT(*) AS opened FROM orders WHERE first_read_at IS NOT NULL "+
+        "AND submitted_at IS NOT NULL AND demo=0 AND campaign_key IS NULL "+
+        "AND status IN ('paid','preparing','delivered')"
+      ).first()
     ]);
     const logo=await env.MEDIA.head('branding/ejc-market-logo');
     return result({config:{...config,logo_url:logo?`/api/branding/logo?v=${logo.uploaded?.getTime()||0}`:null},
@@ -2320,7 +2325,7 @@ async function adminRoute(req,env,path) {
         mural_og_url:socialImage(r,null,'mural').path,
         mural_og_ready:!!r.mural_og_key,
         og_safe:typeof r.og_key==='string'&&r.og_key.startsWith('og/v3/')
-      })),orders:orders.results});
+      })),orders:orders.results,read_summary:{opened:Number(readSummary?.opened||0)}});
   }
 
   if(path==='/api/admin/mural-codes/generate'&&req.method==='POST'){

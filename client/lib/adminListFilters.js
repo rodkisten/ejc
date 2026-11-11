@@ -27,7 +27,7 @@ export function isReadyForSending(letter) {
 }
 
 export function needsTextCompletion(letter) {
-  return Boolean(letter && !letter.gift && !letter.has_text &&
+  return Boolean(letter && !letter.gift && letter.has_text === false &&
     PAID_STATUSES.has(letter.status));
 }
 

@@ -1,6 +1,45 @@
-.instagram-export{background:#f8f2fb;border:1px solid #eadbed;border-radius:19px;padding:16px;display:grid;gap:10px;min-width:0}
-.instagram-export .eyebrow{font-size:10px}
-.instagram-export p{margin:0}
-.instagram-export-actions{display:flex;gap:8px;flex-wrap:wrap}
-.instagram-export-actions .btn{min-width:0;white-space:normal;flex:1;min-height:44px;justify-content:center}
-@media(max-width:520px){.instagram-export-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.instagram-export-actions .btn{font-size:12px}}
+.instagram-export {
+  background: #f8f2fb;
+  border: 1px solid #eadbed;
+  border-radius: 19px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.instagram-export .eyebrow { font-size: 10px; }
+.instagram-export p { margin: 0; }
+.instagram-export-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+.instagram-export-actions .btn {
+  min-width: 0;
+  white-space: normal;
+  min-height: 62px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  text-align: left;
+  line-height: 1.3;
+}
+.instagram-export-actions .btn > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.instagram-export-actions .btn small {
+  font-size: 10px;
+  font-weight: 600;
+  opacity: .7;
+}
+.instagram-export-downloads {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.instagram-export-downloads .btn { min-height: 42px; text-align: center; }
+@media (max-width: 640px) {
+  .instagram-export-actions { grid-template-columns: 1fr; }
+  .instagram-export-downloads { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .instagram-export-actions .btn { font-size: 13px; min-height: 56px; }
+}

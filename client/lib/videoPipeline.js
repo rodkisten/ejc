@@ -34,6 +34,9 @@ export function createVideoPipeline({video,canvas,aspectRatio='9:16',onError}){
   canvas.width=width;canvas.height=height;
   const stage=document.createElement('canvas');
   stage.width=width;stage.height=height;
+  const crop=document.createElement('canvas');
+  crop.width=width;crop.height=height;
+  const cropCtx=crop.getContext('2d',{alpha:false});
   let gl,program,texture,position,effect,frame=0;
   try{
     gl=stage.getContext('webgl',{alpha:false,antialias:false,preserveDrawingBuffer:false});
@@ -57,6 +60,7 @@ export function createVideoPipeline({video,canvas,aspectRatio='9:16',onError}){
     gl.viewport(0,0,width,height);
   }catch(error){gl=null;onError?.('GPU indisponível, usando Canvas 2D: '+error.message);}
   const ctx=canvas.getContext('2d',{alpha:false});
+  if(!ctx)throw new Error('Canvas 2D indisponível');
   let running=true,filterId='natural',sticker='none',mirror=true;
   const cover=(source,target)=>{
     const vw=video.videoWidth,vh=video.videoHeight;
@@ -71,9 +75,6 @@ export function createVideoPipeline({video,canvas,aspectRatio='9:16',onError}){
       if(video.readyState>=2&&video.videoWidth){
         if(gl){
           // Crop camera to exact output ratio before shader processing.
-          const crop=document.createElement('canvas');
-          crop.width=width;crop.height=height;
-          const cropCtx=crop.getContext('2d');
           cover(video,cropCtx);
           gl.bindTexture(gl.TEXTURE_2D,texture);
           gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);

@@ -508,7 +508,7 @@ export default function Order() {
                 abra este link por lá. Se não encontrar, poderá escrever o texto novamente sem pagar outro Pix.</p>
             )}
             {recoveryNotice && <div className="notice success" role="status">{recoveryNotice}</div>}
-            {backupWarning && <div className="notice warning" role="alert">{backupWarning}</div>
+            {backupWarning && <div className="notice warning" role="alert">{backupWarning}</div>}
             <div className="send-recipient">
               {recipient?.photo_url ? <img src={recipient.photo_url} alt={'Foto de ' + order.recipient_name} /> :
                 <span className="recipient-initial">{order.recipient_name?.[0]}</span>}

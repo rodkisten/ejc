@@ -1,13 +1,13 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Heart, MailHeart, ArrowRight, LifeBuoy, LockKeyhole } from 'lucide-react';
+import { Heart, MailOpen, ArrowRight, LifeBuoy, LockKeyhole } from 'lucide-react';
 import '../styles/pending-letter-help.css';
 
 export default function PendingLetterHelp() {
   return (
     <main className="pending-letter-help">
       <div className="pending-letter-help__illustration" aria-hidden="true">
-        <MailHeart size={58} strokeWidth={1.7} />
+        <MailOpen size={58} strokeWidth={1.7} />
         <span>♡</span>
       </div>
       <p className="pending-letter-help__kicker">XX EJC SIMONÉSIA · CARTINHAS VIRTUAIS</p>

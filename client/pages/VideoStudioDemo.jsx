@@ -53,6 +53,37 @@ export default function VideoStudioDemo() {
   const [selected, setSelected] = useState(null);
   const [url, setUrl] = useState('');
   const [seconds, setSeconds] = useState(0);
+  const [remote, setRemote] = useState([]);
+  const [uploading, setUploading] = useState('');
+  const refreshRemote = async () => {
+    const response = await fetch('/api/admin/video-demo', { credentials: 'same-origin' });
+    if (!response.ok) throw new Error('Não foi possível consultar os vídeos no R2.');
+    setRemote((await response.json()).items);
+  };
+  useEffect(() => { refreshRemote().catch(e => setError(e.message)); }, []);
+  async function uploadItem(item) {
+    if (!item.blob) return;
+    setUploading(item.id);
+    setError('');
+    try {
+      const response = await fetch('/api/admin/video-demo/' + item.id, {
+        method: 'PUT', credentials: 'same-origin', headers: {
+          'Content-Type': item.blob.type.split(';')[0] || 'video/mp4',
+        }, body: item.blob,
+      });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Upload falhou.');
+      await refreshRemote();
+    } catch (cause) { setError(cause.message); }
+    finally { setUploading(''); }
+  }
+  async function openRemote(item) {
+    try {
+      const response = await fetch('/api/admin/video-demo/' + item.id, { credentials: 'same-origin' });
+      if (!response.ok) throw new Error('Não foi possível abrir o vídeo remoto.');
+      setSelected({ ...item, blob: await response.blob(), filterId: 'natural' });
+      setStatus('review');
+    } catch (cause) { setError(cause.message); }
+  }
   const refresh = async () => setItems((await list()).sort((a, b) => b.createdAt - a.createdAt));
   useEffect(() => { refresh().catch(e => setError(e.message)); }, []);
   useEffect(() => {
@@ -195,11 +226,28 @@ export default function VideoStudioDemo() {
           <strong>{item.emoji || '🎥'} {item.title}</strong>
           <small>{item.blob ? 'Gravação local' : 'Exemplo ilustrativo'} · {item.filterId}</small>
         </button>
+        {item.blob && <button type="button" className="btn ghost" disabled={uploading === item.id}
+          onClick={() => uploadItem(item)}>{uploading === item.id ? 'Enviando...' : 'Upload R2'}</button>}
         <button type="button" className="btn ghost" aria-label={'Excluir ' + item.title}
           onClick={() => deleteItem(item.id)}><Trash2 size={16}/></button>
       </div>)}
     </div>
-    <p className="muted small">Nesta fase, filtros são prévias CSS. A gravação original é preservada
-      no IndexedDB; renderização FFmpeg e upload R2 ainda não estão conectados.</p>
+    <h2>Vídeos enviados ao R2 ({remote.length})</h2>
+    <div className="admin-order-list">
+      {remote.map(item => <div key={item.id} className="admin-order">
+        <button type="button" onClick={() => openRemote(item)}>
+          <strong>▶ Vídeo {item.id.slice(0, 8)}</strong>
+          <small>{Math.round(item.bytes / 1024)} KB · {item.createdAt || ''}</small>
+        </button>
+        <button type="button" className="btn ghost" onClick={async () => {
+          if (!confirm('Excluir vídeo demo do R2?')) return;
+          await fetch('/api/admin/video-demo/' + item.id, { method: 'DELETE', credentials: 'same-origin' });
+          await refreshRemote();
+        }}><Trash2 size={16}/></button>
+      </div>)}
+    </div>
+    <p className="muted small">Upload limitado a 20 MB por vídeo; vídeos remotos exigem login admin.
+      Para arquivos maiores será necessário upload multipart. Nesta fase, filtros são prévias CSS. A gravação original é preservada
+      no IndexedDB; renderização FFmpeg ainda não está conectada.</p>
   </section>;
 }

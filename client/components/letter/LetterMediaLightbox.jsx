@@ -89,7 +89,7 @@ export default function LetterMediaLightbox({ images = [], initialIndex = 0, onC
         const buttons = [...(dialog.current?.querySelectorAll('button:not(:disabled)') || [])];
         if (!buttons.length) return;
         const first = buttons[0], last = buttons[buttons.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) {
           event.preventDefault();
           last.focus();
         } else if (!event.shiftKey && document.activeElement === last) {
